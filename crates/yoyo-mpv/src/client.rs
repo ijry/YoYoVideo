@@ -1,6 +1,6 @@
 use yoyo_core::{BackendCommand, BackendEvent, MediaLocator, PlayerBackend};
 
-use crate::{render::MpvRenderBridge, translate_command, translate_open, MpvError};
+use crate::{MpvError, render::MpvRenderBridge, translate_command, translate_open};
 
 pub struct MpvBackend {
     pending_events: Vec<BackendEvent>,
@@ -21,19 +21,15 @@ impl Default for MpvBackend {
 
 impl PlayerBackend for MpvBackend {
     fn open(&mut self, locator: &MediaLocator) -> Result<(), String> {
-        self.last_actions = translate_open(locator)
-            .into_iter()
-            .map(|action| format!("{action:?}"))
-            .collect();
+        self.last_actions =
+            translate_open(locator).into_iter().map(|action| format!("{action:?}")).collect();
         self.render_bridge.mark_dirty();
         Ok(())
     }
 
     fn send(&mut self, command: BackendCommand) -> Result<(), String> {
-        self.last_actions = translate_command(&command)
-            .into_iter()
-            .map(|action| format!("{action:?}"))
-            .collect();
+        self.last_actions =
+            translate_command(&command).into_iter().map(|action| format!("{action:?}")).collect();
         self.render_bridge.mark_dirty();
         Ok(())
     }

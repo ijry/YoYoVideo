@@ -1,11 +1,7 @@
 use yoyo_core::PlayerState;
 
 pub fn format_transport_label(state: &PlayerState) -> String {
-    if state.paused {
-        "Play".into()
-    } else {
-        "Pause".into()
-    }
+    if state.paused { "Play".into() } else { "Pause".into() }
 }
 
 pub fn format_speed_label(state: &PlayerState) -> String {

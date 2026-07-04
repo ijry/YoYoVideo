@@ -15,12 +15,7 @@ impl<B: PlayerBackend> AppSession<B> {
         let mut state = PlayerState::default();
         state.volume_percent = config.playback.default_volume_percent;
         state.speed = config.playback.default_speed;
-        Self {
-            config,
-            backend,
-            state,
-            playlist: Playlist::default(),
-        }
+        Self { config, backend, state, playlist: Playlist::default() }
     }
 
     pub fn state(&self) -> &PlayerState {
@@ -81,9 +76,7 @@ impl<B: PlayerBackend> AppSession<B> {
             }
             AppCommand::SetSpeed(speed) => {
                 self.state.speed = speed;
-                self.backend
-                    .send(BackendCommand::SetSpeed(speed))
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::SetSpeed(speed)).map_err(AppError::Message)?;
             }
             AppCommand::ResetSpeed => {
                 self.state.speed = self.config.playback.default_speed;
@@ -93,16 +86,12 @@ impl<B: PlayerBackend> AppSession<B> {
             }
             AppCommand::SetVolume(volume) => {
                 self.state.volume_percent = volume;
-                self.backend
-                    .send(BackendCommand::SetVolume(volume))
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::SetVolume(volume)).map_err(AppError::Message)?;
             }
             AppCommand::AdjustVolume(delta) => {
                 let next = (self.state.volume_percent as i16 + delta as i16).clamp(0, 100) as u8;
                 self.state.volume_percent = next;
-                self.backend
-                    .send(BackendCommand::SetVolume(next))
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::SetVolume(next)).map_err(AppError::Message)?;
             }
             AppCommand::CycleAudioChannel => {
                 self.state.audio_channel = match self.state.audio_channel {
@@ -127,15 +116,11 @@ impl<B: PlayerBackend> AppSession<B> {
             }
             AppCommand::ZoomIn => {
                 self.state.zoom_step += 1;
-                self.backend
-                    .send(BackendCommand::AdjustZoom(1))
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::AdjustZoom(1)).map_err(AppError::Message)?;
             }
             AppCommand::ZoomOut => {
                 self.state.zoom_step -= 1;
-                self.backend
-                    .send(BackendCommand::AdjustZoom(-1))
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::AdjustZoom(-1)).map_err(AppError::Message)?;
             }
             AppCommand::SetABLoopPointA => {
                 self.state.loop_state.point_a = Some(self.state.position_seconds);
@@ -151,9 +136,7 @@ impl<B: PlayerBackend> AppSession<B> {
             }
             AppCommand::ClearABLoop => {
                 self.state.loop_state = Default::default();
-                self.backend
-                    .send(BackendCommand::ClearABLoop)
-                    .map_err(AppError::Message)?;
+                self.backend.send(BackendCommand::ClearABLoop).map_err(AppError::Message)?;
             }
             AppCommand::ToggleFullscreen => {
                 self.state.fullscreen = !self.state.fullscreen;

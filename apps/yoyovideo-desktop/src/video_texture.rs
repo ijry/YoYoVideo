@@ -7,10 +7,6 @@ pub struct VideoTexture {
 
 impl Default for VideoTexture {
     fn default() -> Self {
-        Self {
-            texture_id: 0,
-            width: 1280,
-            height: 720,
-        }
+        Self { texture_id: 0, width: 1280, height: 720 }
     }
 }

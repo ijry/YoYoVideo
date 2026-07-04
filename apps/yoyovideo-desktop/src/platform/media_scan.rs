@@ -15,10 +15,7 @@ pub fn scan_media_folder(path: &Path) -> Result<Vec<PlaylistEntry>, AppError> {
                 .and_then(|name| name.to_str())
                 .map(ToOwned::to_owned)
                 .unwrap_or_else(|| candidate.display().to_string());
-            entries.push(PlaylistEntry {
-                locator: MediaLocator::File(candidate),
-                title,
-            });
+            entries.push(PlaylistEntry { locator: MediaLocator::File(candidate), title });
         }
     }
 

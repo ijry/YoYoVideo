@@ -33,10 +33,7 @@ impl Default for AppConfig {
                 default_volume_percent: 100,
                 prefer_hardware_decode: true,
             },
-            ui: UiPreferences {
-                remember_history: true,
-                show_playlist_on_startup: true,
-            },
+            ui: UiPreferences { remember_history: true, show_playlist_on_startup: true },
             shortcuts: ShortcutMap::default(),
         }
     }

@@ -30,8 +30,5 @@ fn controller_forward_toggle_pause_to_session() {
 
     controller.dispatch(AppCommand::TogglePause).unwrap();
 
-    assert_eq!(
-        controller.session().backend().commands,
-        vec![BackendCommand::SetPaused(false)]
-    );
+    assert_eq!(controller.session().backend().commands, vec![BackendCommand::SetPaused(false)]);
 }

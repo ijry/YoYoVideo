@@ -3,20 +3,14 @@ use yoyovideo_desktop::{format_speed_label, format_time_label, format_transport_
 
 #[test]
 fn transport_label_shows_pause_when_playing() {
-    let state = PlayerState {
-        paused: false,
-        ..PlayerState::default()
-    };
+    let state = PlayerState { paused: false, ..PlayerState::default() };
 
     assert_eq!(format_transport_label(&state), "Pause");
 }
 
 #[test]
 fn speed_label_renders_two_decimals() {
-    let state = PlayerState {
-        speed: 1.25,
-        ..PlayerState::default()
-    };
+    let state = PlayerState { speed: 1.25, ..PlayerState::default() };
 
     assert_eq!(format_speed_label(&state), "1.25x");
 }

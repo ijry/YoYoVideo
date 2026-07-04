@@ -6,4 +6,4 @@ mod translate;
 pub use client::MpvBackend;
 pub use error::MpvError;
 pub use render::{MpvRenderBridge, RenderTarget};
-pub use translate::{translate_command, translate_open, MpvAction};
+pub use translate::{MpvAction, translate_command, translate_open};

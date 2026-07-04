@@ -8,9 +8,7 @@ fn updating_shortcut_persists_to_config_file() {
     let path = dir.path().join("config.toml");
 
     let mut controller = SettingsController::default();
-    controller
-        .update_shortcut("Ctrl+P", ShortcutAction::TogglePause)
-        .unwrap();
+    controller.update_shortcut("Ctrl+P", ShortcutAction::TogglePause).unwrap();
     controller.save(&path).unwrap();
 
     let saved = std::fs::read_to_string(path).unwrap();
@@ -20,13 +18,9 @@ fn updating_shortcut_persists_to_config_file() {
 #[test]
 fn duplicate_shortcut_is_rejected() {
     let mut controller = SettingsController::default();
-    controller
-        .update_shortcut("Space", ShortcutAction::TogglePause)
-        .unwrap();
+    controller.update_shortcut("Space", ShortcutAction::TogglePause).unwrap();
 
-    let error = controller
-        .update_shortcut("Space", ShortcutAction::SpeedUp)
-        .unwrap_err();
+    let error = controller.update_shortcut("Space", ShortcutAction::SpeedUp).unwrap_err();
 
     assert!(error.to_string().contains("duplicate"));
 }

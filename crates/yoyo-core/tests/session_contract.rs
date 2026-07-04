@@ -47,10 +47,7 @@ fn rotate_clockwise_cycles_to_ninety_degrees() {
     session.handle_command(AppCommand::RotateClockwise).unwrap();
 
     assert_eq!(session.state().rotation, Rotation::Deg90);
-    assert_eq!(
-        session.backend().commands,
-        vec![BackendCommand::SetRotation(Rotation::Deg90)]
-    );
+    assert_eq!(session.backend().commands, vec![BackendCommand::SetRotation(Rotation::Deg90)]);
 }
 
 #[test]

@@ -18,11 +18,7 @@ pub struct DesktopController<B: PlayerBackend> {
 
 impl<B: PlayerBackend> DesktopController<B> {
     pub fn new(session: AppSession<B>) -> Self {
-        Self {
-            session,
-            shortcuts: ShortcutMap::default(),
-            video_texture: VideoTexture::default(),
-        }
+        Self { session, shortcuts: ShortcutMap::default(), video_texture: VideoTexture::default() }
     }
 
     pub fn dispatch(&mut self, command: AppCommand) -> Result<(), yoyo_core::AppError> {
@@ -71,9 +67,7 @@ pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand>
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_target(false).init();
-    slint::BackendSelector::new()
-        .backend_name("winit".into())
-        .select()?;
+    slint::BackendSelector::new().backend_name("winit".into()).select()?;
 
     let app = MainWindow::new()?;
     let session = AppSession::new(AppConfig::default(), MpvBackend::default());
