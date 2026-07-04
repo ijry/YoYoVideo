@@ -1,12 +1,22 @@
 use yoyo_core::{BackendCommand, BackendEvent, MediaLocator, PlayerBackend};
 
-use crate::{translate_command, translate_open, MpvError};
+use crate::{render::MpvRenderBridge, translate_command, translate_open, MpvError};
 
-#[derive(Default)]
 pub struct MpvBackend {
     pending_events: Vec<BackendEvent>,
+    render_bridge: MpvRenderBridge,
     #[allow(dead_code)]
     last_actions: Vec<String>,
+}
+
+impl Default for MpvBackend {
+    fn default() -> Self {
+        Self {
+            pending_events: Vec::new(),
+            render_bridge: MpvRenderBridge::default(),
+            last_actions: Vec::new(),
+        }
+    }
 }
 
 impl PlayerBackend for MpvBackend {
@@ -15,6 +25,7 @@ impl PlayerBackend for MpvBackend {
             .into_iter()
             .map(|action| format!("{action:?}"))
             .collect();
+        self.render_bridge.mark_dirty();
         Ok(())
     }
 
@@ -23,6 +34,7 @@ impl PlayerBackend for MpvBackend {
             .into_iter()
             .map(|action| format!("{action:?}"))
             .collect();
+        self.render_bridge.mark_dirty();
         Ok(())
     }
 
@@ -32,6 +44,10 @@ impl PlayerBackend for MpvBackend {
 }
 
 impl MpvBackend {
+    pub fn render_bridge(&mut self) -> &mut MpvRenderBridge {
+        &mut self.render_bridge
+    }
+
     pub fn ensure_runtime_feature() -> Result<(), MpvError> {
         #[cfg(feature = "mpv-runtime")]
         {
