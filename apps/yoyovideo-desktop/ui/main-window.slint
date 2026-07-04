@@ -1,0 +1,38 @@
+import { Button, HorizontalBox, VerticalBox, LineEdit } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "YoYoVideo";
+    width: 1200px;
+    height: 760px;
+
+    in-out property <string> transport_label: "Play";
+    in-out property <string> speed_label: "1.00x";
+    in-out property <string> time_label: "00:00 / --:--";
+    in-out property <string> status_label: "";
+
+    callback open_file_requested();
+    callback open_folder_requested();
+    callback open_url_requested(string);
+    callback toggle_pause_requested();
+
+    VerticalBox {
+        spacing: 8px;
+        Rectangle {
+            background: #101214;
+            border-radius: 8px;
+            min-height: 620px;
+        }
+        HorizontalBox {
+            spacing: 8px;
+            Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
+            Button { text: "Open"; clicked => { root.open_file_requested(); } }
+            Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
+            LineEdit {
+                accepted => { root.open_url_requested(self.text); }
+            }
+            Text { text: time_label; }
+            Text { text: speed_label; }
+            Text { text: status_label; }
+        }
+    }
+}
