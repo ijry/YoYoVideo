@@ -22,6 +22,7 @@ export component MainWindow inherits Window {
     callback set_ab_point_b_requested();
     callback clear_ab_loop_requested();
     callback toggle_fullscreen_requested();
+    callback settings_requested();
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
@@ -41,6 +42,7 @@ export component MainWindow inherits Window {
             Button { text: "Set B"; clicked => { root.set_ab_point_b_requested(); menu_popup.close(); } }
             Button { text: "Clear A-B"; clicked => { root.clear_ab_loop_requested(); menu_popup.close(); } }
             Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
+            Button { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
         }
     }
 
