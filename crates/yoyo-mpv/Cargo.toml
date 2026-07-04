@@ -1,0 +1,14 @@
+[package]
+name = "yoyo-mpv"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+mpv-runtime = ["dep:libmpv-sys"]
+
+[dependencies]
+libmpv-sys = { version = "3.1.0", optional = true }
+thiserror = "2.0.18"
+tracing = "0.1.44"
+yoyo-core = { path = "../yoyo-core" }

@@ -1,3 +1,6 @@
 [workspace]
-members = ["crates/yoyo-core"]
+members = [
+    "crates/yoyo-core",
+    "crates/yoyo-mpv",
+]
 resolver = "2"
