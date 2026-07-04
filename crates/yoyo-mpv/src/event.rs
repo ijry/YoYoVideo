@@ -1,0 +1,34 @@
+use yoyo_core::BackendEvent;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MpvEvent {
+    Pause(bool),
+    Position(f64),
+    Duration(Option<f64>),
+    Speed(f32),
+    Volume(u8),
+    Rotation(i64),
+    Warning(String),
+    Error(String),
+    EndFile,
+}
+
+pub fn map_event(event: MpvEvent) -> Option<BackendEvent> {
+    match event {
+        MpvEvent::Pause(value) => Some(BackendEvent::PauseChanged(value)),
+        MpvEvent::Position(value) => Some(BackendEvent::PositionChanged(value)),
+        MpvEvent::Duration(value) => Some(BackendEvent::DurationChanged(value)),
+        MpvEvent::Speed(value) => Some(BackendEvent::SpeedChanged(value)),
+        MpvEvent::Volume(value) => Some(BackendEvent::VolumeChanged(value)),
+        MpvEvent::Rotation(0) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg0)),
+        MpvEvent::Rotation(90) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg90)),
+        MpvEvent::Rotation(180) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg180)),
+        MpvEvent::Rotation(270) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg270)),
+        MpvEvent::Rotation(other) => {
+            Some(BackendEvent::Warning(format!("unsupported rotation reported by mpv: {other}")))
+        }
+        MpvEvent::Warning(message) => Some(BackendEvent::Warning(message)),
+        MpvEvent::Error(message) => Some(BackendEvent::Error(message)),
+        MpvEvent::EndFile => Some(BackendEvent::EndOfFile),
+    }
+}

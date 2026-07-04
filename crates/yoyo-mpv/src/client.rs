@@ -1,37 +1,89 @@
 use yoyo_core::{BackendCommand, BackendEvent, MediaLocator, PlayerBackend};
 
-use crate::{MpvError, render::MpvRenderBridge, translate_command, translate_open};
+use crate::{MpvAction, MpvError, MpvEvent, map_event, translate_command, translate_open};
 
-pub struct MpvBackend {
-    pending_events: Vec<BackendEvent>,
-    render_bridge: MpvRenderBridge,
-    #[allow(dead_code)]
-    last_actions: Vec<String>,
+pub trait MpvActionSink {
+    fn command(&mut self, args: &[String]) -> Result<(), MpvError>;
+    fn set_flag(&mut self, name: &str, value: bool) -> Result<(), MpvError>;
+    fn set_string(&mut self, name: &str, value: &str) -> Result<(), MpvError>;
+    fn set_i64(&mut self, name: &str, value: i64) -> Result<(), MpvError>;
+    fn set_f64(&mut self, name: &str, value: f64) -> Result<(), MpvError>;
 }
 
-impl Default for MpvBackend {
-    fn default() -> Self {
-        Self {
-            pending_events: Vec::new(),
-            render_bridge: MpvRenderBridge::default(),
-            last_actions: Vec::new(),
+pub fn execute_actions<S: MpvActionSink>(
+    sink: &mut S,
+    actions: &[MpvAction],
+) -> Result<(), MpvError> {
+    for action in actions {
+        match action {
+            MpvAction::Command(args) => sink.command(args)?,
+            MpvAction::SetString { name, value } => sink.set_string(name, value)?,
+            MpvAction::SetInt { name, value } => sink.set_i64(name, *value)?,
+            MpvAction::SetDouble { name, value } => sink.set_f64(name, *value)?,
+            MpvAction::SetFlag { name, value } => sink.set_flag(name, *value)?,
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct RecordingSink {
+    actions: Vec<String>,
+}
+
+impl MpvActionSink for RecordingSink {
+    fn command(&mut self, args: &[String]) -> Result<(), MpvError> {
+        self.actions.push(format!("Command({args:?})"));
+        Ok(())
+    }
+
+    fn set_flag(&mut self, name: &str, value: bool) -> Result<(), MpvError> {
+        self.actions.push(format!("SetFlag {{ name: \"{name}\", value: {value} }}"));
+        Ok(())
+    }
+
+    fn set_string(&mut self, name: &str, value: &str) -> Result<(), MpvError> {
+        self.actions.push(format!("SetString {{ name: \"{name}\", value: \"{value}\" }}"));
+        Ok(())
+    }
+
+    fn set_i64(&mut self, name: &str, value: i64) -> Result<(), MpvError> {
+        self.actions.push(format!("SetInt {{ name: \"{name}\", value: {value} }}"));
+        Ok(())
+    }
+
+    fn set_f64(&mut self, name: &str, value: f64) -> Result<(), MpvError> {
+        self.actions.push(format!("SetDouble {{ name: \"{name}\", value: {value} }}"));
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct DryRunMpvBackend {
+    pending_events: Vec<BackendEvent>,
+    sink: RecordingSink,
+}
+
+impl DryRunMpvBackend {
+    pub fn recorded_actions(&self) -> &[String] {
+        &self.sink.actions
+    }
+
+    pub fn push_event(&mut self, event: MpvEvent) {
+        if let Some(mapped) = map_event(event) {
+            self.pending_events.push(mapped);
         }
     }
 }
 
-impl PlayerBackend for MpvBackend {
+impl PlayerBackend for DryRunMpvBackend {
     fn open(&mut self, locator: &MediaLocator) -> Result<(), String> {
-        self.last_actions =
-            translate_open(locator).into_iter().map(|action| format!("{action:?}")).collect();
-        self.render_bridge.mark_dirty();
-        Ok(())
+        execute_actions(&mut self.sink, &translate_open(locator)).map_err(|error| error.to_string())
     }
 
     fn send(&mut self, command: BackendCommand) -> Result<(), String> {
-        self.last_actions =
-            translate_command(&command).into_iter().map(|action| format!("{action:?}")).collect();
-        self.render_bridge.mark_dirty();
-        Ok(())
+        execute_actions(&mut self.sink, &translate_command(&command))
+            .map_err(|error| error.to_string())
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
@@ -39,19 +91,4 @@ impl PlayerBackend for MpvBackend {
     }
 }
 
-impl MpvBackend {
-    pub fn render_bridge(&mut self) -> &mut MpvRenderBridge {
-        &mut self.render_bridge
-    }
-
-    pub fn ensure_runtime_feature() -> Result<(), MpvError> {
-        #[cfg(feature = "mpv-runtime")]
-        {
-            Ok(())
-        }
-        #[cfg(not(feature = "mpv-runtime"))]
-        {
-            Err(MpvError::RuntimeDisabled)
-        }
-    }
-}
+pub type MpvBackend = DryRunMpvBackend;
