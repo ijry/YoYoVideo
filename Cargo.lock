@@ -6012,6 +6012,7 @@ dependencies = [
  "rfd",
  "slint",
  "slint-build",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
  "yoyo-core",

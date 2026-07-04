@@ -14,6 +14,35 @@ export component MainWindow inherits Window {
     callback open_folder_requested();
     callback open_url_requested(string);
     callback toggle_pause_requested();
+    callback speed_down_requested();
+    callback speed_up_requested();
+    callback rotate_requested();
+    callback cycle_audio_requested();
+    callback set_ab_point_a_requested();
+    callback set_ab_point_b_requested();
+    callback clear_ab_loop_requested();
+    callback toggle_fullscreen_requested();
+
+    menu_popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 220px;
+        height: 420px;
+
+        VerticalBox {
+            spacing: 4px;
+            Button { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
+            Button { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+            Button { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
+            Button { text: "Speed -"; clicked => { root.speed_down_requested(); menu_popup.close(); } }
+            Button { text: "Speed +"; clicked => { root.speed_up_requested(); menu_popup.close(); } }
+            Button { text: "Rotate"; clicked => { root.rotate_requested(); menu_popup.close(); } }
+            Button { text: "Audio Channel"; clicked => { root.cycle_audio_requested(); menu_popup.close(); } }
+            Button { text: "Set A"; clicked => { root.set_ab_point_a_requested(); menu_popup.close(); } }
+            Button { text: "Set B"; clicked => { root.set_ab_point_b_requested(); menu_popup.close(); } }
+            Button { text: "Clear A-B"; clicked => { root.clear_ab_loop_requested(); menu_popup.close(); } }
+            Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
+        }
+    }
 
     VerticalBox {
         spacing: 8px;
@@ -27,6 +56,7 @@ export component MainWindow inherits Window {
             Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
             Button { text: "Open"; clicked => { root.open_file_requested(); } }
             Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
+            Button { text: "Menu"; clicked => { menu_popup.show(); } }
             LineEdit {
                 accepted => { root.open_url_requested(self.text); }
             }
