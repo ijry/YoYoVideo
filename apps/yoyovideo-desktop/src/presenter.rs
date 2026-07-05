@@ -1,4 +1,4 @@
-use yoyo_core::{AudioChannelMode, PlayerState, Rotation};
+use yoyo_core::{AudioChannelMode, PlayerState, Rotation, VideoAdjustmentKind, VideoFilterPreset};
 
 fn fmt_clock(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
@@ -66,5 +66,26 @@ pub fn format_loop_label(state: &PlayerState) -> String {
         (Some(a), None) => format!("A {} / B --:--", fmt_clock(a)),
         (None, Some(b)) => format!("A --:-- / B {}", fmt_clock(b)),
         (None, None) => "A --:-- / B --:--".into(),
+    }
+}
+
+pub fn format_video_adjustment_label(kind: VideoAdjustmentKind, value: i16) -> String {
+    let name = match kind {
+        VideoAdjustmentKind::Brightness => "Brightness",
+        VideoAdjustmentKind::Contrast => "Contrast",
+        VideoAdjustmentKind::Saturation => "Saturation",
+        VideoAdjustmentKind::Gamma => "Gamma",
+        VideoAdjustmentKind::Hue => "Hue",
+    };
+    format!("{name} {value:+}")
+}
+
+pub fn format_video_filter_preset_label(preset: VideoFilterPreset) -> &'static str {
+    match preset {
+        VideoFilterPreset::None => "Filter: None",
+        VideoFilterPreset::Sharpen => "Filter: Sharpen",
+        VideoFilterPreset::LightDenoise => "Filter: Light Denoise",
+        VideoFilterPreset::Grayscale => "Filter: Grayscale",
+        VideoFilterPreset::Invert => "Filter: Invert",
     }
 }

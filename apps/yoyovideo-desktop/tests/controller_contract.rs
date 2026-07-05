@@ -1,4 +1,9 @@
-use yoyo_core::{AppCommand, AppConfig, AppSession, BackendCommand, MediaLocator, PlayerBackend};
+use std::path::PathBuf;
+
+use yoyo_core::{
+    AppCommand, AppConfig, AppSession, BackendCommand, FrameStepDirection, MediaLocator,
+    PlayerBackend, VideoAdjustmentKind, VideoFilterPreset,
+};
 use yoyovideo_desktop::DesktopController;
 
 #[derive(Default)]
@@ -105,6 +110,31 @@ fn controller_forwards_external_subtitle_and_visibility_commands() {
         vec![
             BackendCommand::LoadExternalSubtitle(std::path::PathBuf::from("movie.ass")),
             BackendCommand::SetSubtitleVisible(false),
+        ]
+    );
+}
+
+#[test]
+fn controller_forwards_video_tool_commands() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut controller = DesktopController::new(session);
+
+    controller.dispatch(AppCommand::TakeScreenshot(PathBuf::from("shot.png"))).unwrap();
+    controller.dispatch(AppCommand::StepFrame(FrameStepDirection::Next)).unwrap();
+    controller.dispatch(AppCommand::SetVideoAdjustment(VideoAdjustmentKind::Gamma, 20)).unwrap();
+    controller.dispatch(AppCommand::ResetVideoAdjustments).unwrap();
+    controller
+        .dispatch(AppCommand::SetVideoFilterPreset(VideoFilterPreset::Invert))
+        .unwrap();
+
+    assert_eq!(
+        controller.session().backend().commands,
+        vec![
+            BackendCommand::TakeScreenshot(PathBuf::from("shot.png")),
+            BackendCommand::StepFrame(FrameStepDirection::Next),
+            BackendCommand::SetVideoAdjustment(VideoAdjustmentKind::Gamma, 20),
+            BackendCommand::ResetVideoAdjustments,
+            BackendCommand::SetVideoFilterPreset(VideoFilterPreset::Invert),
         ]
     );
 }

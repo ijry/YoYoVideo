@@ -46,6 +46,17 @@ export component MainWindow inherits Window {
     in-out property <string> subtitle_scale_label: "100%";
     in-out property <float> subtitle_position_value: 100.0;
     in-out property <string> tracks_status_label: "";
+    in-out property <int> brightness_value: 0;
+    in-out property <int> contrast_value: 0;
+    in-out property <int> saturation_value: 0;
+    in-out property <int> gamma_value: 0;
+    in-out property <int> hue_value: 0;
+    in-out property <string> brightness_label: "Brightness +0";
+    in-out property <string> contrast_label: "Contrast +0";
+    in-out property <string> saturation_label: "Saturation +0";
+    in-out property <string> gamma_label: "Gamma +0";
+    in-out property <string> hue_label: "Hue +0";
+    in-out property <string> video_filter_label: "Filter: None";
     out property <bool> url_focused: url_input.has-focus;
 
     out property <length> video_area_x: video_area.x;
@@ -84,6 +95,20 @@ export component MainWindow inherits Window {
     callback subtitle_delay_changed(float);
     callback subtitle_scale_changed(float);
     callback subtitle_position_changed(float);
+    callback screenshot_requested();
+    callback frame_step_previous_requested();
+    callback frame_step_next_requested();
+    callback brightness_changed(int);
+    callback contrast_changed(int);
+    callback saturation_changed(int);
+    callback gamma_changed(int);
+    callback hue_changed(int);
+    callback reset_video_adjustments_requested();
+    callback filter_none_requested();
+    callback filter_sharpen_requested();
+    callback filter_light_denoise_requested();
+    callback filter_grayscale_requested();
+    callback filter_invert_requested();
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
@@ -105,6 +130,8 @@ export component MainWindow inherits Window {
             Button { text: "Set A"; clicked => { root.set_ab_point_a_requested(); menu_popup.close(); } }
             Button { text: "Set B"; clicked => { root.set_ab_point_b_requested(); menu_popup.close(); } }
             Button { text: "Clear A-B"; clicked => { root.clear_ab_loop_requested(); menu_popup.close(); } }
+            Button { text: "Screenshot"; clicked => { root.screenshot_requested(); menu_popup.close(); } }
+            Button { text: "Video Tools"; clicked => { video_tools_popup.show(); menu_popup.close(); } }
             Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
             Button { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
         }
@@ -178,6 +205,76 @@ export component MainWindow inherits Window {
         }
     }
 
+    video_tools_popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 340px;
+        height: 620px;
+
+        ScrollView {
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                Text { text: "Capture"; color: #f2f5f7; }
+                Button { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
+
+                Text { text: "Frame Step"; color: #f2f5f7; }
+                HorizontalBox {
+                    spacing: 8px;
+                    Button { text: "Prev Frame"; clicked => { root.frame_step_previous_requested(); } }
+                    Button { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                }
+
+                Text { text: "Picture"; color: #f2f5f7; }
+                Text { text: root.brightness_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -100;
+                    maximum: 100;
+                    value: root.brightness_value;
+                    changed(value) => { root.brightness_changed(value); }
+                }
+                Text { text: root.contrast_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -100;
+                    maximum: 100;
+                    value: root.contrast_value;
+                    changed(value) => { root.contrast_changed(value); }
+                }
+                Text { text: root.saturation_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -100;
+                    maximum: 100;
+                    value: root.saturation_value;
+                    changed(value) => { root.saturation_changed(value); }
+                }
+                Text { text: root.gamma_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -100;
+                    maximum: 100;
+                    value: root.gamma_value;
+                    changed(value) => { root.gamma_changed(value); }
+                }
+                Text { text: root.hue_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -100;
+                    maximum: 100;
+                    value: root.hue_value;
+                    changed(value) => { root.hue_changed(value); }
+                }
+                Button { text: "Reset Picture"; clicked => { root.reset_video_adjustments_requested(); } }
+
+                Text { text: root.video_filter_label; color: #f2f5f7; }
+                Button { text: "None"; clicked => { root.filter_none_requested(); } }
+                Button { text: "Sharpen"; clicked => { root.filter_sharpen_requested(); } }
+                Button { text: "Light Denoise"; clicked => { root.filter_light_denoise_requested(); } }
+                Button { text: "Grayscale"; clicked => { root.filter_grayscale_requested(); } }
+                Button { text: "Invert"; clicked => { root.filter_invert_requested(); } }
+
+                Text { text: root.status_label; color: #7d8790; }
+            }
+        }
+    }
+
     HorizontalBox {
         spacing: 8px;
         padding: 10px;
@@ -221,6 +318,7 @@ export component MainWindow inherits Window {
                     }
                     Button { text: "Menu"; clicked => { menu_popup.show(); } }
                     Button { text: "Tracks"; clicked => { tracks_popup.show(); } }
+                    Button { text: "Video Tools"; clicked => { video_tools_popup.show(); } }
                     url_input := LineEdit {
                         placeholder-text: "Open URL";
                         accepted => { root.open_url_requested(self.text); }

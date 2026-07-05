@@ -1,8 +1,10 @@
-use yoyo_core::{AudioChannelMode, LoopState, PlayerState, Rotation};
+use yoyo_core::{
+    AudioChannelMode, LoopState, PlayerState, Rotation, VideoAdjustmentKind, VideoFilterPreset,
+};
 use yoyovideo_desktop::{
     format_audio_channel_label, format_loop_label, format_rotation_label, format_speed_label,
-    format_time_label, format_transport_label, format_volume_label, format_zoom_label,
-    progress_ratio,
+    format_time_label, format_transport_label, format_video_adjustment_label,
+    format_video_filter_preset_label, format_volume_label, format_zoom_label, progress_ratio,
 };
 
 #[test]
@@ -58,4 +60,18 @@ fn progress_ratio_is_zero_without_duration_and_clamped_with_duration() {
 
     state.position_seconds = 150.0;
     assert_eq!(progress_ratio(&state), 1.0);
+}
+
+#[test]
+fn video_tool_presenter_formats_adjustments_and_presets() {
+    assert_eq!(
+        format_video_adjustment_label(VideoAdjustmentKind::Brightness, 12),
+        "Brightness +12"
+    );
+    assert_eq!(format_video_adjustment_label(VideoAdjustmentKind::Hue, -9), "Hue -9");
+    assert_eq!(format_video_filter_preset_label(VideoFilterPreset::None), "Filter: None");
+    assert_eq!(
+        format_video_filter_preset_label(VideoFilterPreset::LightDenoise),
+        "Filter: Light Denoise"
+    );
 }

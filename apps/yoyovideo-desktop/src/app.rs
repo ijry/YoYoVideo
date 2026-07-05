@@ -8,7 +8,8 @@ use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, E
 use slint::winit_030::WinitWindowAccessor;
 use yoyo_core::{
     AppCommand, AppConfig, AppSession, FrameStepDirection, HistoryStore, MediaLocator,
-    PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
+    PlayerBackend, PlayerState, ShortcutAction, ShortcutMap, VideoAdjustmentKind,
+    VideoFilterPreset,
 };
 use yoyo_mpv::{MpvBackend, MpvError};
 
@@ -47,6 +48,46 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
     window.set_loop_label(crate::format_loop_label(state).into());
     window.set_progress_value(crate::progress_ratio(state));
     window.set_volume_value(i32::from(state.volume_percent));
+    window.set_brightness_value(i32::from(state.video_adjustments.brightness));
+    window.set_contrast_value(i32::from(state.video_adjustments.contrast));
+    window.set_saturation_value(i32::from(state.video_adjustments.saturation));
+    window.set_gamma_value(i32::from(state.video_adjustments.gamma));
+    window.set_hue_value(i32::from(state.video_adjustments.hue));
+    window.set_brightness_label(
+        crate::format_video_adjustment_label(
+            VideoAdjustmentKind::Brightness,
+            state.video_adjustments.brightness,
+        )
+        .into(),
+    );
+    window.set_contrast_label(
+        crate::format_video_adjustment_label(
+            VideoAdjustmentKind::Contrast,
+            state.video_adjustments.contrast,
+        )
+        .into(),
+    );
+    window.set_saturation_label(
+        crate::format_video_adjustment_label(
+            VideoAdjustmentKind::Saturation,
+            state.video_adjustments.saturation,
+        )
+        .into(),
+    );
+    window.set_gamma_label(
+        crate::format_video_adjustment_label(
+            VideoAdjustmentKind::Gamma,
+            state.video_adjustments.gamma,
+        )
+        .into(),
+    );
+    window.set_hue_label(
+        crate::format_video_adjustment_label(VideoAdjustmentKind::Hue, state.video_adjustments.hue)
+            .into(),
+    );
+    window.set_video_filter_label(
+        crate::format_video_filter_preset_label(state.video_filter_preset).into(),
+    );
     window.set_status_label(
         state
             .last_error
@@ -695,6 +736,37 @@ where
     }
 }
 
+fn dispatch_screenshot(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    paths: Option<AppPaths>,
+) {
+    let path = match crate::platform::prepare_screenshot_path(paths.as_ref()) {
+        Ok(path) => path,
+        Err(error) => {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(format!("Screenshot path failed: {error}").into());
+            }
+            return;
+        }
+    };
+
+    with_runtime_controller(app_handle, runtime, move |controller| {
+        controller.dispatch(AppCommand::TakeScreenshot(path))
+    });
+}
+
+fn dispatch_video_adjustment(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    kind: VideoAdjustmentKind,
+    value: i32,
+) {
+    with_runtime_controller(app_handle, runtime, move |controller| {
+        controller.dispatch(AppCommand::SetVideoAdjustment(kind, value.clamp(-100, 100) as i16))
+    });
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
@@ -792,6 +864,87 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
     });
+    app.on_screenshot_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        let paths = paths.clone();
+        move || dispatch_screenshot(&app_handle, &runtime, paths.clone())
+    });
+    app.on_frame_step_previous_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::StepFrame(FrameStepDirection::Previous),
+    ));
+    app.on_frame_step_next_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::StepFrame(FrameStepDirection::Next),
+    ));
+    app.on_brightness_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |value| {
+            dispatch_video_adjustment(&app_handle, &runtime, VideoAdjustmentKind::Brightness, value)
+        }
+    });
+    app.on_contrast_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |value| {
+            dispatch_video_adjustment(&app_handle, &runtime, VideoAdjustmentKind::Contrast, value)
+        }
+    });
+    app.on_saturation_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |value| {
+            dispatch_video_adjustment(&app_handle, &runtime, VideoAdjustmentKind::Saturation, value)
+        }
+    });
+    app.on_gamma_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |value| {
+            dispatch_video_adjustment(&app_handle, &runtime, VideoAdjustmentKind::Gamma, value)
+        }
+    });
+    app.on_hue_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |value| {
+            dispatch_video_adjustment(&app_handle, &runtime, VideoAdjustmentKind::Hue, value)
+        }
+    });
+    app.on_reset_video_adjustments_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::ResetVideoAdjustments,
+    ));
+    app.on_filter_none_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SetVideoFilterPreset(VideoFilterPreset::None),
+    ));
+    app.on_filter_sharpen_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SetVideoFilterPreset(VideoFilterPreset::Sharpen),
+    ));
+    app.on_filter_light_denoise_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SetVideoFilterPreset(VideoFilterPreset::LightDenoise),
+    ));
+    app.on_filter_grayscale_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SetVideoFilterPreset(VideoFilterPreset::Grayscale),
+    ));
+    app.on_filter_invert_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SetVideoFilterPreset(VideoFilterPreset::Invert),
+    ));
     app.on_rotate_requested(command_callback(&app, &runtime, AppCommand::RotateClockwise));
     app.on_cycle_audio_requested(command_callback(&app, &runtime, AppCommand::CycleAudioChannel));
     app.on_zoom_in_requested(command_callback(&app, &runtime, AppCommand::ZoomIn));
@@ -1211,6 +1364,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
         let keyboard_state = Rc::clone(&keyboard_state);
+        let paths = paths.clone();
         move |_window, event| {
             let Some(app) = app_handle.upgrade() else {
                 return slint::winit_030::EventResult::Propagate;
@@ -1225,9 +1379,24 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return slint::winit_030::EventResult::Propagate;
             };
 
-            with_runtime_controller(&app_handle, &runtime, move |controller| {
-                controller.dispatch_shortcut(gesture.as_str())
-            });
+            let dispatch = {
+                let runtime_ref = runtime.borrow();
+                runtime_ref
+                    .controller()
+                    .and_then(|controller| controller.resolve_shortcut(gesture.as_str()))
+            };
+
+            match dispatch {
+                Some(ShortcutDispatch::Command(command)) => {
+                    with_runtime_controller(&app_handle, &runtime, move |controller| {
+                        controller.dispatch(command)
+                    });
+                }
+                Some(ShortcutDispatch::TakeScreenshot) => {
+                    dispatch_screenshot(&app_handle, &runtime, paths.clone());
+                }
+                None => {}
+            }
             slint::winit_030::EventResult::PreventDefault
         }
     });
