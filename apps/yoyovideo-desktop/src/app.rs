@@ -134,6 +134,14 @@ impl<B: PlayerBackend> DesktopController<B> {
         self.session.poll_backend()
     }
 
+    pub fn open_playlist_entries(
+        &mut self,
+        entries: Vec<yoyo_core::PlaylistEntry>,
+    ) -> Result<(), yoyo_core::AppError> {
+        self.session.replace_playlist(entries, 0)?;
+        self.session.poll_backend()
+    }
+
     pub fn open_playlist_index(&mut self, index: usize) -> Result<(), yoyo_core::AppError> {
         self.session.open_playlist_index(index)?;
         self.session.poll_backend()

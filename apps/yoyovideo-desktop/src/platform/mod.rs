@@ -1,9 +1,11 @@
 mod dialogs;
+mod drop;
 mod media_scan;
 mod paths;
 mod screenshot;
 
 pub use dialogs::{DialogService, RfdDialogService};
+pub use drop::{DroppedMediaAction, classify_dropped_paths};
 pub use media_scan::scan_media_folder;
 pub use paths::AppPaths;
 pub use screenshot::{

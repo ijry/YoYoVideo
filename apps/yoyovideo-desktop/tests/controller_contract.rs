@@ -136,3 +136,21 @@ fn controller_forwards_video_tool_commands() {
         ]
     );
 }
+
+#[test]
+fn controller_can_open_multiple_playlist_entries_from_drop() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut controller = DesktopController::new(session);
+    let first = yoyo_core::PlaylistEntry::new(MediaLocator::File("first.mp4".into()));
+    let second = yoyo_core::PlaylistEntry::new(MediaLocator::File("second.mp4".into()));
+
+    controller.open_playlist_entries(vec![first.clone(), second.clone()]).unwrap();
+
+    assert_eq!(
+        controller.session().backend().opened,
+        vec![MediaLocator::File("first.mp4".into())]
+    );
+    let snapshot = controller.session().playlist_snapshot();
+    assert_eq!(snapshot.entries, vec![first, second]);
+    assert_eq!(snapshot.current_index, Some(0));
+}
