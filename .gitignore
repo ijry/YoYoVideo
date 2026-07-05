@@ -1,2 +1,9 @@
 .worktrees/
 target/
+dist/
+
+# Runtime staging keeps documentation and placeholders in git, not binary payloads.
+third_party/mpv/**/bin/*
+third_party/mpv/**/lib/*
+!third_party/mpv/**/bin/.gitkeep
+!third_party/mpv/**/lib/.gitkeep
