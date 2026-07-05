@@ -256,6 +256,8 @@ struct DesktopRuntime {
     last_seen_locator: Option<MediaLocator>,
     last_seen_subtitle_locator: Option<MediaLocator>,
     started_at: Instant,
+    diagnostic_log_path: PathBuf,
+    diagnostic_log_failed: bool,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
 }
@@ -266,6 +268,7 @@ impl DesktopRuntime {
         history: crate::HistoryRuntime,
         subtitle_prefs: crate::SubtitlePrefsRuntime,
         sidebar: crate::SidebarState,
+        diagnostic_log_path: PathBuf,
     ) -> Self {
         Self {
             controller: None,
@@ -281,6 +284,8 @@ impl DesktopRuntime {
             last_seen_locator: None,
             last_seen_subtitle_locator: None,
             started_at: Instant::now(),
+            diagnostic_log_path,
+            diagnostic_log_failed: false,
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
         }
@@ -298,6 +303,22 @@ impl DesktopRuntime {
         self.video_host_error
             .clone()
             .unwrap_or_else(|| "Playback runtime is still initializing".to_string())
+    }
+
+    fn record_diagnostic(&mut self, level: &str, message: impl AsRef<str>) {
+        if self.diagnostic_log_failed {
+            return;
+        }
+        if crate::platform::append_diagnostic_line(
+            &self.diagnostic_log_path,
+            &crate::platform::diagnostic_timestamp_now(),
+            level,
+            message.as_ref(),
+        )
+        .is_err()
+        {
+            self.diagnostic_log_failed = true;
+        }
     }
 
     #[cfg(feature = "mpv-runtime")]
@@ -700,8 +721,10 @@ where
     let pending_before = runtime.pending_resume.take();
     let Some(mut controller) = runtime.controller.take() else {
         runtime.pending_resume = pending_before;
+        let message = runtime.status_message();
+        runtime.record_diagnostic("WARN", &message);
         if let Some(app) = app_handle.upgrade() {
-            app.set_status_label(runtime.status_message().into());
+            app.set_status_label(message.into());
         }
         return false;
     };
@@ -748,6 +771,7 @@ where
         }
         Err((error, pending_restore)) => {
             runtime.pending_resume = pending_restore;
+            runtime.record_diagnostic("ERROR", error.to_string());
             if let Some(app) = app_handle.upgrade() {
                 app.set_status_label(error.to_string().into());
             }
@@ -764,6 +788,9 @@ fn dispatch_screenshot(
     let path = match crate::platform::prepare_screenshot_path(paths.as_ref()) {
         Ok(path) => path,
         Err(error) => {
+            runtime
+                .borrow_mut()
+                .record_diagnostic("ERROR", format!("Screenshot path failed: {error}"));
             if let Some(app) = app_handle.upgrade() {
                 app.set_status_label(format!("Screenshot path failed: {error}").into());
             }
@@ -846,8 +873,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let history = load_history_runtime(paths.as_ref(), &config);
     let subtitle_prefs = load_subtitle_prefs_runtime(paths.as_ref());
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
-    let runtime =
-        Rc::new(RefCell::new(DesktopRuntime::new(config, history, subtitle_prefs, sidebar)));
+    let diagnostic_log_path = crate::platform::default_log_file(paths.as_ref());
+    let runtime = Rc::new(RefCell::new(DesktopRuntime::new(
+        config,
+        history,
+        subtitle_prefs,
+        sidebar,
+        diagnostic_log_path,
+    )));
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
@@ -1547,6 +1580,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err((error, pending_restore)) => {
                     runtime.pending_resume = pending_restore;
+                    runtime.record_diagnostic("ERROR", error.to_string());
                     app.set_status_label(error.to_string().into());
                 }
             }
