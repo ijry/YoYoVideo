@@ -555,7 +555,7 @@ Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $tarPath -Force -ErrorAction SilentlyContinue
 
 if ($Platform -eq "windows-x64") {
-    Compress-Archive -Path (Join-Path $packageDir "*") -DestinationPath $zipPath -Force
+    Compress-Archive -Path $packageDir -DestinationPath $zipPath -Force
     Write-Host "Created archive: $zipPath"
 } else {
     Push-Location $distRoot
