@@ -144,7 +144,11 @@ struct DesktopRuntime {
 }
 
 impl DesktopRuntime {
-    fn new(config: AppConfig, history: crate::HistoryRuntime, sidebar: crate::SidebarState) -> Self {
+    fn new(
+        config: AppConfig,
+        history: crate::HistoryRuntime,
+        sidebar: crate::SidebarState,
+    ) -> Self {
         Self {
             controller: None,
             video_host_error: initial_runtime_error(),
@@ -210,10 +214,7 @@ fn history_file_path(paths: &AppPaths) -> PathBuf {
 }
 
 fn load_boot_config(paths: Option<&AppPaths>) -> AppConfig {
-    paths
-        .map(config_file_path)
-        .and_then(|path| AppConfig::load(&path).ok())
-        .unwrap_or_default()
+    paths.map(config_file_path).and_then(|path| AppConfig::load(&path).ok()).unwrap_or_default()
 }
 
 fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::HistoryRuntime {
@@ -274,18 +275,12 @@ fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
         .map(|controller| crate::build_playlist_rows(&controller.session().playlist_snapshot()))
         .unwrap_or_default()
         .into_iter()
-        .map(|row| PlaylistSidebarRowData {
-            title: row.title.into(),
-            is_current: row.is_current,
-        })
+        .map(|row| PlaylistSidebarRowData { title: row.title.into(), is_current: row.is_current })
         .collect::<Vec<_>>();
 
     let history_rows = crate::build_history_rows(runtime.history.store())
         .into_iter()
-        .map(|row| HistorySidebarRowData {
-            title: row.title.into(),
-            subtitle: row.subtitle.into(),
-        })
+        .map(|row| HistorySidebarRowData { title: row.title.into(), subtitle: row.subtitle.into() })
         .collect::<Vec<_>>();
 
     window.set_playlist_rows(model_from_vec(playlist_rows));
@@ -317,9 +312,7 @@ fn sync_history_from_snapshot(
     runtime.last_seen_locator = current.clone();
 
     if let (Some(locator), Some(title)) = (current.as_ref(), snapshot.title.as_ref()) {
-        runtime
-            .history
-            .remember_playback(locator, title, Some(snapshot.position_seconds));
+        runtime.history.remember_playback(locator, title, Some(snapshot.position_seconds));
     }
 
     if switched {
@@ -327,9 +320,7 @@ fn sync_history_from_snapshot(
     } else if snapshot.paused {
         runtime.history.flush_if_needed(now, crate::FlushReason::Pause)?;
     } else {
-        runtime
-            .history
-            .flush_if_needed(now, crate::FlushReason::PeriodicTick)?;
+        runtime.history.flush_if_needed(now, crate::FlushReason::PeriodicTick)?;
     }
 
     Ok(())
@@ -580,9 +571,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(Some(activation)) => {
                     let command = activation.command;
                     let pending_seek = activation.pending_seek;
-                    let dispatched = with_runtime_controller(&app_handle, &runtime, move |controller| {
-                        controller.dispatch(command)
-                    });
+                    let dispatched =
+                        with_runtime_controller(&app_handle, &runtime, move |controller| {
+                            controller.dispatch(command)
+                        });
                     if dispatched {
                         runtime.borrow_mut().pending_resume = pending_seek;
                     }
@@ -662,7 +654,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let history_snapshot = capture_history_snapshot(controller.session());
 
                         runtime.pending_resume = next_pending;
-                        if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot)
+                        if let Err(error) =
+                            sync_history_from_snapshot(&mut runtime, &history_snapshot)
                         {
                             app.set_status_label(error.to_string().into());
                         }
@@ -688,16 +681,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let mut runtime = runtime.borrow_mut();
-        if let Some(snapshot) = runtime
-            .controller()
-            .map(|controller| capture_history_snapshot(controller.session()))
+        if let Some(snapshot) =
+            runtime.controller().map(|controller| capture_history_snapshot(controller.session()))
         {
             let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
         }
         let shutdown_now = history_now(&runtime);
-        let _ = runtime
-            .history
-            .flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
+        let _ = runtime.history.flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
     }
 
     Ok(())

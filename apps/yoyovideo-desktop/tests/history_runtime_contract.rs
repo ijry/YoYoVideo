@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 use yoyo_core::{HistoryEntry, HistoryStore, MediaLocator};
-use yoyovideo_desktop::{
-    FlushReason, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
-};
+use yoyovideo_desktop::{FlushReason, HistoryActivationError, HistoryRuntime, PendingResumeSeek};
 
 #[test]
 fn periodic_flush_is_throttled_to_two_seconds() {
@@ -18,21 +16,15 @@ fn periodic_flush_is_throttled_to_two_seconds() {
         "A",
         Some(10.0),
     );
-    assert!(runtime
-        .flush_if_needed(Duration::from_secs(0), FlushReason::PeriodicTick)
-        .unwrap());
+    assert!(runtime.flush_if_needed(Duration::from_secs(0), FlushReason::PeriodicTick).unwrap());
 
     runtime.remember_playback(
         &MediaLocator::Url("https://example.com/a.mp4".into()),
         "A",
         Some(12.0),
     );
-    assert!(!runtime
-        .flush_if_needed(Duration::from_secs(1), FlushReason::PeriodicTick)
-        .unwrap());
-    assert!(runtime
-        .flush_if_needed(Duration::from_secs(2), FlushReason::PeriodicTick)
-        .unwrap());
+    assert!(!runtime.flush_if_needed(Duration::from_secs(1), FlushReason::PeriodicTick).unwrap());
+    assert!(runtime.flush_if_needed(Duration::from_secs(2), FlushReason::PeriodicTick).unwrap());
 }
 
 #[test]
@@ -46,18 +38,14 @@ fn pause_flush_bypasses_the_periodic_throttle_window() {
         "A",
         Some(10.0),
     );
-    runtime
-        .flush_if_needed(Duration::from_secs(0), FlushReason::PeriodicTick)
-        .unwrap();
+    runtime.flush_if_needed(Duration::from_secs(0), FlushReason::PeriodicTick).unwrap();
 
     runtime.remember_playback(
         &MediaLocator::Url("https://example.com/a.mp4".into()),
         "A",
         Some(11.0),
     );
-    assert!(runtime
-        .flush_if_needed(Duration::from_secs(1), FlushReason::Pause)
-        .unwrap());
+    assert!(runtime.flush_if_needed(Duration::from_secs(1), FlushReason::Pause).unwrap());
 }
 
 #[test]

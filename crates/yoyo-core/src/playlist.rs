@@ -51,10 +51,7 @@ impl Playlist {
     }
 
     pub fn snapshot(&self) -> PlaylistSnapshot {
-        PlaylistSnapshot {
-            entries: self.entries.clone(),
-            current_index: self.current_index,
-        }
+        PlaylistSnapshot { entries: self.entries.clone(), current_index: self.current_index }
     }
 
     pub fn next(&mut self) -> Option<&PlaylistEntry> {

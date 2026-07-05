@@ -70,8 +70,5 @@ fn controller_can_open_a_specific_playlist_index() {
         controller.session().backend().opened.last(),
         Some(&MediaLocator::File("b.mp4".into()))
     );
-    assert_eq!(
-        controller.session().state().current,
-        Some(MediaLocator::File("b.mp4".into()))
-    );
+    assert_eq!(controller.session().state().current, Some(MediaLocator::File("b.mp4".into())));
 }

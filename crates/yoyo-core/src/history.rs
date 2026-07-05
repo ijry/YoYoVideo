@@ -36,14 +36,7 @@ impl HistoryStore {
             last_position_seconds.filter(|seconds| seconds.is_finite() && *seconds > 0.0);
 
         self.items.retain(|item| item.locator != locator);
-        self.items.insert(
-            0,
-            HistoryEntry {
-                locator,
-                title,
-                last_position_seconds,
-            },
-        );
+        self.items.insert(0, HistoryEntry { locator, title, last_position_seconds });
     }
 
     pub fn load(path: &Path) -> Result<Self, StorageError> {

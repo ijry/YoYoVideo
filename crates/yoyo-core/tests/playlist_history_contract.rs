@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use yoyo_core::{
-    AppCommand, AppConfig, AppSession, BackendCommand, BackendEvent, HistoryStore,
-    MediaLocator, PlayerBackend, PlaylistEntry,
+    AppCommand, AppConfig, AppSession, BackendCommand, BackendEvent, HistoryStore, MediaLocator,
+    PlayerBackend, PlaylistEntry,
 };
 
 #[derive(Default)]
@@ -40,21 +40,13 @@ fn open_file_replaces_playlist_with_a_single_entry_snapshot() {
         )
         .unwrap();
 
-    session
-        .handle_command(AppCommand::OpenFile(PathBuf::from("solo.mkv")))
-        .unwrap();
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("solo.mkv"))).unwrap();
 
     let snapshot = session.playlist_snapshot();
     assert_eq!(snapshot.current_index, Some(0));
     assert_eq!(snapshot.entries.len(), 1);
-    assert_eq!(
-        snapshot.entries[0].locator,
-        MediaLocator::File(PathBuf::from("solo.mkv"))
-    );
-    assert_eq!(
-        session.state().current,
-        Some(MediaLocator::File(PathBuf::from("solo.mkv")))
-    );
+    assert_eq!(snapshot.entries[0].locator, MediaLocator::File(PathBuf::from("solo.mkv")));
+    assert_eq!(session.state().current, Some(MediaLocator::File(PathBuf::from("solo.mkv"))));
 }
 
 #[test]
@@ -79,10 +71,7 @@ fn open_playlist_index_switches_to_the_requested_queue_entry() {
         session.backend().opened.last(),
         Some(&MediaLocator::File(PathBuf::from("gamma.mp4")))
     );
-    assert_eq!(
-        session.state().current,
-        Some(MediaLocator::File(PathBuf::from("gamma.mp4")))
-    );
+    assert_eq!(session.state().current, Some(MediaLocator::File(PathBuf::from("gamma.mp4"))));
 }
 
 #[test]
@@ -108,10 +97,7 @@ fn remember_moves_an_existing_locator_to_the_front() {
     assert_eq!(store.items().len(), 2);
     assert_eq!(store.items()[0].title, "First renamed");
     assert_eq!(store.items()[0].last_position_seconds, Some(99.0));
-    assert_eq!(
-        store.items()[0].locator,
-        MediaLocator::Url("https://example.com/first.mp4".into())
-    );
+    assert_eq!(store.items()[0].locator, MediaLocator::Url("https://example.com/first.mp4".into()));
 }
 
 #[test]

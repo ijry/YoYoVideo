@@ -88,8 +88,7 @@ impl HistoryRuntime {
                 && entry.last_position_seconds == normalized_position
         });
 
-        self.store
-            .remember(locator.clone(), title.to_string(), normalized_position);
+        self.store.remember(locator.clone(), title.to_string(), normalized_position);
         self.dirty |= !unchanged;
     }
 
@@ -127,9 +126,7 @@ impl HistoryRuntime {
         }
 
         if matches!(reason, FlushReason::PeriodicTick)
-            && self
-                .last_flush_at
-                .is_some_and(|last| now < last + Duration::from_secs(2))
+            && self.last_flush_at.is_some_and(|last| now < last + Duration::from_secs(2))
         {
             return Ok(false);
         }
