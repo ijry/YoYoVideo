@@ -30,6 +30,11 @@
 - Restart the app, open the `History` tab, and confirm recent items show resume metadata.
 - Click a history item and confirm playback resumes near the stored position.
 - Click a history item pointing to a removed file and confirm the app shows a clear error without crashing.
+- Open the dedicated settings window and confirm `Apply`, `OK`, and `Cancel` behave like a desktop dialog.
+- Change the play/pause shortcut in settings and confirm the new shortcut works immediately without restarting.
+- Attempt to bind the same shortcut to two different actions and confirm the save is blocked with a clear conflict message.
+- Disable playback history in settings, play a new media item, and confirm no new history entry is written.
+- Change default speed or default volume in settings, open new media, and confirm the new defaults apply without changing media that was already playing before the save.
 
 ## Package Artifacts
 
