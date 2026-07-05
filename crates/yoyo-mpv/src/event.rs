@@ -1,3 +1,4 @@
+use yoyo_core::MediaTrack;
 use yoyo_core::BackendEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8,6 +9,15 @@ pub enum MpvEvent {
     Speed(f32),
     Volume(u8),
     Rotation(i64),
+    Tracks {
+        audio: Vec<MediaTrack>,
+        subtitles: Vec<MediaTrack>,
+        video: Vec<MediaTrack>,
+    },
+    SubtitleVisible(bool),
+    SubtitleDelay(f64),
+    SubtitleScale(f32),
+    SubtitlePosition(u8),
     Warning(String),
     Error(String),
     EndFile,
@@ -24,6 +34,15 @@ pub fn map_event(event: MpvEvent) -> Option<BackendEvent> {
         MpvEvent::Rotation(90) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg90)),
         MpvEvent::Rotation(180) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg180)),
         MpvEvent::Rotation(270) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg270)),
+        MpvEvent::Tracks { audio, subtitles, video } => {
+            Some(BackendEvent::TracksChanged { audio, subtitles, video })
+        }
+        MpvEvent::SubtitleVisible(value) => Some(BackendEvent::SubtitleVisibilityChanged(value)),
+        MpvEvent::SubtitleDelay(value) => Some(BackendEvent::SubtitleDelayChanged(value)),
+        MpvEvent::SubtitleScale(value) => Some(BackendEvent::SubtitleScaleChanged(value)),
+        MpvEvent::SubtitlePosition(value) => {
+            Some(BackendEvent::SubtitleVerticalPositionChanged(value))
+        }
         MpvEvent::Rotation(other) => {
             Some(BackendEvent::Warning(format!("unsupported rotation reported by mpv: {other}")))
         }

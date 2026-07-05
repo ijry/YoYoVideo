@@ -193,6 +193,11 @@ impl MpvClient {
         self.observe_property(4, "speed", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE)?;
         self.observe_property(5, "volume", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE)?;
         self.observe_property(6, "video-rotate", libmpv_sys::mpv_format_MPV_FORMAT_INT64)?;
+        self.observe_property(7, "track-list", libmpv_sys::mpv_format_MPV_FORMAT_NODE)?;
+        self.observe_property(8, "sub-visibility", libmpv_sys::mpv_format_MPV_FORMAT_FLAG)?;
+        self.observe_property(9, "sub-delay", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE)?;
+        self.observe_property(10, "sub-scale", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE)?;
+        self.observe_property(11, "sub-pos", libmpv_sys::mpv_format_MPV_FORMAT_INT64)?;
         Ok(())
     }
 
@@ -484,6 +489,25 @@ fn decode_property_event(property: &libmpv_sys::mpv_event_property) -> Option<Mp
         ("video-rotate", libmpv_sys::mpv_format_MPV_FORMAT_INT64) => {
             let value = unsafe { *(property.data as *const i64) };
             Some(MpvEvent::Rotation(value))
+        }
+        ("track-list", libmpv_sys::mpv_format_MPV_FORMAT_NODE) => {
+            crate::track_list::decode_track_list_property(property)
+        }
+        ("sub-visibility", libmpv_sys::mpv_format_MPV_FORMAT_FLAG) => {
+            let value = unsafe { *(property.data as *const std::os::raw::c_int) };
+            Some(MpvEvent::SubtitleVisible(value != 0))
+        }
+        ("sub-delay", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE) => {
+            let value = unsafe { *(property.data as *const f64) };
+            Some(MpvEvent::SubtitleDelay(value))
+        }
+        ("sub-scale", libmpv_sys::mpv_format_MPV_FORMAT_DOUBLE) => {
+            let value = unsafe { *(property.data as *const f64) };
+            Some(MpvEvent::SubtitleScale(value as f32))
+        }
+        ("sub-pos", libmpv_sys::mpv_format_MPV_FORMAT_INT64) => {
+            let value = unsafe { *(property.data as *const i64) };
+            Some(MpvEvent::SubtitlePosition(value.clamp(0, 100) as u8))
         }
         _ => None,
     }

@@ -1,4 +1,4 @@
-use yoyo_core::BackendEvent;
+use yoyo_core::{BackendEvent, MediaTrack, MediaTrackKind};
 use yoyo_mpv::{MpvEvent, map_event};
 
 #[test]
@@ -24,5 +24,36 @@ fn warning_is_preserved() {
     assert_eq!(
         map_event(MpvEvent::Warning("rotation fallback".into())),
         Some(BackendEvent::Warning("rotation fallback".into()))
+    );
+}
+
+#[test]
+fn track_list_event_maps_to_backend_tracks_changed() {
+    let audio = vec![MediaTrack {
+        id: 2,
+        kind: MediaTrackKind::Audio,
+        title: Some("Japanese".into()),
+        language: Some("jpn".into()),
+        codec: Some("aac".into()),
+        source_path: None,
+        external: false,
+        selected: true,
+    }];
+
+    assert_eq!(
+        map_event(MpvEvent::Tracks { audio: audio.clone(), subtitles: vec![], video: vec![] }),
+        Some(BackendEvent::TracksChanged { audio, subtitles: vec![], video: vec![] })
+    );
+}
+
+#[test]
+fn subtitle_scale_and_position_events_are_preserved() {
+    assert_eq!(
+        map_event(MpvEvent::SubtitleScale(1.25)),
+        Some(BackendEvent::SubtitleScaleChanged(1.25))
+    );
+    assert_eq!(
+        map_event(MpvEvent::SubtitlePosition(90)),
+        Some(BackendEvent::SubtitleVerticalPositionChanged(90))
     );
 }

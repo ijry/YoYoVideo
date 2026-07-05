@@ -3,6 +3,7 @@ mod error;
 mod event;
 mod options;
 mod render;
+mod track_list;
 mod translate;
 
 pub use client::{DryRunMpvBackend, MpvActionSink, MpvBackend, MpvClient, execute_actions};

@@ -64,5 +64,31 @@ pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
             MpvAction::SetString { name: "ab-loop-a".into(), value: "no".into() },
             MpvAction::SetString { name: "ab-loop-b".into(), value: "no".into() },
         ],
+        BackendCommand::SelectAudioTrack(id) => {
+            vec![MpvAction::SetInt { name: "aid".into(), value: *id }]
+        }
+        BackendCommand::SelectSubtitleTrack(id) => {
+            vec![MpvAction::SetInt { name: "sid".into(), value: *id }]
+        }
+        BackendCommand::SelectVideoTrack(id) => {
+            vec![MpvAction::SetInt { name: "vid".into(), value: *id }]
+        }
+        BackendCommand::SetSubtitleVisible(visible) => {
+            vec![MpvAction::SetFlag { name: "sub-visibility".into(), value: *visible }]
+        }
+        BackendCommand::LoadExternalSubtitle(path) => vec![MpvAction::Command(vec![
+            "sub-add".into(),
+            path.display().to_string(),
+            "select".into(),
+        ])],
+        BackendCommand::SetSubtitleDelay(delay) => {
+            vec![MpvAction::SetDouble { name: "sub-delay".into(), value: *delay }]
+        }
+        BackendCommand::SetSubtitleScale(scale) => {
+            vec![MpvAction::SetDouble { name: "sub-scale".into(), value: f64::from(*scale) }]
+        }
+        BackendCommand::SetSubtitleVerticalPosition(position) => {
+            vec![MpvAction::SetInt { name: "sub-pos".into(), value: i64::from(*position) }]
+        }
     }
 }
