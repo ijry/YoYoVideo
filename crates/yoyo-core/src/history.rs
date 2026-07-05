@@ -18,6 +18,34 @@ pub struct HistoryStore {
 }
 
 impl HistoryStore {
+    pub fn items(&self) -> &[HistoryEntry] {
+        &self.items
+    }
+
+    pub fn entry(&self, index: usize) -> Option<&HistoryEntry> {
+        self.items.get(index)
+    }
+
+    pub fn remember(
+        &mut self,
+        locator: MediaLocator,
+        title: String,
+        last_position_seconds: Option<f64>,
+    ) {
+        let last_position_seconds =
+            last_position_seconds.filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+
+        self.items.retain(|item| item.locator != locator);
+        self.items.insert(
+            0,
+            HistoryEntry {
+                locator,
+                title,
+                last_position_seconds,
+            },
+        );
+    }
+
     pub fn load(path: &Path) -> Result<Self, StorageError> {
         if !path.exists() {
             return Ok(Self::default());

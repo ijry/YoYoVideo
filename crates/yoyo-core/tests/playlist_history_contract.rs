@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use yoyo_core::{
-    AppCommand, AppConfig, AppSession, BackendCommand, BackendEvent, MediaLocator, PlayerBackend,
-    PlaylistEntry,
+    AppCommand, AppConfig, AppSession, BackendCommand, BackendEvent, HistoryStore,
+    MediaLocator, PlayerBackend, PlaylistEntry,
 };
 
 #[derive(Default)]
@@ -83,4 +83,46 @@ fn open_playlist_index_switches_to_the_requested_queue_entry() {
         session.state().current,
         Some(MediaLocator::File(PathBuf::from("gamma.mp4")))
     );
+}
+
+#[test]
+fn remember_moves_an_existing_locator_to_the_front() {
+    let mut store = HistoryStore::default();
+
+    store.remember(
+        MediaLocator::Url("https://example.com/first.mp4".into()),
+        "First".into(),
+        Some(12.0),
+    );
+    store.remember(
+        MediaLocator::Url("https://example.com/second.mp4".into()),
+        "Second".into(),
+        Some(48.0),
+    );
+    store.remember(
+        MediaLocator::Url("https://example.com/first.mp4".into()),
+        "First renamed".into(),
+        Some(99.0),
+    );
+
+    assert_eq!(store.items().len(), 2);
+    assert_eq!(store.items()[0].title, "First renamed");
+    assert_eq!(store.items()[0].last_position_seconds, Some(99.0));
+    assert_eq!(
+        store.items()[0].locator,
+        MediaLocator::Url("https://example.com/first.mp4".into())
+    );
+}
+
+#[test]
+fn history_entry_lookup_is_bounds_checked() {
+    let mut store = HistoryStore::default();
+    store.remember(
+        MediaLocator::Url("https://example.com/video.mp4".into()),
+        "Video".into(),
+        Some(35.0),
+    );
+
+    assert!(store.entry(0).is_some());
+    assert!(store.entry(5).is_none());
 }
