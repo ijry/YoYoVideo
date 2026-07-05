@@ -8,6 +8,7 @@ default = []
 mpv-runtime = ["dep:i-slint-backend-winit", "dep:raw-window-handle", "yoyo-mpv/mpv-runtime"]
 
 [dependencies]
+chrono = "0.4.45"
 directories = "6.0.0"
 i-slint-backend-winit = { version = "1.17.0", optional = true }
 raw-window-handle = { version = "0.6.2", optional = true }
