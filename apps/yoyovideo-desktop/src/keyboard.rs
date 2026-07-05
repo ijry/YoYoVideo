@@ -1,35 +1,64 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesktopKey {
+pub enum NamedDesktopKey {
     Space,
     Left,
     Right,
     Up,
     Down,
-    LeftBracket,
-    RightBracket,
-    Digit0,
-    A,
-    B,
-    R,
-    Z,
-    X,
-    C,
-    F,
-    O,
-    U,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopKey {
+    Named(NamedDesktopKey),
+    Character(char),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyboardInput {
     pub key: DesktopKey,
     pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
     pub repeat: bool,
     pub pressed: bool,
 }
 
 impl KeyboardInput {
-    pub fn pressed(key: DesktopKey) -> Self {
-        Self { key, ctrl: false, repeat: false, pressed: true }
+    pub fn named(key: NamedDesktopKey) -> Self {
+        Self {
+            key: DesktopKey::Named(key),
+            ctrl: false,
+            alt: false,
+            shift: false,
+            repeat: false,
+            pressed: true,
+        }
+    }
+
+    pub fn character(key: char) -> Self {
+        Self {
+            key: DesktopKey::Character(key),
+            ctrl: false,
+            alt: false,
+            shift: false,
+            repeat: false,
+            pressed: true,
+        }
+    }
+
+    pub fn with_ctrl(mut self) -> Self {
+        self.ctrl = true;
+        self
+    }
+
+    pub fn with_alt(mut self) -> Self {
+        self.alt = true;
+        self
+    }
+
+    pub fn with_shift(mut self) -> Self {
+        self.shift = true;
+        self
     }
 }
 
@@ -37,32 +66,43 @@ pub fn shortcut_allowed(url_focused: bool) -> bool {
     !url_focused
 }
 
-pub fn shortcut_gesture(input: KeyboardInput) -> Option<&'static str> {
+fn normalized_key_name(key: DesktopKey) -> Option<String> {
+    match key {
+        DesktopKey::Named(NamedDesktopKey::Space) => Some("Space".to_string()),
+        DesktopKey::Named(NamedDesktopKey::Left) => Some("Left".to_string()),
+        DesktopKey::Named(NamedDesktopKey::Right) => Some("Right".to_string()),
+        DesktopKey::Named(NamedDesktopKey::Up) => Some("Up".to_string()),
+        DesktopKey::Named(NamedDesktopKey::Down) => Some("Down".to_string()),
+        DesktopKey::Character(ch) if !ch.is_control() => {
+            let normalized = if ch.is_ascii_alphabetic() {
+                ch.to_ascii_uppercase()
+            } else {
+                ch
+            };
+            Some(normalized.to_string())
+        }
+        _ => None,
+    }
+}
+
+pub fn shortcut_gesture(input: KeyboardInput) -> Option<String> {
     if !input.pressed {
         return None;
     }
 
-    match (input.key, input.ctrl) {
-        (DesktopKey::Space, false) => Some("Space"),
-        (DesktopKey::Left, false) => Some("Left"),
-        (DesktopKey::Right, false) => Some("Right"),
-        (DesktopKey::Up, false) => Some("Up"),
-        (DesktopKey::Down, false) => Some("Down"),
-        (DesktopKey::LeftBracket, false) => Some("["),
-        (DesktopKey::RightBracket, false) => Some("]"),
-        (DesktopKey::Digit0, false) => Some("0"),
-        (DesktopKey::A, false) => Some("A"),
-        (DesktopKey::B, false) => Some("B"),
-        (DesktopKey::A, true) => Some("Ctrl+A"),
-        (DesktopKey::R, false) => Some("R"),
-        (DesktopKey::Z, false) => Some("Z"),
-        (DesktopKey::X, false) => Some("X"),
-        (DesktopKey::C, false) => Some("C"),
-        (DesktopKey::F, false) => Some("F"),
-        (DesktopKey::O, false) => Some("O"),
-        (DesktopKey::U, false) => Some("U"),
-        _ => None,
+    let key = normalized_key_name(input.key)?;
+    let mut parts = Vec::new();
+    if input.ctrl {
+        parts.push("Ctrl".to_string());
     }
+    if input.alt {
+        parts.push("Alt".to_string());
+    }
+    if input.shift {
+        parts.push("Shift".to_string());
+    }
+    parts.push(key);
+    Some(parts.join("+"))
 }
 
 pub mod winit_adapter {
@@ -71,7 +111,7 @@ pub mod winit_adapter {
         keyboard::{Key, ModifiersState, NamedKey},
     };
 
-    use super::{DesktopKey, KeyboardInput};
+    use super::{DesktopKey, KeyboardInput, NamedDesktopKey};
 
     #[derive(Debug, Default, Clone, Copy)]
     pub struct WinitKeyboardState {
@@ -92,29 +132,27 @@ pub mod winit_adapter {
 
         fn map_key_event(&self, event: &KeyEvent) -> Option<KeyboardInput> {
             let key = match &event.logical_key {
-                Key::Named(NamedKey::Space) => DesktopKey::Space,
-                Key::Named(NamedKey::ArrowLeft) => DesktopKey::Left,
-                Key::Named(NamedKey::ArrowRight) => DesktopKey::Right,
-                Key::Named(NamedKey::ArrowUp) => DesktopKey::Up,
-                Key::Named(NamedKey::ArrowDown) => DesktopKey::Down,
-                Key::Character(value) if value == "[" => DesktopKey::LeftBracket,
-                Key::Character(value) if value == "]" => DesktopKey::RightBracket,
-                Key::Character(value) if value == "0" => DesktopKey::Digit0,
-                Key::Character(value) if value.eq_ignore_ascii_case("a") => DesktopKey::A,
-                Key::Character(value) if value.eq_ignore_ascii_case("b") => DesktopKey::B,
-                Key::Character(value) if value.eq_ignore_ascii_case("r") => DesktopKey::R,
-                Key::Character(value) if value.eq_ignore_ascii_case("z") => DesktopKey::Z,
-                Key::Character(value) if value.eq_ignore_ascii_case("x") => DesktopKey::X,
-                Key::Character(value) if value.eq_ignore_ascii_case("c") => DesktopKey::C,
-                Key::Character(value) if value.eq_ignore_ascii_case("f") => DesktopKey::F,
-                Key::Character(value) if value.eq_ignore_ascii_case("o") => DesktopKey::O,
-                Key::Character(value) if value.eq_ignore_ascii_case("u") => DesktopKey::U,
+                Key::Named(NamedKey::Space) => DesktopKey::Named(NamedDesktopKey::Space),
+                Key::Named(NamedKey::ArrowLeft) => DesktopKey::Named(NamedDesktopKey::Left),
+                Key::Named(NamedKey::ArrowRight) => DesktopKey::Named(NamedDesktopKey::Right),
+                Key::Named(NamedKey::ArrowUp) => DesktopKey::Named(NamedDesktopKey::Up),
+                Key::Named(NamedKey::ArrowDown) => DesktopKey::Named(NamedDesktopKey::Down),
+                Key::Character(value) => {
+                    let mut chars = value.chars();
+                    let ch = chars.next()?;
+                    if chars.next().is_some() {
+                        return None;
+                    }
+                    DesktopKey::Character(ch)
+                }
                 _ => return None,
             };
 
             Some(KeyboardInput {
                 key,
                 ctrl: self.modifiers.control_key(),
+                alt: self.modifiers.alt_key(),
+                shift: self.modifiers.shift_key(),
                 repeat: event.repeat,
                 pressed: event.state == ElementState::Pressed,
             })

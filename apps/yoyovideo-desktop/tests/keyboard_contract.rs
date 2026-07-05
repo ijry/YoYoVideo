@@ -1,35 +1,41 @@
-use yoyovideo_desktop::{DesktopKey, KeyboardInput, shortcut_allowed, shortcut_gesture};
+use yoyovideo_desktop::{
+    KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture,
+};
 
 #[test]
-fn keyboard_input_maps_to_existing_shortcut_gestures() {
-    assert_eq!(shortcut_gesture(KeyboardInput::pressed(DesktopKey::Space)), Some("Space"));
-    assert_eq!(shortcut_gesture(KeyboardInput::pressed(DesktopKey::Right)), Some("Right"));
+fn keyboard_input_normalizes_named_and_character_shortcuts() {
     assert_eq!(
-        shortcut_gesture(KeyboardInput {
-            key: DesktopKey::A,
-            ctrl: true,
-            repeat: false,
-            pressed: true,
-        }),
-        Some("Ctrl+A")
+        shortcut_gesture(KeyboardInput::named(NamedDesktopKey::Space)),
+        Some("Space".to_string())
+    );
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::named(NamedDesktopKey::Right)),
+        Some("Right".to_string())
+    );
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::character('p').with_ctrl()),
+        Some("Ctrl+P".to_string())
+    );
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::character('u').with_ctrl().with_shift()),
+        Some("Ctrl+Shift+U".to_string())
+    );
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::character('[')),
+        Some("[".to_string())
     );
 }
 
 #[test]
 fn key_release_is_ignored() {
-    assert_eq!(
-        shortcut_gesture(KeyboardInput {
-            key: DesktopKey::Space,
-            ctrl: false,
-            repeat: false,
-            pressed: false,
-        }),
-        None
-    );
+    let mut input = KeyboardInput::named(NamedDesktopKey::Space);
+    input.pressed = false;
+
+    assert_eq!(shortcut_gesture(input), None);
 }
 
 #[test]
-fn url_focus_suppresses_player_shortcuts() {
+fn url_focus_still_suppresses_player_shortcuts() {
     assert!(shortcut_allowed(false));
     assert!(!shortcut_allowed(true));
 }

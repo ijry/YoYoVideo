@@ -621,7 +621,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             with_runtime_controller(&app_handle, &runtime, move |controller| {
-                controller.dispatch_shortcut(gesture)
+                controller.dispatch_shortcut(gesture.as_str())
             });
             slint::winit_030::EventResult::PreventDefault
         }
