@@ -15,14 +15,18 @@ pub fn format_speed_label(state: &PlayerState) -> String {
 
 pub fn format_time_label(state: &PlayerState) -> String {
     match state.duration_seconds {
-        Some(duration) => format!("{} / {}", fmt_clock(state.position_seconds), fmt_clock(duration)),
+        Some(duration) => {
+            format!("{} / {}", fmt_clock(state.position_seconds), fmt_clock(duration))
+        }
         None => format!("{} / --:--", fmt_clock(state.position_seconds)),
     }
 }
 
 pub fn progress_ratio(state: &PlayerState) -> f32 {
     match state.duration_seconds {
-        Some(duration) if duration > 0.0 => (state.position_seconds / duration).clamp(0.0, 1.0) as f32,
+        Some(duration) if duration > 0.0 => {
+            (state.position_seconds / duration).clamp(0.0, 1.0) as f32
+        }
         _ => 0.0,
     }
 }

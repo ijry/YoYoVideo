@@ -1,8 +1,8 @@
 use yoyo_core::{BackendCommand, BackendEvent, MediaLocator, PlayerBackend};
 
 use crate::{
-    MpvAction, MpvClientOptions, MpvError, MpvEvent, MpvRenderBridge, map_event,
-    translate_command, translate_open,
+    MpvAction, MpvClientOptions, MpvError, MpvEvent, MpvRenderBridge, map_event, translate_command,
+    translate_open,
 };
 
 pub trait MpvActionSink {

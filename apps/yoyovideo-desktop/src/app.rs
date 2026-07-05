@@ -7,17 +7,15 @@ use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, E
 use slint::winit_030::WinitWindowAccessor;
 #[cfg(feature = "mpv-runtime")]
 use yoyo_core::AppConfig;
-use yoyo_core::{
-    AppCommand, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
-};
+use yoyo_core::{AppCommand, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap};
 use yoyo_mpv::{MpvBackend, MpvError};
 
+use crate::NativeVideoWindowId;
+#[cfg(feature = "mpv-runtime")]
+use crate::VideoHost;
 use crate::platform::{DialogService, RfdDialogService, scan_media_folder};
 #[cfg(feature = "mpv-runtime")]
 use crate::video_host_winit::WinitVideoHost;
-#[cfg(feature = "mpv-runtime")]
-use crate::VideoHost;
-use crate::NativeVideoWindowId;
 use crate::video_texture::VideoTexture;
 
 slint::include_modules!();
@@ -159,7 +157,11 @@ impl DesktopRuntime {
     }
 
     #[cfg(feature = "mpv-runtime")]
-    fn set_runtime(&mut self, controller: DesktopController<MpvBackend>, video_host: WinitVideoHost) {
+    fn set_runtime(
+        &mut self,
+        controller: DesktopController<MpvBackend>,
+        video_host: WinitVideoHost,
+    ) {
         self.controller = Some(controller);
         self.video_host = Some(video_host);
         self.video_host_error = None;
@@ -411,8 +413,9 @@ fn command_callback(
 fn apply_fullscreen_state(app: &MainWindow, state: &PlayerState) {
     app.window().with_winit_window(|winit_window| {
         if state.fullscreen {
-            winit_window
-                .set_fullscreen(Some(slint::winit_030::winit::window::Fullscreen::Borderless(None)));
+            winit_window.set_fullscreen(Some(
+                slint::winit_030::winit::window::Fullscreen::Borderless(None),
+            ));
         } else {
             winit_window.set_fullscreen(None);
         }
@@ -445,7 +448,9 @@ fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
     if runtime.video_host.is_none() {
         return;
     }
-    let Some(scale_factor) = window.window().with_winit_window(|winit_window| winit_window.scale_factor()) else {
+    let Some(scale_factor) =
+        window.window().with_winit_window(|winit_window| winit_window.scale_factor())
+    else {
         return;
     };
 
@@ -508,11 +513,11 @@ impl DesktopWinitHandler {
         }
 
         let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
-            let video_host =
-                WinitVideoHost::new_child(event_loop, parent_window).map_err(|error| error.to_string())?;
+            let video_host = WinitVideoHost::new_child(event_loop, parent_window)
+                .map_err(|error| error.to_string())?;
             let window_id = video_host.mpv_window_id().map_err(|error| error.to_string())?;
-            let backend =
-                build_desktop_backend_with_video_window(window_id).map_err(|error| error.to_string())?;
+            let backend = build_desktop_backend_with_video_window(window_id)
+                .map_err(|error| error.to_string())?;
             let session = AppSession::new(AppConfig::default(), backend);
             Ok((DesktopController::new(session), video_host))
         })();

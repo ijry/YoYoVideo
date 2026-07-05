@@ -4,10 +4,7 @@ use yoyovideo_desktop::{LogicalVideoRect, UnsupportedVideoHost, VideoHost, Video
 fn logical_rect_converts_to_physical_bounds() {
     let rect = LogicalVideoRect { x: 10.0, y: 20.0, width: 300.0, height: 200.0 };
 
-    assert_eq!(
-        rect.to_physical(1.5),
-        VideoHostBounds { x: 15, y: 30, width: 450, height: 300 }
-    );
+    assert_eq!(rect.to_physical(1.5), VideoHostBounds { x: 15, y: 30, width: 450, height: 300 });
 }
 
 #[test]

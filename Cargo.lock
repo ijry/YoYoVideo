@@ -6009,6 +6009,8 @@ name = "yoyovideo-desktop"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "i-slint-backend-winit",
+ "raw-window-handle",
  "rfd",
  "slint",
  "slint-build",
