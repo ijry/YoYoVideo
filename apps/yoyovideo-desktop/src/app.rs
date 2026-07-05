@@ -20,6 +20,13 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
     window.set_transport_label(crate::format_transport_label(state).into());
     window.set_speed_label(crate::format_speed_label(state).into());
     window.set_time_label(crate::format_time_label(state).into());
+    window.set_volume_label(crate::format_volume_label(state).into());
+    window.set_rotation_label(crate::format_rotation_label(state).into());
+    window.set_audio_channel_label(crate::format_audio_channel_label(state).into());
+    window.set_zoom_label(crate::format_zoom_label(state).into());
+    window.set_loop_label(crate::format_loop_label(state).into());
+    window.set_progress_value(crate::progress_ratio(state));
+    window.set_volume_value(i32::from(state.volume_percent));
     window.set_status_label(
         state
             .last_error
@@ -188,12 +195,44 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    app.on_reset_speed_requested(command_callback(&app, &controller, AppCommand::ResetSpeed));
+    app.on_seek_percent_requested({
+        let app_handle = app.as_weak();
+        let controller = Rc::clone(&controller);
+        move |percent| {
+            let mut controller = controller.borrow_mut();
+            let duration = controller.session().state().duration_seconds;
+            if let Some(duration) = duration {
+                let position = duration * f64::from(percent.clamp(0.0, 1.0));
+                if controller.dispatch(AppCommand::SeekAbsolute(position)).is_ok() {
+                    if let Some(app) = app_handle.upgrade() {
+                        refresh_window(&app, controller.session().state());
+                    }
+                }
+            }
+        }
+    });
+    app.on_volume_changed({
+        let app_handle = app.as_weak();
+        let controller = Rc::clone(&controller);
+        move |volume| {
+            let mut controller = controller.borrow_mut();
+            let volume = volume.clamp(0, 100) as u8;
+            if controller.dispatch(AppCommand::SetVolume(volume)).is_ok() {
+                if let Some(app) = app_handle.upgrade() {
+                    refresh_window(&app, controller.session().state());
+                }
+            }
+        }
+    });
     app.on_rotate_requested(command_callback(&app, &controller, AppCommand::RotateClockwise));
     app.on_cycle_audio_requested(command_callback(
         &app,
         &controller,
         AppCommand::CycleAudioChannel,
     ));
+    app.on_zoom_in_requested(command_callback(&app, &controller, AppCommand::ZoomIn));
+    app.on_zoom_out_requested(command_callback(&app, &controller, AppCommand::ZoomOut));
     app.on_set_ab_point_a_requested(command_callback(
         &app,
         &controller,

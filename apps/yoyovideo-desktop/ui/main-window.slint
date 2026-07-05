@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, VerticalBox, LineEdit } from "std-widgets.slint";
+import { Button, HorizontalBox, VerticalBox, LineEdit, Slider } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
     title: "YoYoVideo";
@@ -9,6 +9,19 @@ export component MainWindow inherits Window {
     in-out property <string> speed_label: "1.00x";
     in-out property <string> time_label: "00:00 / --:--";
     in-out property <string> status_label: "";
+    in-out property <string> volume_label: "Vol 100%";
+    in-out property <string> rotation_label: "0 deg";
+    in-out property <string> audio_channel_label: "Stereo";
+    in-out property <string> zoom_label: "Zoom 0";
+    in-out property <string> loop_label: "A --:-- / B --:--";
+    in-out property <float> progress_value: 0;
+    in-out property <int> volume_value: 100;
+    out property <bool> url_focused: url_input.has-focus;
+
+    out property <length> video_area_x: video_area.x;
+    out property <length> video_area_y: video_area.y;
+    out property <length> video_area_width: video_area.width;
+    out property <length> video_area_height: video_area.height;
 
     callback open_file_requested();
     callback open_folder_requested();
@@ -16,18 +29,23 @@ export component MainWindow inherits Window {
     callback toggle_pause_requested();
     callback speed_down_requested();
     callback speed_up_requested();
+    callback reset_speed_requested();
     callback rotate_requested();
     callback cycle_audio_requested();
     callback set_ab_point_a_requested();
     callback set_ab_point_b_requested();
     callback clear_ab_loop_requested();
+    callback seek_percent_requested(float);
+    callback volume_changed(int);
+    callback zoom_in_requested();
+    callback zoom_out_requested();
     callback toggle_fullscreen_requested();
     callback settings_requested();
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
-        width: 220px;
-        height: 420px;
+        width: 230px;
+        height: 500px;
 
         VerticalBox {
             spacing: 4px;
@@ -36,6 +54,9 @@ export component MainWindow inherits Window {
             Button { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
             Button { text: "Speed -"; clicked => { root.speed_down_requested(); menu_popup.close(); } }
             Button { text: "Speed +"; clicked => { root.speed_up_requested(); menu_popup.close(); } }
+            Button { text: "Speed 1x"; clicked => { root.reset_speed_requested(); menu_popup.close(); } }
+            Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); menu_popup.close(); } }
+            Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); menu_popup.close(); } }
             Button { text: "Rotate"; clicked => { root.rotate_requested(); menu_popup.close(); } }
             Button { text: "Audio Channel"; clicked => { root.cycle_audio_requested(); menu_popup.close(); } }
             Button { text: "Set A"; clicked => { root.set_ab_point_a_requested(); menu_popup.close(); } }
@@ -48,23 +69,73 @@ export component MainWindow inherits Window {
 
     VerticalBox {
         spacing: 8px;
-        Rectangle {
-            background: #101214;
+        padding: 10px;
+
+        video_area := Rectangle {
+            background: #090b0d;
+            border-color: #22272d;
+            border-width: 1px;
             border-radius: 8px;
-            min-height: 620px;
-        }
-        HorizontalBox {
-            spacing: 8px;
-            Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
-            Button { text: "Open"; clicked => { root.open_file_requested(); } }
-            Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
-            Button { text: "Menu"; clicked => { menu_popup.show(); } }
-            LineEdit {
-                accepted => { root.open_url_requested(self.text); }
+            min-height: 560px;
+
+            Text {
+                text: status_label == "" ? "Video host initializing..." : status_label;
+                color: #7d8790;
+                horizontal-alignment: center;
+                vertical-alignment: center;
             }
-            Text { text: time_label; }
-            Text { text: speed_label; }
-            Text { text: status_label; }
+        }
+
+        VerticalBox {
+            spacing: 6px;
+
+            Slider {
+                minimum: 0;
+                maximum: 1;
+                value: progress_value;
+                changed(value) => { root.seek_percent_requested(value); }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
+                Button { text: "Open"; clicked => { root.open_file_requested(); } }
+                Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
+                Button { text: "Menu"; clicked => { menu_popup.show(); } }
+                url_input := LineEdit {
+                    placeholder-text: "Open URL";
+                    accepted => { root.open_url_requested(self.text); }
+                }
+                Text { text: time_label; }
+                Text { text: speed_label; }
+                Button { text: "-"; clicked => { root.speed_down_requested(); } }
+                Button { text: "+"; clicked => { root.speed_up_requested(); } }
+                Button { text: "1x"; clicked => { root.reset_speed_requested(); } }
+                Text { text: volume_label; }
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value: volume_value;
+                    changed(value) => { root.volume_changed(value); }
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
+                Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
+                Text { text: zoom_label; }
+                Button { text: "Rotate"; clicked => { root.rotate_requested(); } }
+                Text { text: rotation_label; }
+                Button { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
+                Text { text: audio_channel_label; }
+                Button { text: "A"; clicked => { root.set_ab_point_a_requested(); } }
+                Button { text: "B"; clicked => { root.set_ab_point_b_requested(); } }
+                Button { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
+                Text { text: loop_label; }
+                Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); } }
+                Text { text: status_label; color: #7d8790; }
+            }
         }
     }
 }
