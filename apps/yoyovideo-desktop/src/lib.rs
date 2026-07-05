@@ -24,7 +24,7 @@ pub use presenter::{
     format_time_label, format_transport_label, format_volume_label, format_zoom_label,
     progress_ratio,
 };
-pub use settings_controller::SettingsController;
+pub use settings_controller::{SettingsController, SettingsShortcutRow, SettingsSnapshot};
 pub use sidebar::{
     HistorySidebarRow, PlaylistSidebarRow, SidebarState, SidebarTab, build_history_rows,
     build_playlist_rows, expanded_sidebar_width, initial_sidebar_state,
