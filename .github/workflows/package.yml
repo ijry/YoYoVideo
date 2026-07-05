@@ -11,7 +11,8 @@ jobs:
     name: Package Windows x64
     runs-on: windows-latest
     env:
-      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_SHA256: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -19,17 +20,25 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download maintainer runtime archive
-        if: env.RUNTIME_ARCHIVE_URL != ''
+      - name: Validate runtime manifest
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force third_party/mpv/windows-x64 | Out-Null
-          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-windows-x64.zip
-          Expand-Archive -Path runtime-windows-x64.zip -DestinationPath third_party/mpv/windows-x64 -Force
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -DryRun
+
+      - name: Bootstrap runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -Force
 
       - name: Build package
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime -ReleaseMode -ReleaseVersion $env:GITHUB_REF_NAME
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y
+
+      - name: Build installer
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64 -OutputPath dist/YoYoVideo-windows-x64-setup.exe -Version $env:GITHUB_REF_NAME
 
       - name: Upload package archive
         uses: actions/upload-artifact@v7
@@ -38,11 +47,19 @@ jobs:
           path: dist/YoYoVideo-windows-x64.zip
           if-no-files-found: error
 
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: YoYoVideo-windows-x64-setup
+          path: dist/YoYoVideo-windows-x64-setup.exe
+          if-no-files-found: error
+
   package-macos:
     name: Package macOS universal
     runs-on: macos-latest
     env:
-      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_SHA256: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -50,17 +67,17 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download maintainer runtime archive
-        if: env.RUNTIME_ARCHIVE_URL != ''
+      - name: Validate runtime manifest
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force third_party/mpv/macos-universal | Out-Null
-          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-macos-universal.zip
-          Expand-Archive -Path runtime-macos-universal.zip -DestinationPath third_party/mpv/macos-universal -Force
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform macos-universal -DryRun
+
+      - name: Bootstrap runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform macos-universal -Force
 
       - name: Build package
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime -ReleaseMode -ReleaseVersion $env:GITHUB_REF_NAME
 
       - name: Upload package archive
         uses: actions/upload-artifact@v7
@@ -73,7 +90,8 @@ jobs:
     name: Package Linux x64
     runs-on: ubuntu-latest
     env:
-      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL }}
+      YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_SHA256: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -81,17 +99,17 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download maintainer runtime archive
-        if: env.RUNTIME_ARCHIVE_URL != ''
+      - name: Validate runtime manifest
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force third_party/mpv/linux-x64 | Out-Null
-          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-linux-x64.zip
-          Expand-Archive -Path runtime-linux-x64.zip -DestinationPath third_party/mpv/linux-x64 -Force
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform linux-x64 -DryRun
+
+      - name: Bootstrap runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform linux-x64 -Force
 
       - name: Build package
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime -ReleaseMode -ReleaseVersion $env:GITHUB_REF_NAME
 
       - name: Upload package archive
         uses: actions/upload-artifact@v7
