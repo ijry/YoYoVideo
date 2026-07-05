@@ -8,9 +8,12 @@
 
 ## Playback
 
+- Build and run `cargo run -p yoyovideo-desktop --features mpv-runtime`.
+- Confirm startup fails clearly if libmpv link/runtime files are unavailable.
 - Open a local video file and confirm play/pause works.
 - Open a URL and confirm network playback attempts begin.
 - Verify speed, volume, rotation, zoom, audio channel switching, and A-B repeat.
+- Open a folder and confirm EOF advances to the next playlist item.
 - Confirm hardware acceleration falls back to software decoding without exiting the app.
 
 ## UX

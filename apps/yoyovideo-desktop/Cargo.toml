@@ -3,6 +3,10 @@ name = "yoyovideo-desktop"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+mpv-runtime = ["yoyo-mpv/mpv-runtime"]
+
 [dependencies]
 directories = "6.0.0"
 rfd = "0.17.2"

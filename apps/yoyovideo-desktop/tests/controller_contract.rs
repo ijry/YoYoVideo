@@ -32,3 +32,20 @@ fn controller_forward_toggle_pause_to_session() {
 
     assert_eq!(controller.session().backend().commands, vec![BackendCommand::SetPaused(false)]);
 }
+
+#[test]
+fn controller_open_url_updates_current_media() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut controller = DesktopController::new(session);
+
+    controller.dispatch(AppCommand::OpenUrl("https://example.com/live.m3u8".into())).unwrap();
+
+    assert_eq!(
+        controller.session().backend().opened,
+        vec![MediaLocator::Url("https://example.com/live.m3u8".into())]
+    );
+    assert_eq!(
+        controller.session().state().current,
+        Some(MediaLocator::Url("https://example.com/live.m3u8".into()))
+    );
+}
