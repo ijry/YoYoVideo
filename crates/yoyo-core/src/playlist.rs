@@ -15,6 +15,12 @@ impl PlaylistEntry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaylistSnapshot {
+    pub entries: Vec<PlaylistEntry>,
+    pub current_index: Option<usize>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Playlist {
     pub entries: Vec<PlaylistEntry>,
@@ -24,11 +30,31 @@ pub struct Playlist {
 impl Playlist {
     pub fn replace(&mut self, entries: Vec<PlaylistEntry>, start_index: usize) {
         self.entries = entries;
-        self.current_index = (!self.entries.is_empty()).then_some(start_index);
+        self.current_index = if self.entries.is_empty() {
+            None
+        } else {
+            Some(start_index.min(self.entries.len() - 1))
+        };
     }
 
     pub fn current(&self) -> Option<&PlaylistEntry> {
         self.current_index.and_then(|index| self.entries.get(index))
+    }
+
+    pub fn select(&mut self, index: usize) -> Option<&PlaylistEntry> {
+        if index >= self.entries.len() {
+            return None;
+        }
+
+        self.current_index = Some(index);
+        self.entries.get(index)
+    }
+
+    pub fn snapshot(&self) -> PlaylistSnapshot {
+        PlaylistSnapshot {
+            entries: self.entries.clone(),
+            current_index: self.current_index,
+        }
     }
 
     pub fn next(&mut self) -> Option<&PlaylistEntry> {

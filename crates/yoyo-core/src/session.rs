@@ -1,6 +1,6 @@
 use crate::{
     AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, MediaLocator,
-    PlayerBackend, PlayerState, Playlist, PlaylistEntry, Rotation,
+    PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
 };
 
 pub struct AppSession<B: PlayerBackend> {
@@ -30,6 +30,10 @@ impl<B: PlayerBackend> AppSession<B> {
         &mut self.backend
     }
 
+    pub fn playlist_snapshot(&self) -> PlaylistSnapshot {
+        self.playlist.snapshot()
+    }
+
     pub fn replace_playlist(
         &mut self,
         entries: Vec<PlaylistEntry>,
@@ -44,19 +48,45 @@ impl<B: PlayerBackend> AppSession<B> {
         Ok(())
     }
 
+    pub fn open_playlist_index(&mut self, index: usize) -> Result<(), AppError> {
+        let Some(entry) = self.playlist.select(index).cloned() else {
+            return Ok(());
+        };
+
+        self.backend.open(&entry.locator).map_err(AppError::Message)?;
+        self.state.current = Some(entry.locator.clone());
+        self.state.paused = false;
+        Ok(())
+    }
+
+    fn open_single_locator(&mut self, locator: MediaLocator) -> Result<(), AppError> {
+        let entry = PlaylistEntry::new(locator.clone());
+        self.playlist.replace(vec![entry.clone()], 0);
+        self.backend.open(&entry.locator).map_err(AppError::Message)?;
+        self.state.current = Some(locator);
+        self.state.paused = false;
+        Ok(())
+    }
+
+    fn next_playlist_index(&self) -> Option<usize> {
+        self.playlist.current_index.and_then(|current| {
+            let next = current.saturating_add(1);
+            (next < self.playlist.entries.len()).then_some(next)
+        })
+    }
+
+    fn previous_playlist_index(&self) -> Option<usize> {
+        self.playlist.current_index.and_then(|current| current.checked_sub(1))
+    }
+
     pub fn handle_command(&mut self, command: AppCommand) -> Result<(), AppError> {
         match command {
             AppCommand::OpenFile(path) => {
-                let locator = MediaLocator::File(path);
-                self.backend.open(&locator).map_err(AppError::Message)?;
-                self.state.current = Some(locator);
-                self.state.paused = false;
+                self.open_single_locator(MediaLocator::File(path))?;
             }
             AppCommand::OpenUrl(url) => {
                 let locator = MediaLocator::from_url(&url)?;
-                self.backend.open(&locator).map_err(AppError::Message)?;
-                self.state.current = Some(locator);
-                self.state.paused = false;
+                self.open_single_locator(locator)?;
             }
             AppCommand::TogglePause => {
                 self.state.paused = !self.state.paused;
@@ -142,15 +172,13 @@ impl<B: PlayerBackend> AppSession<B> {
                 self.state.fullscreen = !self.state.fullscreen;
             }
             AppCommand::NextItem => {
-                if let Some(entry) = self.playlist.next() {
-                    self.backend.open(&entry.locator).map_err(AppError::Message)?;
-                    self.state.current = Some(entry.locator.clone());
+                if let Some(index) = self.next_playlist_index() {
+                    self.open_playlist_index(index)?;
                 }
             }
             AppCommand::PreviousItem => {
-                if let Some(entry) = self.playlist.previous() {
-                    self.backend.open(&entry.locator).map_err(AppError::Message)?;
-                    self.state.current = Some(entry.locator.clone());
+                if let Some(index) = self.previous_playlist_index() {
+                    self.open_playlist_index(index)?;
                 }
             }
             AppCommand::OpenFolder(_) => {
@@ -175,9 +203,8 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::Warning(message) => self.state.status_message = Some(message),
                 BackendEvent::Error(message) => self.state.last_error = Some(message),
                 BackendEvent::EndOfFile => {
-                    if let Some(entry) = self.playlist.next() {
-                        self.backend.open(&entry.locator).map_err(AppError::Message)?;
-                        self.state.current = Some(entry.locator.clone());
+                    if let Some(index) = self.next_playlist_index() {
+                        self.open_playlist_index(index)?;
                     }
                 }
             }
