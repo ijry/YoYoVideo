@@ -89,3 +89,22 @@ fn controller_can_start_with_non_default_shortcuts() {
 
     assert_eq!(controller.session().backend().commands, vec![BackendCommand::SetPaused(false)]);
 }
+
+#[test]
+fn controller_forwards_external_subtitle_and_visibility_commands() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut controller = DesktopController::new(session);
+
+    controller
+        .dispatch(AppCommand::LoadExternalSubtitle(std::path::PathBuf::from("movie.ass")))
+        .unwrap();
+    controller.dispatch(AppCommand::SetSubtitleVisible(false)).unwrap();
+
+    assert_eq!(
+        controller.session().backend().commands,
+        vec![
+            BackendCommand::LoadExternalSubtitle(std::path::PathBuf::from("movie.ass")),
+            BackendCommand::SetSubtitleVisible(false),
+        ]
+    );
+}

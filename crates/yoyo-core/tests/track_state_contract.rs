@@ -81,10 +81,7 @@ fn tracks_event_updates_selected_track_helpers_and_external_subtitle_path() {
     assert_eq!(session.state().selected_audio_track_id(), Some(2));
     assert_eq!(session.state().selected_subtitle_track_id(), Some(8));
     assert_eq!(session.state().selected_video_track_id(), Some(1));
-    assert_eq!(
-        session.state().subtitle.external_path,
-        Some(PathBuf::from("D:/subs/external.ass"))
-    );
+    assert_eq!(session.state().subtitle.external_path, Some(PathBuf::from("D:/subs/external.ass")));
     assert!(!session.state().subtitle.visible);
     assert_eq!(session.state().subtitle.delay_seconds, 1.25);
 }

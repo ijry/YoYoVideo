@@ -6012,6 +6012,8 @@ dependencies = [
  "i-slint-backend-winit",
  "raw-window-handle",
  "rfd",
+ "serde",
+ "serde_json",
  "slint",
  "slint-build",
  "tempfile",

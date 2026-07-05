@@ -202,7 +202,10 @@ mod tests {
         assert_eq!(audio.len(), 1);
         assert_eq!(subtitles.len(), 1);
         assert_eq!(video.len(), 1);
-        assert_eq!(subtitles[0].source_path.as_deref(), Some(std::path::Path::new("D:/subs/external.ass")));
+        assert_eq!(
+            subtitles[0].source_path.as_deref(),
+            Some(std::path::Path::new("D:/subs/external.ass"))
+        );
         assert!(subtitles[0].external);
         assert!(subtitles[0].selected);
     }

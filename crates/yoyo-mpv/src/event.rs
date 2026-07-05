@@ -1,5 +1,5 @@
-use yoyo_core::MediaTrack;
 use yoyo_core::BackendEvent;
+use yoyo_core::MediaTrack;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MpvEvent {
@@ -9,11 +9,7 @@ pub enum MpvEvent {
     Speed(f32),
     Volume(u8),
     Rotation(i64),
-    Tracks {
-        audio: Vec<MediaTrack>,
-        subtitles: Vec<MediaTrack>,
-        video: Vec<MediaTrack>,
-    },
+    Tracks { audio: Vec<MediaTrack>, subtitles: Vec<MediaTrack>, video: Vec<MediaTrack> },
     SubtitleVisible(bool),
     SubtitleDelay(f64),
     SubtitleScale(f32),

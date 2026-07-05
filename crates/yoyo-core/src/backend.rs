@@ -34,11 +34,7 @@ pub enum BackendEvent {
     VolumeChanged(u8),
     AudioChannelChanged(AudioChannelMode),
     RotationChanged(Rotation),
-    TracksChanged {
-        audio: Vec<MediaTrack>,
-        subtitles: Vec<MediaTrack>,
-        video: Vec<MediaTrack>,
-    },
+    TracksChanged { audio: Vec<MediaTrack>, subtitles: Vec<MediaTrack>, video: Vec<MediaTrack> },
     SubtitleVisibilityChanged(bool),
     SubtitleDelayChanged(f64),
     SubtitleScaleChanged(f32),

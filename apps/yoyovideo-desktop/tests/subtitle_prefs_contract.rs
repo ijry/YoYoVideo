@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tempfile::tempdir;
-use yoyo_core::{AppCommand, MediaLocator, MediaTrack, MediaTrackKind, PlayerState, SubtitlePlaybackState};
-use yoyovideo_desktop::{
-    SubtitlePrefsFlushReason, SubtitlePrefsRuntime, SubtitleRestoreError,
+use yoyo_core::{
+    AppCommand, MediaLocator, MediaTrack, MediaTrackKind, PlayerState, SubtitlePlaybackState,
 };
+use yoyovideo_desktop::{SubtitlePrefsFlushReason, SubtitlePrefsRuntime, SubtitleRestoreError};
 
 fn selected_track(id: i64, kind: MediaTrackKind, title: &str) -> MediaTrack {
     MediaTrack {
@@ -40,9 +40,11 @@ fn subtitle_prefs_runtime_persists_restore_plan_for_a_media_item() {
     };
 
     runtime.remember_from_state(&state);
-    assert!(runtime
-        .flush_if_needed(Duration::from_secs(0), SubtitlePrefsFlushReason::MediaSwitch)
-        .unwrap());
+    assert!(
+        runtime
+            .flush_if_needed(Duration::from_secs(0), SubtitlePrefsFlushReason::MediaSwitch)
+            .unwrap()
+    );
 
     let reloaded = SubtitlePrefsRuntime::load(Some(path)).unwrap();
     let plan = reloaded
@@ -74,9 +76,8 @@ fn missing_external_subtitle_file_returns_a_restore_error() {
 
     runtime.remember_from_state(&state);
 
-    let error = runtime
-        .restore_plan_for(&MediaLocator::File(PathBuf::from("movie.mkv")))
-        .unwrap_err();
+    let error =
+        runtime.restore_plan_for(&MediaLocator::File(PathBuf::from("movie.mkv"))).unwrap_err();
 
     assert_eq!(
         error,

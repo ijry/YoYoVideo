@@ -114,9 +114,7 @@ impl SubtitlePrefsRuntime {
         commands.push(AppCommand::SetSubtitleVisible(entry.subtitle_visible));
         commands.push(AppCommand::SetSubtitleDelay(entry.subtitle_delay_seconds));
         commands.push(AppCommand::SetSubtitleScale(entry.subtitle_scale));
-        commands.push(AppCommand::SetSubtitleVerticalPosition(
-            entry.subtitle_vertical_position,
-        ));
+        commands.push(AppCommand::SetSubtitleVerticalPosition(entry.subtitle_vertical_position));
 
         Ok(Some(SubtitleRestorePlan { commands }))
     }

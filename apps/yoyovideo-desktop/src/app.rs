@@ -112,6 +112,10 @@ impl<B: PlayerBackend> DesktopController<B> {
     pub fn poll_backend(&mut self) -> Result<(), yoyo_core::AppError> {
         self.session.poll_backend()
     }
+
+    pub fn set_subtitle_preferences_restored(&mut self, restored: bool) {
+        self.session.set_subtitle_preferences_restored(restored);
+    }
 }
 
 pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand> {
@@ -143,11 +147,13 @@ struct DesktopRuntime {
     app_handle: Option<slint::Weak<MainWindow>>,
     config: AppConfig,
     history: crate::HistoryRuntime,
+    subtitle_prefs: crate::SubtitlePrefsRuntime,
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
     settings_controller: Option<crate::SettingsController>,
     pending_resume: Option<crate::PendingResumeSeek>,
     last_seen_locator: Option<MediaLocator>,
+    last_seen_subtitle_locator: Option<MediaLocator>,
     started_at: Instant,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
@@ -157,6 +163,7 @@ impl DesktopRuntime {
     fn new(
         config: AppConfig,
         history: crate::HistoryRuntime,
+        subtitle_prefs: crate::SubtitlePrefsRuntime,
         sidebar: crate::SidebarState,
     ) -> Self {
         Self {
@@ -165,11 +172,13 @@ impl DesktopRuntime {
             app_handle: None,
             config,
             history,
+            subtitle_prefs,
             sidebar,
             settings_window: None,
             settings_controller: None,
             pending_resume: None,
             last_seen_locator: None,
+            last_seen_subtitle_locator: None,
             started_at: Instant::now(),
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
@@ -225,6 +234,10 @@ fn history_file_path(paths: &AppPaths) -> PathBuf {
     paths.data_dir.join("history.json")
 }
 
+fn subtitle_prefs_file_path(paths: &AppPaths) -> PathBuf {
+    paths.data_dir.join("subtitle_prefs.json")
+}
+
 fn load_boot_config(paths: Option<&AppPaths>) -> AppConfig {
     let Some(path) = paths.map(config_file_path) else {
         return AppConfig::default();
@@ -239,6 +252,12 @@ fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::
     let history_path = paths.map(history_file_path);
     crate::HistoryRuntime::load(history_path, config.ui.remember_history)
         .unwrap_or_else(|_| crate::HistoryRuntime::new(None, HistoryStore::default(), false))
+}
+
+fn load_subtitle_prefs_runtime(paths: Option<&AppPaths>) -> crate::SubtitlePrefsRuntime {
+    let prefs_path = paths.map(subtitle_prefs_file_path);
+    crate::SubtitlePrefsRuntime::load(prefs_path.clone())
+        .unwrap_or_else(|_| crate::SubtitlePrefsRuntime::new(prefs_path, Default::default()))
 }
 
 fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
@@ -303,6 +322,58 @@ fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
 
     window.set_playlist_rows(model_from_vec(playlist_rows));
     window.set_history_rows(model_from_vec(history_rows));
+}
+
+fn refresh_tracks_popup(window: &MainWindow, runtime: &DesktopRuntime) {
+    let Some(state) = runtime.controller().map(|controller| controller.session().state()) else {
+        window.set_audio_track_rows(model_from_vec(Vec::<TrackPopupRowData>::new()));
+        window.set_subtitle_track_rows(model_from_vec(Vec::<TrackPopupRowData>::new()));
+        window.set_video_track_rows(model_from_vec(Vec::<TrackPopupRowData>::new()));
+        window.set_subtitle_visible(true);
+        window.set_subtitle_delay_value(0.0);
+        window.set_subtitle_delay_label(crate::format_subtitle_delay_label(0.0).into());
+        window.set_subtitle_scale_value(1.0);
+        window.set_subtitle_scale_label(crate::format_subtitle_scale_label(1.0).into());
+        window.set_subtitle_position_value(100.0);
+        window.set_tracks_status_label(runtime.status_message().into());
+        return;
+    };
+
+    window.set_audio_track_rows(model_from_vec(
+        crate::build_audio_track_rows(state)
+            .into_iter()
+            .map(|row| TrackPopupRowData { label: row.label.into(), selected: row.is_selected })
+            .collect(),
+    ));
+    window.set_subtitle_track_rows(model_from_vec(
+        crate::build_subtitle_track_rows(state)
+            .into_iter()
+            .map(|row| TrackPopupRowData { label: row.label.into(), selected: row.is_selected })
+            .collect(),
+    ));
+    window.set_video_track_rows(model_from_vec(
+        crate::build_video_track_rows(state)
+            .into_iter()
+            .map(|row| TrackPopupRowData { label: row.label.into(), selected: row.is_selected })
+            .collect(),
+    ));
+    window.set_subtitle_visible(state.subtitle.visible);
+    window.set_subtitle_delay_value(state.subtitle.delay_seconds as f32);
+    window.set_subtitle_delay_label(
+        crate::format_subtitle_delay_label(state.subtitle.delay_seconds).into(),
+    );
+    window.set_subtitle_scale_value(state.subtitle.scale);
+    window
+        .set_subtitle_scale_label(crate::format_subtitle_scale_label(state.subtitle.scale).into());
+    window.set_subtitle_position_value(f32::from(state.subtitle.vertical_position_percent));
+    window.set_tracks_status_label(
+        state
+            .last_error
+            .clone()
+            .or_else(|| state.status_message.clone())
+            .unwrap_or_default()
+            .into(),
+    );
 }
 
 fn refresh_settings_window(window: &SettingsWindow, controller: &crate::SettingsController) {
@@ -434,6 +505,73 @@ fn sync_history_from_snapshot(
     Ok(())
 }
 
+fn sync_subtitle_prefs_from_state(
+    runtime: &mut DesktopRuntime,
+    state: &PlayerState,
+) -> Result<(), yoyo_core::StorageError> {
+    let now = history_now(runtime);
+    let current = state.current.clone();
+    let switched = current != runtime.last_seen_subtitle_locator;
+    runtime.last_seen_subtitle_locator = current;
+
+    if state.subtitle_preferences_restored {
+        runtime.subtitle_prefs.remember_from_state(state);
+    }
+
+    runtime.subtitle_prefs.flush_if_needed(
+        now,
+        if switched {
+            crate::SubtitlePrefsFlushReason::MediaSwitch
+        } else {
+            crate::SubtitlePrefsFlushReason::PeriodicTick
+        },
+    )?;
+
+    Ok(())
+}
+
+fn apply_subtitle_restore_if_needed(
+    runtime: &mut DesktopRuntime,
+    controller: &mut DesktopController<MpvBackend>,
+    app: Option<&MainWindow>,
+) -> Result<(), yoyo_core::AppError> {
+    let state = controller.session().state().clone();
+    let Some(locator) = state.current.as_ref() else {
+        controller.set_subtitle_preferences_restored(true);
+        return Ok(());
+    };
+
+    if state.subtitle_preferences_restored {
+        return Ok(());
+    }
+
+    if state.audio_tracks.is_empty()
+        && state.subtitle_tracks.is_empty()
+        && state.video_tracks.is_empty()
+    {
+        return Ok(());
+    }
+
+    match runtime.subtitle_prefs.restore_plan_for(locator) {
+        Ok(Some(plan)) => {
+            for command in plan.commands {
+                controller.dispatch(command)?;
+            }
+        }
+        Ok(None) => {}
+        Err(crate::SubtitleRestoreError::MissingExternalSubtitle(path)) => {
+            if let Some(app) = app {
+                app.set_status_label(
+                    format!("Subtitle file is missing: {}", path.display()).into(),
+                );
+            }
+        }
+    }
+
+    controller.set_subtitle_preferences_restored(true);
+    Ok(())
+}
+
 fn apply_pending_resume(
     controller: &mut DesktopController<MpvBackend>,
     pending: Option<crate::PendingResumeSeek>,
@@ -459,28 +597,36 @@ where
 {
     let mut runtime = runtime.borrow_mut();
     let pending_before = runtime.pending_resume.take();
-
-    let outcome = {
-        let Some(controller) = runtime.controller_mut() else {
-            runtime.pending_resume = pending_before;
-            if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(runtime.status_message().into());
-            }
-            return false;
-        };
-
-        match action(controller) {
-            Ok(()) => match apply_pending_resume(controller, pending_before) {
-                Ok(pending_after) => {
-                    let state = controller.session().state().clone();
-                    let history_snapshot = capture_history_snapshot(controller.session());
-                    Ok((state, history_snapshot, pending_after))
-                }
-                Err(error) => Err((error, pending_before)),
-            },
-            Err(error) => Err((error, pending_before)),
+    let Some(mut controller) = runtime.controller.take() else {
+        runtime.pending_resume = pending_before;
+        if let Some(app) = app_handle.upgrade() {
+            app.set_status_label(runtime.status_message().into());
         }
+        return false;
     };
+
+    let app = app_handle.upgrade();
+    let outcome = match action(&mut controller) {
+        Ok(()) => match apply_pending_resume(&mut controller, pending_before) {
+            Ok(pending_after) => {
+                match apply_subtitle_restore_if_needed(&mut runtime, &mut controller, app.as_ref())
+                {
+                    Ok(()) => {
+                        let state = controller.session().state().clone();
+                        let history_snapshot = capture_history_snapshot(controller.session());
+                        match sync_subtitle_prefs_from_state(&mut runtime, &state) {
+                            Ok(()) => Ok((state, history_snapshot, pending_after)),
+                            Err(error) => Err((error.into(), pending_after)),
+                        }
+                    }
+                    Err(error) => Err((error, pending_after)),
+                }
+            }
+            Err(error) => Err((error, pending_before)),
+        },
+        Err(error) => Err((error, pending_before)),
+    };
+    runtime.controller = Some(controller);
 
     match outcome {
         Ok((state, history_snapshot, pending_after)) => {
@@ -494,6 +640,7 @@ where
             if let Some(app) = app_handle.upgrade() {
                 refresh_window(&app, &state);
                 refresh_sidebar(&app, &runtime);
+                refresh_tracks_popup(&app, &runtime);
                 apply_fullscreen_state(&app, &state);
             }
             true
@@ -516,8 +663,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
     let config = load_boot_config(paths.as_ref());
     let history = load_history_runtime(paths.as_ref(), &config);
+    let subtitle_prefs = load_subtitle_prefs_runtime(paths.as_ref());
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
-    let runtime = Rc::new(RefCell::new(DesktopRuntime::new(config, history, sidebar)));
+    let runtime =
+        Rc::new(RefCell::new(DesktopRuntime::new(config, history, subtitle_prefs, sidebar)));
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
@@ -533,6 +682,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     refresh_runtime_window(&app, &runtime.borrow());
     refresh_sidebar(&app, &runtime.borrow());
+    refresh_tracks_popup(&app, &runtime.borrow());
 
     app.on_open_file_requested({
         let app_handle = app.as_weak();
@@ -623,6 +773,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             runtime.sidebar.toggle();
             if let Some(app) = app_handle.upgrade() {
                 refresh_sidebar(&app, &runtime);
+                refresh_tracks_popup(&app, &runtime);
             }
         }
     });
@@ -635,6 +786,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             runtime.sidebar.show_tab(crate::SidebarTab::Playlist);
             if let Some(app) = app_handle.upgrade() {
                 refresh_sidebar(&app, &runtime);
+                refresh_tracks_popup(&app, &runtime);
             }
         }
     });
@@ -647,6 +799,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             runtime.sidebar.show_tab(crate::SidebarTab::History);
             if let Some(app) = app_handle.upgrade() {
                 refresh_sidebar(&app, &runtime);
+                refresh_tracks_popup(&app, &runtime);
             }
         }
     });
@@ -698,6 +851,116 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+        }
+    });
+
+    app.on_audio_track_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                let rows = crate::build_audio_track_rows(controller.session().state());
+                let Some(id) = rows.get(index as usize).and_then(|row| row.track_id) else {
+                    return Ok(());
+                };
+                controller.dispatch(AppCommand::SelectAudioTrack(id))
+            });
+        }
+    });
+
+    app.on_subtitle_track_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                let rows = crate::build_subtitle_track_rows(controller.session().state());
+                let Some(row) = rows.get(index as usize) else {
+                    return Ok(());
+                };
+                match row.track_id {
+                    Some(id) => controller.dispatch(AppCommand::SelectSubtitleTrack(id)),
+                    None => controller.dispatch(AppCommand::SetSubtitleVisible(false)),
+                }
+            });
+        }
+    });
+
+    app.on_video_track_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                let rows = crate::build_video_track_rows(controller.session().state());
+                let Some(id) = rows.get(index as usize).and_then(|row| row.track_id) else {
+                    return Ok(());
+                };
+                controller.dispatch(AppCommand::SelectVideoTrack(id))
+            });
+        }
+    });
+
+    app.on_load_external_subtitle_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        let dialogs = Rc::clone(&dialogs);
+        move || {
+            if let Some(path) = dialogs.pick_subtitle_file() {
+                with_runtime_controller(&app_handle, &runtime, move |controller| {
+                    controller.dispatch(AppCommand::LoadExternalSubtitle(path))
+                });
+            }
+        }
+    });
+
+    app.on_subtitle_visible_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |visible| {
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::SetSubtitleVisible(visible))
+            });
+        }
+    });
+
+    app.on_subtitle_delay_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |delay| {
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller
+                    .dispatch(AppCommand::SetSubtitleDelay(f64::from(delay.clamp(-10.0, 10.0))))
+            });
+        }
+    });
+
+    app.on_subtitle_scale_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |scale| {
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::SetSubtitleScale(scale.clamp(0.5, 2.0)))
+            });
+        }
+    });
+
+    app.on_subtitle_position_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |position| {
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::SetSubtitleVerticalPosition(
+                    position.clamp(0.0, 100.0) as u8,
+                ))
+            });
         }
     });
 
@@ -940,41 +1203,55 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut runtime = runtime.borrow_mut();
             let pending_before = runtime.pending_resume.take();
-
-            if let Some(controller) = runtime.controller_mut() {
-                match controller.poll_backend() {
-                    Ok(()) => {
-                        let next_pending = match apply_pending_resume(controller, pending_before) {
-                            Ok(next_pending) => next_pending,
-                            Err(error) => {
-                                runtime.pending_resume = pending_before;
-                                app.set_status_label(error.to_string().into());
-                                return;
-                            }
-                        };
-                        let state = controller.session().state().clone();
-                        let history_snapshot = capture_history_snapshot(controller.session());
-
-                        runtime.pending_resume = next_pending;
-                        if let Err(error) =
-                            sync_history_from_snapshot(&mut runtime, &history_snapshot)
-                        {
-                            app.set_status_label(error.to_string().into());
-                        }
-                        refresh_window(&app, &state);
-                        refresh_sidebar(&app, &runtime);
-                        #[cfg(feature = "mpv-runtime")]
-                        sync_runtime_video_host(&app, &mut runtime);
-                    }
-                    Err(error) => {
-                        runtime.pending_resume = pending_before;
-                        app.set_status_label(error.to_string().into());
-                    }
-                }
-            } else {
+            let Some(mut controller) = runtime.controller.take() else {
                 runtime.pending_resume = pending_before;
                 refresh_runtime_window(&app, &runtime);
                 refresh_sidebar(&app, &runtime);
+                refresh_tracks_popup(&app, &runtime);
+                return;
+            };
+
+            let outcome = match controller.poll_backend() {
+                Ok(()) => match apply_pending_resume(&mut controller, pending_before) {
+                    Ok(next_pending) => {
+                        match apply_subtitle_restore_if_needed(
+                            &mut runtime,
+                            &mut controller,
+                            Some(&app),
+                        ) {
+                            Ok(()) => {
+                                let state = controller.session().state().clone();
+                                let history_snapshot =
+                                    capture_history_snapshot(controller.session());
+                                let _ = sync_subtitle_prefs_from_state(&mut runtime, &state);
+                                Ok((state, history_snapshot, next_pending))
+                            }
+                            Err(error) => Err((error, next_pending)),
+                        }
+                    }
+                    Err(error) => Err((error, pending_before)),
+                },
+                Err(error) => Err((error, pending_before)),
+            };
+            runtime.controller = Some(controller);
+
+            match outcome {
+                Ok((state, history_snapshot, next_pending)) => {
+                    runtime.pending_resume = next_pending;
+                    if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot)
+                    {
+                        app.set_status_label(error.to_string().into());
+                    }
+                    refresh_window(&app, &state);
+                    refresh_sidebar(&app, &runtime);
+                    refresh_tracks_popup(&app, &runtime);
+                    #[cfg(feature = "mpv-runtime")]
+                    sync_runtime_video_host(&app, &mut runtime);
+                }
+                Err((error, pending_restore)) => {
+                    runtime.pending_resume = pending_restore;
+                    app.set_status_label(error.to_string().into());
+                }
             }
         }
     });
@@ -983,13 +1260,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let mut runtime = runtime.borrow_mut();
-        if let Some(snapshot) =
-            runtime.controller().map(|controller| capture_history_snapshot(controller.session()))
-        {
+        if let Some(controller) = runtime.controller() {
+            let snapshot = capture_history_snapshot(controller.session());
+            let state = controller.session().state().clone();
             let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
+            let _ = sync_subtitle_prefs_from_state(&mut runtime, &state);
         }
         let shutdown_now = history_now(&runtime);
         let _ = runtime.history.flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
+        let _ = runtime
+            .subtitle_prefs
+            .flush_if_needed(shutdown_now, crate::SubtitlePrefsFlushReason::Shutdown);
     }
 
     Ok(())
@@ -1140,6 +1421,7 @@ impl DesktopWinitHandler {
                     if let Some(app) = app_handle.upgrade() {
                         refresh_window(&app, &state);
                         refresh_sidebar(&app, &runtime);
+                        refresh_tracks_popup(&app, &runtime);
                         sync_runtime_video_host(&app, &mut runtime);
                     }
                 }
@@ -1150,6 +1432,7 @@ impl DesktopWinitHandler {
                     if let Some(app) = app_handle.upgrade() {
                         app.set_status_label(error.into());
                         refresh_sidebar(&app, &runtime);
+                        refresh_tracks_popup(&app, &runtime);
                     }
                 }
             }
