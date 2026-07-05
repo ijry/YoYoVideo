@@ -1,4 +1,14 @@
-import { Button, HorizontalBox, VerticalBox, LineEdit, Slider } from "std-widgets.slint";
+import { Button, HorizontalBox, VerticalBox, LineEdit, ScrollView, Slider } from "std-widgets.slint";
+
+export struct PlaylistSidebarRowData {
+    title: string,
+    is_current: bool,
+}
+
+export struct HistorySidebarRowData {
+    title: string,
+    subtitle: string,
+}
 
 export component MainWindow inherits Window {
     title: "YoYoVideo";
@@ -16,6 +26,11 @@ export component MainWindow inherits Window {
     in-out property <string> loop_label: "A --:-- / B --:--";
     in-out property <float> progress_value: 0;
     in-out property <int> volume_value: 100;
+    in-out property <bool> sidebar_visible: true;
+    in-out property <int> sidebar_tab_index: 0;
+    in-out property <float> sidebar_expanded_width_px: 320.0;
+    in-out property <[PlaylistSidebarRowData]> playlist_rows: [];
+    in-out property <[HistorySidebarRowData]> history_rows: [];
     out property <bool> url_focused: url_input.has-focus;
 
     out property <length> video_area_x: video_area.x;
@@ -41,6 +56,11 @@ export component MainWindow inherits Window {
     callback zoom_out_requested();
     callback toggle_fullscreen_requested();
     callback settings_requested();
+    callback toggle_sidebar_requested();
+    callback show_playlist_tab_requested();
+    callback show_history_tab_requested();
+    callback playlist_item_requested(int);
+    callback history_item_requested(int);
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
@@ -67,74 +87,163 @@ export component MainWindow inherits Window {
         }
     }
 
-    VerticalBox {
+    HorizontalBox {
         spacing: 8px;
         padding: 10px;
 
-        video_area := Rectangle {
-            background: #090b0d;
-            border-color: #22272d;
-            border-width: 1px;
-            border-radius: 8px;
-            min-height: 560px;
+        VerticalBox {
+            spacing: 8px;
 
-            Text {
-                text: status_label == "" ? "Video host initializing..." : status_label;
-                color: #7d8790;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            video_area := Rectangle {
+                background: #090b0d;
+                border-color: #22272d;
+                border-width: 1px;
+                border-radius: 8px;
+                min-height: 560px;
+
+                Text {
+                    text: status_label == "" ? "Video host initializing..." : status_label;
+                    color: #7d8790;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalBox {
+                spacing: 6px;
+
+                Slider {
+                    minimum: 0;
+                    maximum: 1;
+                    value: progress_value;
+                    changed(value) => { root.seek_percent_requested(value); }
+                }
+
+                HorizontalBox {
+                    spacing: 8px;
+                    Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
+                    Button { text: "Open"; clicked => { root.open_file_requested(); } }
+                    Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
+                    Button {
+                        text: root.sidebar_visible ? "List <<" : "List >>";
+                        clicked => { root.toggle_sidebar_requested(); }
+                    }
+                    Button { text: "Menu"; clicked => { menu_popup.show(); } }
+                    url_input := LineEdit {
+                        placeholder-text: "Open URL";
+                        accepted => { root.open_url_requested(self.text); }
+                    }
+                    Text { text: time_label; }
+                    Text { text: speed_label; }
+                    Button { text: "-"; clicked => { root.speed_down_requested(); } }
+                    Button { text: "+"; clicked => { root.speed_up_requested(); } }
+                    Button { text: "1x"; clicked => { root.reset_speed_requested(); } }
+                    Text { text: volume_label; }
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value: volume_value;
+                        changed(value) => { root.volume_changed(value); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 8px;
+                    Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
+                    Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
+                    Text { text: zoom_label; }
+                    Button { text: "Rotate"; clicked => { root.rotate_requested(); } }
+                    Text { text: rotation_label; }
+                    Button { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
+                    Text { text: audio_channel_label; }
+                    Button { text: "A"; clicked => { root.set_ab_point_a_requested(); } }
+                    Button { text: "B"; clicked => { root.set_ab_point_b_requested(); } }
+                    Button { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
+                    Text { text: loop_label; }
+                    Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); } }
+                    Text { text: status_label; color: #7d8790; }
+                }
             }
         }
 
-        VerticalBox {
-            spacing: 6px;
+        Rectangle {
+            width: root.sidebar_visible ? root.sidebar_expanded_width_px * 1px : 36px;
+            background: #101418;
+            border-color: #26313a;
+            border-width: 1px;
+            border-radius: 8px;
 
-            Slider {
-                minimum: 0;
-                maximum: 1;
-                value: progress_value;
-                changed(value) => { root.seek_percent_requested(value); }
+            if root.sidebar_visible: VerticalBox {
+                padding: 10px;
+                spacing: 8px;
+
+                HorizontalBox {
+                    spacing: 6px;
+                    Button { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); } }
+                    Button { text: "History"; clicked => { root.show_history_tab_requested(); } }
+                    Button { text: "Close"; clicked => { root.toggle_sidebar_requested(); } }
+                }
+
+                ScrollView {
+                    if root.sidebar_tab_index == 0: VerticalBox {
+                        spacing: 4px;
+
+                        for row[idx] in root.playlist_rows: Rectangle {
+                            min-height: 44px;
+                            border-radius: 6px;
+                            background: row.is_current ? #1d2d38 : #141b20;
+
+                            TouchArea {
+                                clicked => { root.playlist_item_requested(idx); }
+                            }
+
+                            Text {
+                                text: row.title;
+                                color: row.is_current ? #f2f5f7 : #c7d1d8;
+                                vertical-alignment: center;
+                                x: 10px;
+                                y: 12px;
+                            }
+                        }
+                    }
+
+                    if root.sidebar_tab_index == 1: VerticalBox {
+                        spacing: 4px;
+
+                        for row[idx] in root.history_rows: Rectangle {
+                            min-height: 56px;
+                            border-radius: 6px;
+                            background: #141b20;
+
+                            TouchArea {
+                                clicked => { root.history_item_requested(idx); }
+                            }
+
+                            VerticalBox {
+                                padding-left: 10px;
+                                padding-top: 8px;
+                                spacing: 2px;
+                                Text { text: row.title; color: #f2f5f7; }
+                                Text { text: row.subtitle; color: #7d8790; }
+                            }
+                        }
+                    }
+                }
             }
 
-            HorizontalBox {
-                spacing: 8px;
-                Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
-                Button { text: "Open"; clicked => { root.open_file_requested(); } }
-                Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
-                Button { text: "Menu"; clicked => { menu_popup.show(); } }
-                url_input := LineEdit {
-                    placeholder-text: "Open URL";
-                    accepted => { root.open_url_requested(self.text); }
-                }
-                Text { text: time_label; }
-                Text { text: speed_label; }
-                Button { text: "-"; clicked => { root.speed_down_requested(); } }
-                Button { text: "+"; clicked => { root.speed_up_requested(); } }
-                Button { text: "1x"; clicked => { root.reset_speed_requested(); } }
-                Text { text: volume_label; }
-                Slider {
-                    minimum: 0;
-                    maximum: 100;
-                    value: volume_value;
-                    changed(value) => { root.volume_changed(value); }
-                }
-            }
+            if !root.sidebar_visible: Rectangle {
+                background: transparent;
 
-            HorizontalBox {
-                spacing: 8px;
-                Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
-                Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
-                Text { text: zoom_label; }
-                Button { text: "Rotate"; clicked => { root.rotate_requested(); } }
-                Text { text: rotation_label; }
-                Button { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
-                Text { text: audio_channel_label; }
-                Button { text: "A"; clicked => { root.set_ab_point_a_requested(); } }
-                Button { text: "B"; clicked => { root.set_ab_point_b_requested(); } }
-                Button { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
-                Text { text: loop_label; }
-                Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); } }
-                Text { text: status_label; color: #7d8790; }
+                TouchArea {
+                    clicked => { root.toggle_sidebar_requested(); }
+                }
+
+                Text {
+                    text: ">>";
+                    color: #c7d1d8;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
             }
         }
     }
