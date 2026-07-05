@@ -17,6 +17,33 @@
 
 Package creation reads runtime files from `third_party/mpv/<platform>/`.
 
+## Runtime Bootstrap
+
+Runtime archives are described by `runtime/manifest.toml`.
+
+Validate the manifest without downloading:
+
+```powershell
+pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -DryRun
+```
+
+Prepare local runtime files:
+
+```powershell
+pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -Force
+```
+
+Maintainer-provided archives are referenced through environment variables:
+
+- `YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_SHA256`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_SHA256`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_SHA256`
+
+The archive must expand into the normalized platform layout expected under `third_party/mpv/<platform>/`.
+
 ### Windows x64
 
 - Required link file: `third_party/mpv/windows-x64/lib/mpv.lib`
@@ -44,6 +71,16 @@ Supported repository secrets:
 - `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL`: zip archive whose contents expand into `third_party/mpv/linux-x64/`
 
 If a secret is absent or the archive lacks required files, packaging fails with a missing-runtime message instead of uploading an incomplete artifact.
+
+## Windows Installer
+
+After creating a verified Windows package, build the NSIS installer:
+
+```powershell
+pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64 -OutputPath dist/YoYoVideo-windows-x64-setup.exe -Version dev
+```
+
+If `makensis` is missing, install NSIS and rerun the command. Installer generation is separate from portable zip creation.
 
 ## Video Host Requirements
 

@@ -33,11 +33,12 @@ cargo run -p yoyovideo-desktop --features mpv-runtime
 
 ## Packaging
 
-Runtime-enabled packages are built from repository-local staging files under `third_party/mpv/<platform>/`.
+Runtime-enabled packages are built from repository-local staging files under `third_party/mpv/<platform>/`. Prepare those files with the runtime bootstrap script before packaging.
 
 Local package commands:
 
 ```powershell
+pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -Force
 pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime
 pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime
 pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime
@@ -47,6 +48,12 @@ Use `scripts/verify-package.ps1` to validate generated package directories witho
 
 ```powershell
 pwsh -NoProfile -File scripts/verify-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -RequireRuntime
+```
+
+On Windows, build an optional NSIS installer after the portable package is verified:
+
+```powershell
+pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64 -OutputPath dist/YoYoVideo-windows-x64-setup.exe -Version dev
 ```
 
 Actual libmpv and FFmpeg runtime binaries are intentionally not committed. Stage them locally or provide maintainer runtime archive URLs to GitHub Actions after licensing review.
