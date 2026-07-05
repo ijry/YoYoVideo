@@ -1,0 +1,101 @@
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  package-windows:
+    name: Package Windows x64
+    runs-on: windows-latest
+    env:
+      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download maintainer runtime archive
+        if: env.RUNTIME_ARCHIVE_URL != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force third_party/mpv/windows-x64 | Out-Null
+          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-windows-x64.zip
+          Expand-Archive -Path runtime-windows-x64.zip -DestinationPath third_party/mpv/windows-x64 -Force
+
+      - name: Build package
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime
+
+      - name: Upload package archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: YoYoVideo-windows-x64
+          path: dist/YoYoVideo-windows-x64.zip
+          if-no-files-found: error
+
+  package-macos:
+    name: Package macOS universal
+    runs-on: macos-latest
+    env:
+      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download maintainer runtime archive
+        if: env.RUNTIME_ARCHIVE_URL != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force third_party/mpv/macos-universal | Out-Null
+          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-macos-universal.zip
+          Expand-Archive -Path runtime-macos-universal.zip -DestinationPath third_party/mpv/macos-universal -Force
+
+      - name: Build package
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime
+
+      - name: Upload package archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: YoYoVideo-macos-universal
+          path: dist/YoYoVideo-macos-universal.tar.gz
+          if-no-files-found: error
+
+  package-linux:
+    name: Package Linux x64
+    runs-on: ubuntu-latest
+    env:
+      RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download maintainer runtime archive
+        if: env.RUNTIME_ARCHIVE_URL != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force third_party/mpv/linux-x64 | Out-Null
+          Invoke-WebRequest -Uri $env:RUNTIME_ARCHIVE_URL -OutFile runtime-linux-x64.zip
+          Expand-Archive -Path runtime-linux-x64.zip -DestinationPath third_party/mpv/linux-x64 -Force
+
+      - name: Build package
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime
+
+      - name: Upload package archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: YoYoVideo-linux-x64
+          path: dist/YoYoVideo-linux-x64.tar.gz
+          if-no-files-found: error
