@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fmt-test:
+    name: Format and default tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run default tests
+        run: cargo test
+
+  runtime-check:
+    name: Runtime feature check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux libmpv development package
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev
+
+      - name: Install macOS mpv package
+        if: runner.os == 'macOS'
+        run: brew install mpv
+
+      - name: Document Windows runtime-link expectation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "cargo check does not produce a final linked executable."
+          Write-Host "Runtime packaging still requires third_party/mpv/windows-x64/lib/mpv.lib and bin/mpv-2.dll."
+
+      - name: Check yoyo-mpv runtime feature
+        run: cargo check -p yoyo-mpv --features mpv-runtime
+
+      - name: Check desktop runtime feature
+        run: cargo check -p yoyovideo-desktop --features mpv-runtime

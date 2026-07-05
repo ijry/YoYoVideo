@@ -675,7 +675,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -695,7 +695,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -803,7 +803,7 @@ jobs:
       RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -821,7 +821,7 @@ jobs:
         run: pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime
 
       - name: Upload package archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: YoYoVideo-windows-x64
           path: dist/YoYoVideo-windows-x64.zip
@@ -834,7 +834,7 @@ jobs:
       RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -852,7 +852,7 @@ jobs:
         run: pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime
 
       - name: Upload package archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: YoYoVideo-macos-universal
           path: dist/YoYoVideo-macos-universal.tar.gz
@@ -865,7 +865,7 @@ jobs:
       RUNTIME_ARCHIVE_URL: ${{ secrets.YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -883,7 +883,7 @@ jobs:
         run: pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime
 
       - name: Upload package archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: YoYoVideo-linux-x64
           path: dist/YoYoVideo-linux-x64.tar.gz
