@@ -20,3 +20,23 @@ Rust + Slint + libmpv cross-platform desktop media player.
 - Default tests use dry-run playback seams and do not require libmpv: `cargo test`
 - Real playback alpha: `cargo run -p yoyovideo-desktop --features mpv-runtime`
 - On Windows, the runtime feature requires `mpv.lib` at link time and the matching mpv DLLs at run time.
+
+## Packaging
+
+Runtime-enabled packages are built from repository-local staging files under `third_party/mpv/<platform>/`.
+
+Local package commands:
+
+```powershell
+pwsh -NoProfile -File scripts/package.ps1 -Platform windows-x64 -Configuration release -RequireRuntime
+pwsh -NoProfile -File scripts/package.ps1 -Platform macos-universal -Configuration release -RequireRuntime
+pwsh -NoProfile -File scripts/package.ps1 -Platform linux-x64 -Configuration release -RequireRuntime
+```
+
+Use `scripts/verify-package.ps1` to validate generated package directories without launching the GUI:
+
+```powershell
+pwsh -NoProfile -File scripts/verify-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -RequireRuntime
+```
+
+Actual libmpv and FFmpeg runtime binaries are intentionally not committed. Stage them locally or provide maintainer runtime archive URLs to GitHub Actions after licensing review.

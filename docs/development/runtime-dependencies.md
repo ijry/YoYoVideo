@@ -12,3 +12,35 @@
 - Test both hardware-decoding success and software-decoding fallback paths after video-surface embedding lands.
 - Verify Windows DLL search path, macOS app bundle embedding, and Linux runtime lookup strategy.
 - Review redistribution obligations for the exact libmpv/FFmpeg build before publishing.
+
+## Runtime Staging For Packages
+
+Package creation reads runtime files from `third_party/mpv/<platform>/`.
+
+### Windows x64
+
+- Required link file: `third_party/mpv/windows-x64/lib/mpv.lib`
+- Required runtime file: `third_party/mpv/windows-x64/bin/mpv-2.dll`
+- Expected additional runtime files: FFmpeg and dependency DLLs from the same libmpv build, copied into `third_party/mpv/windows-x64/bin/`
+
+### macOS Universal
+
+- Required runtime/link file: `third_party/mpv/macos-universal/lib/libmpv.dylib`
+- Later app-bundle work should move this into the final bundle layout and configure deterministic loader paths.
+
+### Linux x64
+
+- Required runtime/link file: `third_party/mpv/linux-x64/lib/libmpv.so` or versioned `libmpv.so*`
+- Release packages should not silently rely on an unknown user-installed libmpv.
+
+## GitHub Actions Runtime Archives
+
+The packaging workflow can download maintainer-provided runtime archives before running `scripts/package.ps1`.
+
+Supported repository secrets:
+
+- `YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL`: zip archive whose contents expand into `third_party/mpv/windows-x64/`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL`: zip archive whose contents expand into `third_party/mpv/macos-universal/`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL`: zip archive whose contents expand into `third_party/mpv/linux-x64/`
+
+If a secret is absent or the archive lacks required files, packaging fails with a missing-runtime message instead of uploading an incomplete artifact.
