@@ -22,6 +22,14 @@
 - Verify keyboard shortcuts trigger the same commands as buttons.
 - Verify settings changes persist across restarts.
 - Verify recent history and last position are restored when enabled.
+- Confirm the right sidebar honors the startup preference on wide windows.
+- Launch the app with a window narrower than `1050px` and confirm the sidebar starts collapsed.
+- Toggle the sidebar from the control surface and confirm the collapsed strip can reopen it.
+- Open a folder and confirm the `Playlist` tab shows the scanned queue with the active item highlighted.
+- Click a playlist item in the sidebar and confirm playback switches to that item.
+- Restart the app, open the `History` tab, and confirm recent items show resume metadata.
+- Click a history item and confirm playback resumes near the stored position.
+- Click a history item pointing to a removed file and confirm the app shows a clear error without crashing.
 
 ## Package Artifacts
 
