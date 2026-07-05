@@ -123,6 +123,7 @@ pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand>
 struct DesktopRuntime {
     controller: Option<DesktopController<MpvBackend>>,
     video_host_error: Option<String>,
+    app_handle: Option<slint::Weak<MainWindow>>,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
 }
@@ -132,6 +133,7 @@ impl DesktopRuntime {
         Self {
             controller: None,
             video_host_error: initial_runtime_error(),
+            app_handle: None,
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
         }
@@ -216,6 +218,7 @@ fn with_runtime_controller<F>(
         Ok(()) => {
             if let Some(app) = app_handle.upgrade() {
                 refresh_window(&app, controller.session().state());
+                apply_fullscreen_state(&app, controller.session().state());
             }
         }
         Err(error) => {
@@ -233,6 +236,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
+    runtime.borrow_mut().app_handle = Some(app.as_weak());
     let dialogs = Rc::new(RfdDialogService);
 
     refresh_runtime_window(&app, &runtime.borrow());
@@ -355,6 +359,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             if controller.dispatch_shortcut(gesture).is_ok() {
                 refresh_window(&app, controller.session().state());
+                apply_fullscreen_state(&app, controller.session().state());
             }
             slint::winit_030::EventResult::PreventDefault
         }
@@ -372,7 +377,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut runtime = runtime.borrow_mut();
             if let Some(controller) = runtime.controller_mut() {
                 match controller.poll_backend() {
-                    Ok(()) => refresh_window(&app, controller.session().state()),
+                    Ok(()) => {
+                        refresh_window(&app, controller.session().state());
+                        #[cfg(feature = "mpv-runtime")]
+                        sync_runtime_video_host(&app, &mut runtime);
+                    }
                     Err(error) => app.set_status_label(error.to_string().into()),
                 }
             } else {
@@ -396,6 +405,61 @@ fn command_callback(
         with_runtime_controller(&app_handle, &runtime, |controller| {
             controller.dispatch(command.clone())
         });
+    }
+}
+
+fn apply_fullscreen_state(app: &MainWindow, state: &PlayerState) {
+    app.window().with_winit_window(|winit_window| {
+        if state.fullscreen {
+            winit_window
+                .set_fullscreen(Some(slint::winit_030::winit::window::Fullscreen::Borderless(None)));
+        } else {
+            winit_window.set_fullscreen(None);
+        }
+    });
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn current_video_rect(window: &MainWindow) -> crate::LogicalVideoRect {
+    crate::LogicalVideoRect {
+        x: window.get_video_area_x() as f32,
+        y: window.get_video_area_y() as f32,
+        width: window.get_video_area_width() as f32,
+        height: window.get_video_area_height() as f32,
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn sync_video_host_bounds<H: crate::VideoHost>(
+    window: &MainWindow,
+    host: &mut H,
+    scale_factor: f64,
+) -> Result<(), crate::VideoHostError> {
+    let bounds = current_video_rect(window).to_physical(scale_factor);
+    host.set_bounds(bounds)?;
+    host.show()
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    if runtime.video_host.is_none() {
+        return;
+    }
+    let Some(scale_factor) = window.window().with_winit_window(|winit_window| winit_window.scale_factor()) else {
+        return;
+    };
+
+    let result = {
+        let host = runtime.video_host.as_mut().expect("video host checked above");
+        sync_video_host_bounds(window, host, scale_factor).map_err(|error| error.to_string())
+    };
+
+    if let Err(error) = result {
+        if let Some(host) = runtime.video_host.as_mut() {
+            let _ = host.hide();
+        }
+        runtime.mark_error(error.clone());
+        window.set_status_label(error.into());
     }
 }
 
@@ -454,7 +518,18 @@ impl DesktopWinitHandler {
         })();
 
         match result {
-            Ok((controller, video_host)) => runtime.set_runtime(controller, video_host),
+            Ok((controller, video_host)) => {
+                runtime.set_runtime(controller, video_host);
+                let app_handle = runtime.app_handle.clone();
+                if let Some(app_handle) = app_handle {
+                    if let Some(app) = app_handle.upgrade() {
+                        if let Some(controller) = runtime.controller() {
+                            refresh_window(&app, controller.session().state());
+                        }
+                        sync_runtime_video_host(&app, &mut runtime);
+                    }
+                }
+            }
             Err(error) => runtime.mark_error(error),
         }
     }
