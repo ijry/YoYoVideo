@@ -12,6 +12,8 @@ pub enum MpvError {
     Command(String),
     #[error("mpv property failed: {0}")]
     Property(String),
+    #[error("mpv video output failed: {0}")]
+    VideoOutput(String),
     #[error("mpv string contained an interior null byte: {0}")]
     InvalidString(String),
     #[error("mpv api error: {0}")]

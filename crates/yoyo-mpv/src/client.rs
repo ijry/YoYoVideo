@@ -1,7 +1,8 @@
 use yoyo_core::{BackendCommand, BackendEvent, MediaLocator, PlayerBackend};
 
 use crate::{
-    MpvAction, MpvError, MpvEvent, MpvRenderBridge, map_event, translate_command, translate_open,
+    MpvAction, MpvClientOptions, MpvError, MpvEvent, MpvRenderBridge, map_event,
+    translate_command, translate_open,
 };
 
 pub trait MpvActionSink {
@@ -102,7 +103,11 @@ pub struct MpvBackend {
 
 impl MpvBackend {
     pub fn new_runtime() -> Result<Self, MpvError> {
-        let mut client = MpvClient::new()?;
+        Self::new_runtime_with_options(MpvClientOptions::default())
+    }
+
+    pub fn new_runtime_with_options(options: MpvClientOptions) -> Result<Self, MpvError> {
+        let mut client = MpvClient::new_with_options(options)?;
         client.observe_default_properties()?;
         Ok(Self { client, pending_events: Vec::new(), render_bridge: MpvRenderBridge::default() })
     }
@@ -158,9 +163,18 @@ pub struct MpvClient {
 #[cfg(feature = "mpv-runtime")]
 impl MpvClient {
     pub fn new() -> Result<Self, MpvError> {
+        Self::new_with_options(MpvClientOptions::default())
+    }
+
+    pub fn new_with_options(options: MpvClientOptions) -> Result<Self, MpvError> {
         let handle = unsafe { libmpv_sys::mpv_create() };
         if handle.is_null() {
             return Err(MpvError::CreateHandle);
+        }
+
+        if let Err(error) = apply_client_options(handle, &options) {
+            unsafe { libmpv_sys::mpv_terminate_destroy(handle) };
+            return Err(error);
         }
 
         let init_result = unsafe { libmpv_sys::mpv_initialize(handle) };
@@ -382,6 +396,10 @@ impl MpvClient {
         Err(MpvError::RuntimeDisabled)
     }
 
+    pub fn new_with_options(_options: MpvClientOptions) -> Result<Self, MpvError> {
+        Err(MpvError::RuntimeDisabled)
+    }
+
     pub fn observe_default_properties(&mut self) -> Result<(), MpvError> {
         Err(MpvError::RuntimeDisabled)
     }
@@ -412,6 +430,27 @@ impl MpvActionSink for MpvClient {
     fn set_f64(&mut self, _name: &str, _value: f64) -> Result<(), MpvError> {
         Err(MpvError::RuntimeDisabled)
     }
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn apply_client_options(
+    handle: *mut libmpv_sys::mpv_handle,
+    options: &MpvClientOptions,
+) -> Result<(), MpvError> {
+    for (name, value) in options.mpv_option_pairs() {
+        let name = cstring(name)?;
+        let value = cstring(&value)?;
+        let result =
+            unsafe { libmpv_sys::mpv_set_option_string(handle, name.as_ptr(), value.as_ptr()) };
+        if result < 0 {
+            return Err(MpvError::VideoOutput(format!(
+                "set option {}: {}",
+                name.to_string_lossy(),
+                mpv_error_message(result)
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "mpv-runtime")]
