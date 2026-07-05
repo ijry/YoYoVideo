@@ -72,3 +72,23 @@ fn controller_can_open_a_specific_playlist_index() {
     );
     assert_eq!(controller.session().state().current, Some(MediaLocator::File("b.mp4".into())));
 }
+
+#[test]
+fn controller_can_start_with_non_default_shortcuts() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut shortcuts = yoyo_core::ShortcutMap::default();
+    shortcuts
+        .set_binding(
+            yoyo_core::ShortcutAction::TogglePause,
+            Some(yoyo_core::Shortcut::parse("Ctrl+P").unwrap()),
+        )
+        .unwrap();
+
+    let mut controller = DesktopController::with_shortcuts(session, shortcuts);
+    controller.dispatch_shortcut("Ctrl+P").unwrap();
+
+    assert_eq!(
+        controller.session().backend().commands,
+        vec![BackendCommand::SetPaused(false)]
+    );
+}

@@ -70,7 +70,11 @@ pub struct DesktopController<B: PlayerBackend> {
 
 impl<B: PlayerBackend> DesktopController<B> {
     pub fn new(session: AppSession<B>) -> Self {
-        Self { session, shortcuts: ShortcutMap::default(), video_texture: VideoTexture::default() }
+        Self::with_shortcuts(session, ShortcutMap::default())
+    }
+
+    pub fn with_shortcuts(session: AppSession<B>, shortcuts: ShortcutMap) -> Self {
+        Self { session, shortcuts, video_texture: VideoTexture::default() }
     }
 
     pub fn dispatch(&mut self, command: AppCommand) -> Result<(), yoyo_core::AppError> {
@@ -92,6 +96,10 @@ impl<B: PlayerBackend> DesktopController<B> {
     pub fn open_playlist_index(&mut self, index: usize) -> Result<(), yoyo_core::AppError> {
         self.session.open_playlist_index(index)?;
         self.session.poll_backend()
+    }
+
+    pub fn set_shortcuts(&mut self, shortcuts: ShortcutMap) {
+        self.shortcuts = shortcuts;
     }
 
     pub fn dispatch_shortcut(&mut self, gesture: &str) -> Result<(), yoyo_core::AppError> {
@@ -136,6 +144,8 @@ struct DesktopRuntime {
     config: AppConfig,
     history: crate::HistoryRuntime,
     sidebar: crate::SidebarState,
+    settings_window: Option<SettingsWindow>,
+    settings_controller: Option<crate::SettingsController>,
     pending_resume: Option<crate::PendingResumeSeek>,
     last_seen_locator: Option<MediaLocator>,
     started_at: Instant,
@@ -156,6 +166,8 @@ impl DesktopRuntime {
             config,
             history,
             sidebar,
+            settings_window: None,
+            settings_controller: None,
             pending_resume: None,
             last_seen_locator: None,
             started_at: Instant::now(),
@@ -214,7 +226,17 @@ fn history_file_path(paths: &AppPaths) -> PathBuf {
 }
 
 fn load_boot_config(paths: Option<&AppPaths>) -> AppConfig {
-    paths.map(config_file_path).and_then(|path| AppConfig::load(&path).ok()).unwrap_or_default()
+    let Some(path) = paths.map(config_file_path) else {
+        return AppConfig::default();
+    };
+    let Ok(config) = AppConfig::load(&path) else {
+        return AppConfig::default();
+    };
+    if config.validate().is_ok() {
+        config
+    } else {
+        AppConfig::default()
+    }
 }
 
 fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::HistoryRuntime {
@@ -285,6 +307,97 @@ fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
 
     window.set_playlist_rows(model_from_vec(playlist_rows));
     window.set_history_rows(model_from_vec(history_rows));
+}
+
+fn refresh_settings_window(window: &SettingsWindow, controller: &crate::SettingsController) {
+    let snapshot = controller.snapshot();
+    window.set_section_index(snapshot.section_index);
+    window.set_default_speed_value(snapshot.default_speed);
+    window.set_default_speed_label(format!("{:.2}x", snapshot.default_speed).into());
+    window.set_default_volume_value(i32::from(snapshot.default_volume_percent));
+    window.set_default_volume_label(format!("{}%", snapshot.default_volume_percent).into());
+    window.set_prefer_hardware_decode(snapshot.prefer_hardware_decode);
+    window.set_remember_history(snapshot.remember_history);
+    window.set_show_playlist_on_startup(snapshot.show_playlist_on_startup);
+    window.set_dirty(snapshot.dirty);
+    window.set_can_apply(snapshot.can_apply);
+    window.set_status_label(snapshot.status_message.into());
+
+    let rows = snapshot
+        .shortcut_rows
+        .into_iter()
+        .map(|row| SettingsShortcutRowData {
+            action_label: row.action_label.into(),
+            binding_label: row.binding_label.into(),
+            conflict_label: row.conflict_message.unwrap_or_default().into(),
+            is_capturing: row.is_capturing,
+        })
+        .collect::<Vec<_>>();
+
+    window.set_shortcut_rows(model_from_vec(rows));
+}
+
+fn refresh_runtime_settings_window(runtime: &DesktopRuntime) {
+    if let (Some(window), Some(controller)) = (
+        runtime.settings_window.as_ref(),
+        runtime.settings_controller.as_ref(),
+    ) {
+        refresh_settings_window(window, controller);
+    }
+}
+
+fn mutate_settings_controller<F>(runtime: &mut DesktopRuntime, action: F)
+where
+    F: FnOnce(&mut crate::SettingsController),
+{
+    {
+        let Some(controller) = runtime.settings_controller.as_mut() else {
+            return;
+        };
+        action(controller);
+    }
+    refresh_runtime_settings_window(runtime);
+}
+
+fn apply_saved_settings(runtime: &mut DesktopRuntime, saved: AppConfig) {
+    if let Some(controller) = runtime.controller_mut() {
+        controller.set_shortcuts(saved.shortcuts.clone());
+    }
+    runtime.history.set_enabled(saved.ui.remember_history);
+    runtime.config = saved;
+}
+
+fn handle_settings_save(
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    config_path: &PathBuf,
+    close_after_save: bool,
+) {
+    let mut runtime = runtime.borrow_mut();
+    let saved = {
+        let Some(controller) = runtime.settings_controller.as_mut() else {
+            return;
+        };
+        match controller.save(config_path) {
+            Ok(saved) => saved,
+            Err(error) => {
+                if let Some(window) = runtime.settings_window.as_ref() {
+                    window.set_status_label(error.to_string().into());
+                }
+                return;
+            }
+        }
+    };
+
+    apply_saved_settings(&mut runtime, saved);
+    if let Some(app) = runtime.app_handle.as_ref().and_then(|handle| handle.upgrade()) {
+        app.set_status_label("Settings saved".into());
+    }
+    refresh_runtime_settings_window(&runtime);
+    if close_after_save {
+        if let Some(window) = runtime.settings_window.as_ref() {
+            let _ = window.hide();
+        }
+    }
 }
 
 fn ensure_runtime_ready(
@@ -404,6 +517,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
     let paths = AppPaths::discover();
+    let config_path =
+        paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
     let config = load_boot_config(paths.as_ref());
     let history = load_history_runtime(paths.as_ref(), &config);
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
@@ -592,10 +707,199 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     app.on_settings_requested({
-        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        let config_path = config_path.clone();
         move || {
-            if let Some(app) = app_handle.upgrade() {
-                app.set_status_label("Settings persistence is enabled".into());
+            let mut runtime_ref = runtime.borrow_mut();
+            let current_config = runtime_ref.config.clone();
+            runtime_ref.settings_controller = Some(crate::SettingsController::new(current_config));
+
+            if runtime_ref.settings_window.is_none() {
+                let window = SettingsWindow::new().expect("settings window");
+                let keyboard_state = Rc::new(RefCell::new(
+                    crate::keyboard::winit_adapter::WinitKeyboardState::default(),
+                ));
+
+                window.on_section_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move |index| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_section(index);
+                        });
+                    }
+                });
+
+                window.on_default_speed_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |speed| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_default_speed(speed);
+                        });
+                    }
+                });
+
+                window.on_default_volume_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |volume| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_default_volume_percent(volume.clamp(0, 100) as u8);
+                        });
+                    }
+                });
+
+                window.on_prefer_hardware_decode_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |value| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_prefer_hardware_decode(value);
+                        });
+                    }
+                });
+
+                window.on_remember_history_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |value| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_remember_history(value);
+                        });
+                    }
+                });
+
+                window.on_show_playlist_on_startup_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |value| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_show_playlist_on_startup(value);
+                        });
+                    }
+                });
+
+                window.on_edit_shortcut_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move |index| {
+                        if index < 0 {
+                            return;
+                        }
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                            return;
+                        };
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.begin_shortcut_capture(action);
+                        });
+                    }
+                });
+
+                window.on_clear_shortcut_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move |index| {
+                        if index < 0 {
+                            return;
+                        }
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                            return;
+                        };
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.clear_shortcut(action);
+                        });
+                    }
+                });
+
+                window.on_restore_shortcut_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move |index| {
+                        if index < 0 {
+                            return;
+                        }
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                            return;
+                        };
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.restore_shortcut_default(action);
+                        });
+                    }
+                });
+
+                window.on_restore_defaults_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move || {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.restore_defaults();
+                        });
+                    }
+                });
+
+                window.on_apply_requested({
+                    let runtime = Rc::clone(&runtime);
+                    let config_path = config_path.clone();
+                    move || handle_settings_save(&runtime, &config_path, false)
+                });
+
+                window.on_ok_requested({
+                    let runtime = Rc::clone(&runtime);
+                    let config_path = config_path.clone();
+                    move || handle_settings_save(&runtime, &config_path, true)
+                });
+
+                window.on_cancel_requested({
+                    let runtime = Rc::clone(&runtime);
+                    move || {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.discard_changes();
+                        });
+                        if let Some(window) = runtime.settings_window.as_ref() {
+                            let _ = window.hide();
+                        }
+                    }
+                });
+
+                window.window().on_winit_window_event({
+                    let runtime = Rc::clone(&runtime);
+                    let keyboard_state = Rc::clone(&keyboard_state);
+                    move |_window, event| {
+                        let Some(input) = keyboard_state.borrow_mut().update(event) else {
+                            return slint::winit_030::EventResult::Propagate;
+                        };
+
+                        let mut runtime = runtime.borrow_mut();
+                        let is_capturing = runtime
+                            .settings_controller
+                            .as_ref()
+                            .is_some_and(crate::SettingsController::is_capturing);
+                        if !is_capturing {
+                            return slint::winit_030::EventResult::Propagate;
+                        }
+
+                        let consumed = {
+                            let controller =
+                                runtime.settings_controller.as_mut().expect("checked above");
+                            controller.capture_shortcut(input).unwrap_or(false)
+                        };
+                        if consumed {
+                            refresh_runtime_settings_window(&runtime);
+                            slint::winit_030::EventResult::PreventDefault
+                        } else {
+                            slint::winit_030::EventResult::Propagate
+                        }
+                    }
+                });
+
+                runtime_ref.settings_window = Some(window);
+            }
+
+            refresh_runtime_settings_window(&runtime_ref);
+            if let Some(window) = runtime_ref.settings_window.as_ref() {
+                let _ = window.show();
             }
         }
     });
@@ -810,6 +1114,7 @@ impl DesktopWinitHandler {
         }
 
         let config = runtime.config.clone();
+        let shortcuts = config.shortcuts.clone();
         let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
             let video_host = WinitVideoHost::new_child(event_loop, parent_window)
                 .map_err(|error| error.to_string())?;
@@ -817,7 +1122,7 @@ impl DesktopWinitHandler {
             let backend = build_desktop_backend_with_video_window(window_id)
                 .map_err(|error| error.to_string())?;
             let session = AppSession::new(config, backend);
-            Ok((DesktopController::new(session), video_host))
+            Ok((DesktopController::with_shortcuts(session, shortcuts), video_host))
         })();
 
         match result {

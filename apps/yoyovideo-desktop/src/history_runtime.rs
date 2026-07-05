@@ -70,6 +70,17 @@ impl HistoryRuntime {
         &self.store
     }
 
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.dirty = false;
+        }
+    }
+
     pub fn remember_playback(
         &mut self,
         locator: &MediaLocator,
