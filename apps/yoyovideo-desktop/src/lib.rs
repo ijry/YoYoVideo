@@ -3,6 +3,7 @@ mod keyboard;
 pub mod platform;
 mod presenter;
 mod settings_controller;
+mod sidebar;
 mod video_host;
 #[cfg(feature = "mpv-runtime")]
 mod video_host_winit;
@@ -20,6 +21,10 @@ pub use presenter::{
     progress_ratio,
 };
 pub use settings_controller::SettingsController;
+pub use sidebar::{
+    HistorySidebarRow, PlaylistSidebarRow, SidebarState, SidebarTab, build_history_rows,
+    build_playlist_rows, expanded_sidebar_width, initial_sidebar_state,
+};
 pub use video_host::{
     LogicalVideoRect, NativeVideoWindowId, UnsupportedVideoHost, VideoHost, VideoHostBounds,
     VideoHostError,
