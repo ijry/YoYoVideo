@@ -26,6 +26,60 @@ pub enum ShortcutAction {
     OpenUrl,
 }
 
+impl ShortcutAction {
+    pub fn all() -> &'static [ShortcutAction] {
+        const ACTIONS: [ShortcutAction; 18] = [
+            ShortcutAction::TogglePause,
+            ShortcutAction::SeekBackwardSmall,
+            ShortcutAction::SeekForwardSmall,
+            ShortcutAction::VolumeUp,
+            ShortcutAction::VolumeDown,
+            ShortcutAction::SpeedDown,
+            ShortcutAction::SpeedUp,
+            ShortcutAction::ResetSpeed,
+            ShortcutAction::SetABLoopPointA,
+            ShortcutAction::SetABLoopPointB,
+            ShortcutAction::ClearABLoop,
+            ShortcutAction::RotateClockwise,
+            ShortcutAction::ZoomOut,
+            ShortcutAction::ZoomIn,
+            ShortcutAction::CycleAudioChannel,
+            ShortcutAction::ToggleFullscreen,
+            ShortcutAction::OpenFile,
+            ShortcutAction::OpenUrl,
+        ];
+
+        &ACTIONS
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ShortcutAction::TogglePause => "Play / Pause",
+            ShortcutAction::SeekBackwardSmall => "Seek Backward 5s",
+            ShortcutAction::SeekForwardSmall => "Seek Forward 5s",
+            ShortcutAction::VolumeUp => "Volume Up",
+            ShortcutAction::VolumeDown => "Volume Down",
+            ShortcutAction::SpeedDown => "Speed Down",
+            ShortcutAction::SpeedUp => "Speed Up",
+            ShortcutAction::ResetSpeed => "Reset Speed",
+            ShortcutAction::SetABLoopPointA => "Set A-B Point A",
+            ShortcutAction::SetABLoopPointB => "Set A-B Point B",
+            ShortcutAction::ClearABLoop => "Clear A-B Loop",
+            ShortcutAction::RotateClockwise => "Rotate Clockwise",
+            ShortcutAction::ZoomOut => "Zoom Out",
+            ShortcutAction::ZoomIn => "Zoom In",
+            ShortcutAction::CycleAudioChannel => "Cycle Audio Channel",
+            ShortcutAction::ToggleFullscreen => "Toggle Fullscreen",
+            ShortcutAction::OpenFile => "Open File",
+            ShortcutAction::OpenUrl => "Open URL",
+        }
+    }
+
+    pub fn default_shortcut(self) -> Option<Shortcut> {
+        ShortcutMap::default().shortcut_for_action(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Shortcut(String);
 
@@ -76,5 +130,34 @@ impl Default for ShortcutMap {
 impl ShortcutMap {
     pub fn action_for(&self, shortcut: &Shortcut) -> Option<ShortcutAction> {
         self.bindings.get(shortcut).copied()
+    }
+
+    pub fn shortcut_for_action(&self, action: ShortcutAction) -> Option<Shortcut> {
+        self.bindings
+            .iter()
+            .find_map(|(shortcut, mapped)| (*mapped == action).then_some(shortcut.clone()))
+    }
+
+    pub fn set_binding(
+        &mut self,
+        action: ShortcutAction,
+        shortcut: Option<Shortcut>,
+    ) -> Result<(), ValidationError> {
+        if let Some(shortcut) = shortcut {
+            if let Some(existing) = self.bindings.get(&shortcut) {
+                if *existing != action {
+                    return Err(ValidationError::DuplicateShortcut(
+                        shortcut.as_str().to_string(),
+                    ));
+                }
+            }
+
+            self.bindings.retain(|_, mapped| *mapped != action);
+            self.bindings.insert(shortcut, action);
+            return Ok(());
+        }
+
+        self.bindings.retain(|_, mapped| *mapped != action);
+        Ok(())
     }
 }

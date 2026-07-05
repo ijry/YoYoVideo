@@ -3,7 +3,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ShortcutMap, StorageError};
+use crate::{ShortcutMap, StorageError, ValidationError};
+
+pub const MIN_DEFAULT_SPEED: f32 = 0.25;
+pub const MAX_DEFAULT_SPEED: f32 = 4.0;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackDefaults {
@@ -40,6 +43,25 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if !self.playback.default_speed.is_finite()
+            || self.playback.default_speed < MIN_DEFAULT_SPEED
+            || self.playback.default_speed > MAX_DEFAULT_SPEED
+        {
+            return Err(ValidationError::InvalidConfig(format!(
+                "default speed must be within {MIN_DEFAULT_SPEED:.2}x..={MAX_DEFAULT_SPEED:.2}x"
+            )));
+        }
+
+        if self.playback.default_volume_percent > 100 {
+            return Err(ValidationError::InvalidConfig(
+                "default volume must be within 0..=100".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn load(path: &Path) -> Result<Self, StorageError> {
         if !path.exists() {
             return Ok(Self::default());

@@ -12,6 +12,10 @@ pub enum ValidationError {
     UnsupportedMediaPath(PathBuf),
     #[error("invalid shortcut: {0}")]
     InvalidShortcut(String),
+    #[error("duplicate shortcut: {0}")]
+    DuplicateShortcut(String),
+    #[error("invalid config: {0}")]
+    InvalidConfig(String),
 }
 
 #[derive(Debug, Error)]
