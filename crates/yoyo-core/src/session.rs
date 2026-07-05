@@ -1,6 +1,7 @@
 use crate::{
     AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, MediaLocator,
-    PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
+    MediaTrack, PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
+    SubtitlePlaybackState,
 };
 
 pub struct AppSession<B: PlayerBackend> {
@@ -30,8 +31,20 @@ impl<B: PlayerBackend> AppSession<B> {
         &mut self.backend
     }
 
+    pub fn set_subtitle_preferences_restored(&mut self, restored: bool) {
+        self.state.subtitle_preferences_restored = restored;
+    }
+
     pub fn playlist_snapshot(&self) -> PlaylistSnapshot {
         self.playlist.snapshot()
+    }
+
+    fn reset_track_state_for_new_media(&mut self) {
+        self.state.audio_tracks.clear();
+        self.state.subtitle_tracks.clear();
+        self.state.video_tracks.clear();
+        self.state.subtitle = SubtitlePlaybackState::default();
+        self.state.subtitle_preferences_restored = false;
     }
 
     pub fn replace_playlist(
@@ -40,7 +53,8 @@ impl<B: PlayerBackend> AppSession<B> {
         start_index: usize,
     ) -> Result<(), AppError> {
         self.playlist.replace(entries, start_index);
-        if let Some(entry) = self.playlist.current() {
+        if let Some(entry) = self.playlist.current().cloned() {
+            self.reset_track_state_for_new_media();
             self.backend.open(&entry.locator).map_err(AppError::Message)?;
             self.state.current = Some(entry.locator.clone());
             self.state.paused = false;
@@ -53,6 +67,7 @@ impl<B: PlayerBackend> AppSession<B> {
             return Ok(());
         };
 
+        self.reset_track_state_for_new_media();
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(entry.locator.clone());
         self.state.paused = false;
@@ -62,6 +77,7 @@ impl<B: PlayerBackend> AppSession<B> {
     fn open_single_locator(&mut self, locator: MediaLocator) -> Result<(), AppError> {
         let entry = PlaylistEntry::new(locator.clone());
         self.playlist.replace(vec![entry.clone()], 0);
+        self.reset_track_state_for_new_media();
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(locator);
         self.state.paused = false;
@@ -77,6 +93,19 @@ impl<B: PlayerBackend> AppSession<B> {
 
     fn previous_playlist_index(&self) -> Option<usize> {
         self.playlist.current_index.and_then(|current| current.checked_sub(1))
+    }
+
+    fn mark_selected(tracks: &mut [MediaTrack], id: i64) {
+        for track in tracks {
+            track.selected = track.id == id;
+        }
+    }
+
+    fn selected_external_subtitle_path(tracks: &[MediaTrack]) -> Option<std::path::PathBuf> {
+        tracks
+            .iter()
+            .find(|track| track.selected && track.external)
+            .and_then(|track| track.source_path.clone())
     }
 
     pub fn handle_command(&mut self, command: AppCommand) -> Result<(), AppError> {
@@ -181,6 +210,56 @@ impl<B: PlayerBackend> AppSession<B> {
                     self.open_playlist_index(index)?;
                 }
             }
+            AppCommand::SelectAudioTrack(id) => {
+                Self::mark_selected(&mut self.state.audio_tracks, id);
+                self.backend
+                    .send(BackendCommand::SelectAudioTrack(id))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SelectSubtitleTrack(id) => {
+                Self::mark_selected(&mut self.state.subtitle_tracks, id);
+                self.state.subtitle.visible = true;
+                self.state.subtitle.external_path =
+                    Self::selected_external_subtitle_path(&self.state.subtitle_tracks);
+                self.backend
+                    .send(BackendCommand::SelectSubtitleTrack(id))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SelectVideoTrack(id) => {
+                Self::mark_selected(&mut self.state.video_tracks, id);
+                self.backend
+                    .send(BackendCommand::SelectVideoTrack(id))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SetSubtitleVisible(visible) => {
+                self.state.subtitle.visible = visible;
+                self.backend
+                    .send(BackendCommand::SetSubtitleVisible(visible))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::LoadExternalSubtitle(path) => {
+                self.backend
+                    .send(BackendCommand::LoadExternalSubtitle(path))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SetSubtitleDelay(delay) => {
+                self.state.subtitle.delay_seconds = delay;
+                self.backend
+                    .send(BackendCommand::SetSubtitleDelay(delay))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SetSubtitleScale(scale) => {
+                self.state.subtitle.scale = scale;
+                self.backend
+                    .send(BackendCommand::SetSubtitleScale(scale))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SetSubtitleVerticalPosition(position) => {
+                self.state.subtitle.vertical_position_percent = position;
+                self.backend
+                    .send(BackendCommand::SetSubtitleVerticalPosition(position))
+                    .map_err(AppError::Message)?;
+            }
             AppCommand::OpenFolder(_) => {
                 return Err(AppError::Message(
                     "OpenFolder must be expanded into a playlist by the desktop app".into(),
@@ -200,6 +279,25 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::VolumeChanged(volume) => self.state.volume_percent = volume,
                 BackendEvent::AudioChannelChanged(mode) => self.state.audio_channel = mode,
                 BackendEvent::RotationChanged(rotation) => self.state.rotation = rotation,
+                BackendEvent::TracksChanged { audio, subtitles, video } => {
+                    self.state.audio_tracks = audio;
+                    self.state.subtitle_tracks = subtitles;
+                    self.state.video_tracks = video;
+                    self.state.subtitle.external_path =
+                        Self::selected_external_subtitle_path(&self.state.subtitle_tracks);
+                }
+                BackendEvent::SubtitleVisibilityChanged(visible) => {
+                    self.state.subtitle.visible = visible;
+                }
+                BackendEvent::SubtitleDelayChanged(delay) => {
+                    self.state.subtitle.delay_seconds = delay;
+                }
+                BackendEvent::SubtitleScaleChanged(scale) => {
+                    self.state.subtitle.scale = scale;
+                }
+                BackendEvent::SubtitleVerticalPositionChanged(position) => {
+                    self.state.subtitle.vertical_position_percent = position;
+                }
                 BackendEvent::Warning(message) => self.state.status_message = Some(message),
                 BackendEvent::Error(message) => self.state.last_error = Some(message),
                 BackendEvent::EndOfFile => {

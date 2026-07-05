@@ -22,4 +22,12 @@ pub enum AppCommand {
     ToggleFullscreen,
     NextItem,
     PreviousItem,
+    SelectAudioTrack(i64),
+    SelectSubtitleTrack(i64),
+    SelectVideoTrack(i64),
+    SetSubtitleVisible(bool),
+    LoadExternalSubtitle(PathBuf),
+    SetSubtitleDelay(f64),
+    SetSubtitleScale(f32),
+    SetSubtitleVerticalPosition(u8),
 }

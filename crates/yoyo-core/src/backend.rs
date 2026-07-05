@@ -1,4 +1,6 @@
-use crate::{AudioChannelMode, MediaLocator, Rotation};
+use std::path::PathBuf;
+
+use crate::{AudioChannelMode, MediaLocator, MediaTrack, Rotation};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendCommand {
@@ -13,6 +15,14 @@ pub enum BackendCommand {
     SetABLoopPointA(f64),
     SetABLoopPointB(f64),
     ClearABLoop,
+    SelectAudioTrack(i64),
+    SelectSubtitleTrack(i64),
+    SelectVideoTrack(i64),
+    SetSubtitleVisible(bool),
+    LoadExternalSubtitle(PathBuf),
+    SetSubtitleDelay(f64),
+    SetSubtitleScale(f32),
+    SetSubtitleVerticalPosition(u8),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +34,15 @@ pub enum BackendEvent {
     VolumeChanged(u8),
     AudioChannelChanged(AudioChannelMode),
     RotationChanged(Rotation),
+    TracksChanged {
+        audio: Vec<MediaTrack>,
+        subtitles: Vec<MediaTrack>,
+        video: Vec<MediaTrack>,
+    },
+    SubtitleVisibilityChanged(bool),
+    SubtitleDelayChanged(f64),
+    SubtitleScaleChanged(f32),
+    SubtitleVerticalPositionChanged(u8),
     Warning(String),
     Error(String),
     EndOfFile,
