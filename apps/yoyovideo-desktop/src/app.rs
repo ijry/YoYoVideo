@@ -348,6 +348,22 @@ fn initial_runtime_error() -> Option<String> {
     Some("Playback runtime is disabled in this build".to_string())
 }
 
+pub fn format_runtime_startup_error(error: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!(
+            "Playback runtime failed: {error}. Check that libmpv is staged at third_party/mpv/windows-x64/bin/mpv-2.dll for development or beside the packaged executable for release. Recovery: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -Force"
+        )
+    } else if cfg!(target_os = "macos") {
+        format!(
+            "Playback runtime failed: {error}. Check that libmpv.dylib is staged for macos-universal packaging or available to the app runtime."
+        )
+    } else {
+        format!(
+            "Playback runtime failed: {error}. Check that libmpv.so is staged for linux-x64 packaging or available through LD_LIBRARY_PATH."
+        )
+    }
+}
+
 fn config_file_path(paths: &AppPaths) -> PathBuf {
     paths.config_dir.join("config.toml")
 }
@@ -1758,10 +1774,12 @@ impl DesktopWinitHandler {
                 }
             }
             Err(error) => {
-                runtime.mark_error(error.clone());
+                let message = format_runtime_startup_error(&error);
+                runtime.record_diagnostic("ERROR", &message);
+                runtime.mark_error(message.clone());
                 if let Some(app_handle) = runtime.app_handle.clone() {
                     if let Some(app) = app_handle.upgrade() {
-                        app.set_status_label(error.into());
+                        app.set_status_label(message.into());
                         refresh_sidebar(&app, &runtime);
                         refresh_tracks_popup(&app, &runtime);
                     }
