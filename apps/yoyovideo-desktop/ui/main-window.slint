@@ -10,6 +10,11 @@ export struct HistorySidebarRowData {
     subtitle: string,
 }
 
+export struct TrackPopupRowData {
+    label: string,
+    selected: bool,
+}
+
 export component MainWindow inherits Window {
     title: "YoYoVideo";
     width: 1200px;
@@ -31,6 +36,16 @@ export component MainWindow inherits Window {
     in-out property <float> sidebar_expanded_width_px: 320.0;
     in-out property <[PlaylistSidebarRowData]> playlist_rows: [];
     in-out property <[HistorySidebarRowData]> history_rows: [];
+    in-out property <[TrackPopupRowData]> audio_track_rows: [];
+    in-out property <[TrackPopupRowData]> subtitle_track_rows: [];
+    in-out property <[TrackPopupRowData]> video_track_rows: [];
+    in-out property <bool> subtitle_visible: true;
+    in-out property <float> subtitle_delay_value: 0.0;
+    in-out property <string> subtitle_delay_label: "+0.00s";
+    in-out property <float> subtitle_scale_value: 1.0;
+    in-out property <string> subtitle_scale_label: "100%";
+    in-out property <float> subtitle_position_value: 100.0;
+    in-out property <string> tracks_status_label: "";
     out property <bool> url_focused: url_input.has-focus;
 
     out property <length> video_area_x: video_area.x;
@@ -61,6 +76,14 @@ export component MainWindow inherits Window {
     callback show_history_tab_requested();
     callback playlist_item_requested(int);
     callback history_item_requested(int);
+    callback audio_track_requested(int);
+    callback subtitle_track_requested(int);
+    callback video_track_requested(int);
+    callback load_external_subtitle_requested();
+    callback subtitle_visible_changed(bool);
+    callback subtitle_delay_changed(float);
+    callback subtitle_scale_changed(float);
+    callback subtitle_position_changed(float);
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
@@ -84,6 +107,74 @@ export component MainWindow inherits Window {
             Button { text: "Clear A-B"; clicked => { root.clear_ab_loop_requested(); menu_popup.close(); } }
             Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
             Button { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
+        }
+    }
+
+    tracks_popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 360px;
+        height: 520px;
+
+        ScrollView {
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                Text { text: "Audio Tracks"; color: #f2f5f7; }
+                for row[idx] in root.audio_track_rows: Button {
+                    text: row.label;
+                    clicked => { root.audio_track_requested(idx); }
+                }
+
+                Text { text: "Subtitle Tracks"; color: #f2f5f7; }
+                for row[idx] in root.subtitle_track_rows: Button {
+                    text: row.label;
+                    clicked => { root.subtitle_track_requested(idx); }
+                }
+
+                Button {
+                    text: "Load Subtitle...";
+                    clicked => { root.load_external_subtitle_requested(); }
+                }
+
+                CheckBox {
+                    text: "Subtitle Visible";
+                    checked: root.subtitle_visible;
+                    toggled => { root.subtitle_visible_changed(self.checked); }
+                }
+
+                Text { text: root.subtitle_delay_label; color: #c7d1d8; }
+                Slider {
+                    minimum: -10;
+                    maximum: 10;
+                    value: root.subtitle_delay_value;
+                    changed(value) => { root.subtitle_delay_changed(value); }
+                }
+
+                Text { text: root.subtitle_scale_label; color: #c7d1d8; }
+                Slider {
+                    minimum: 0.5;
+                    maximum: 2.0;
+                    value: root.subtitle_scale_value;
+                    changed(value) => { root.subtitle_scale_changed(value); }
+                }
+
+                Text { text: "Subtitle Position"; color: #c7d1d8; }
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value: root.subtitle_position_value;
+                    changed(value) => { root.subtitle_position_changed(value); }
+                }
+
+                Text { text: "Video Tracks"; color: #f2f5f7; }
+                for row[idx] in root.video_track_rows: Button {
+                    text: row.label;
+                    clicked => { root.video_track_requested(idx); }
+                }
+
+                Text { text: root.tracks_status_label; color: #7d8790; }
+            }
         }
     }
 
@@ -129,6 +220,7 @@ export component MainWindow inherits Window {
                         clicked => { root.toggle_sidebar_requested(); }
                     }
                     Button { text: "Menu"; clicked => { menu_popup.show(); } }
+                    Button { text: "Tracks"; clicked => { tracks_popup.show(); } }
                     url_input := LineEdit {
                         placeholder-text: "Open URL";
                         accepted => { root.open_url_requested(self.text); }
