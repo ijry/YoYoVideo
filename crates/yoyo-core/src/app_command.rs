@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::{FrameStepDirection, VideoAdjustmentKind, VideoFilterPreset};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppCommand {
     OpenFile(PathBuf),
@@ -30,4 +32,9 @@ pub enum AppCommand {
     SetSubtitleDelay(f64),
     SetSubtitleScale(f32),
     SetSubtitleVerticalPosition(u8),
+    TakeScreenshot(PathBuf),
+    StepFrame(FrameStepDirection),
+    SetVideoAdjustment(VideoAdjustmentKind, i16),
+    ResetVideoAdjustments,
+    SetVideoFilterPreset(VideoFilterPreset),
 }

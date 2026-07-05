@@ -19,6 +19,76 @@ pub enum Rotation {
     Deg270,
 }
 
+pub const MIN_VIDEO_ADJUSTMENT: i16 = -100;
+pub const MAX_VIDEO_ADJUSTMENT: i16 = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VideoAdjustmentKind {
+    Brightness,
+    Contrast,
+    Saturation,
+    Gamma,
+    Hue,
+}
+
+impl VideoAdjustmentKind {
+    pub const ALL: [Self; 5] =
+        [Self::Brightness, Self::Contrast, Self::Saturation, Self::Gamma, Self::Hue];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct VideoAdjustments {
+    pub brightness: i16,
+    pub contrast: i16,
+    pub saturation: i16,
+    pub gamma: i16,
+    pub hue: i16,
+}
+
+impl VideoAdjustments {
+    pub fn get(&self, kind: VideoAdjustmentKind) -> i16 {
+        match kind {
+            VideoAdjustmentKind::Brightness => self.brightness,
+            VideoAdjustmentKind::Contrast => self.contrast,
+            VideoAdjustmentKind::Saturation => self.saturation,
+            VideoAdjustmentKind::Gamma => self.gamma,
+            VideoAdjustmentKind::Hue => self.hue,
+        }
+    }
+
+    pub fn set_clamped(&mut self, kind: VideoAdjustmentKind, value: i16) -> i16 {
+        let value = value.clamp(MIN_VIDEO_ADJUSTMENT, MAX_VIDEO_ADJUSTMENT);
+        match kind {
+            VideoAdjustmentKind::Brightness => self.brightness = value,
+            VideoAdjustmentKind::Contrast => self.contrast = value,
+            VideoAdjustmentKind::Saturation => self.saturation = value,
+            VideoAdjustmentKind::Gamma => self.gamma = value,
+            VideoAdjustmentKind::Hue => self.hue = value,
+        }
+        value
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VideoFilterPreset {
+    None,
+    Sharpen,
+    LightDenoise,
+    Grayscale,
+    Invert,
+}
+
+impl VideoFilterPreset {
+    pub const ALL: [Self; 5] =
+        [Self::None, Self::Sharpen, Self::LightDenoise, Self::Grayscale, Self::Invert];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FrameStepDirection {
+    Previous,
+    Next,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct LoopState {
     pub point_a: Option<f64>,
@@ -85,6 +155,8 @@ pub struct PlayerState {
     pub video_tracks: Vec<MediaTrack>,
     pub subtitle: SubtitlePlaybackState,
     pub subtitle_preferences_restored: bool,
+    pub video_adjustments: VideoAdjustments,
+    pub video_filter_preset: VideoFilterPreset,
 }
 
 impl PlayerState {
@@ -122,6 +194,8 @@ impl Default for PlayerState {
             video_tracks: Vec::new(),
             subtitle: SubtitlePlaybackState::default(),
             subtitle_preferences_restored: false,
+            video_adjustments: VideoAdjustments::default(),
+            video_filter_preset: VideoFilterPreset::None,
         }
     }
 }

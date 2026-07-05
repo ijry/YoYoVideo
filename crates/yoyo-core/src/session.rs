@@ -260,6 +260,38 @@ impl<B: PlayerBackend> AppSession<B> {
                     .send(BackendCommand::SetSubtitleVerticalPosition(position))
                     .map_err(AppError::Message)?;
             }
+            AppCommand::TakeScreenshot(path) => {
+                self.backend
+                    .send(BackendCommand::TakeScreenshot(path.clone()))
+                    .map_err(AppError::Message)?;
+                self.state.last_error = None;
+                self.state.status_message = Some(format!("Screenshot saved: {}", path.display()));
+            }
+            AppCommand::StepFrame(direction) => {
+                self.backend
+                    .send(BackendCommand::StepFrame(direction))
+                    .map_err(AppError::Message)?;
+            }
+            AppCommand::SetVideoAdjustment(kind, value) => {
+                let clamped =
+                    value.clamp(crate::MIN_VIDEO_ADJUSTMENT, crate::MAX_VIDEO_ADJUSTMENT);
+                self.backend
+                    .send(BackendCommand::SetVideoAdjustment(kind, clamped))
+                    .map_err(AppError::Message)?;
+                self.state.video_adjustments.set_clamped(kind, clamped);
+            }
+            AppCommand::ResetVideoAdjustments => {
+                self.backend
+                    .send(BackendCommand::ResetVideoAdjustments)
+                    .map_err(AppError::Message)?;
+                self.state.video_adjustments = Default::default();
+            }
+            AppCommand::SetVideoFilterPreset(preset) => {
+                self.backend
+                    .send(BackendCommand::SetVideoFilterPreset(preset))
+                    .map_err(AppError::Message)?;
+                self.state.video_filter_preset = preset;
+            }
             AppCommand::OpenFolder(_) => {
                 return Err(AppError::Message(
                     "OpenFolder must be expanded into a playlist by the desktop app".into(),

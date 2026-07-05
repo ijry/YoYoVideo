@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use crate::{AudioChannelMode, MediaLocator, MediaTrack, Rotation};
+use crate::{
+    AudioChannelMode, FrameStepDirection, MediaLocator, MediaTrack, Rotation, VideoAdjustmentKind,
+    VideoFilterPreset,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendCommand {
@@ -23,6 +26,11 @@ pub enum BackendCommand {
     SetSubtitleDelay(f64),
     SetSubtitleScale(f32),
     SetSubtitleVerticalPosition(u8),
+    TakeScreenshot(PathBuf),
+    StepFrame(FrameStepDirection),
+    SetVideoAdjustment(VideoAdjustmentKind, i16),
+    ResetVideoAdjustments,
+    SetVideoFilterPreset(VideoFilterPreset),
 }
 
 #[derive(Debug, Clone, PartialEq)]
