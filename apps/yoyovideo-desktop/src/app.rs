@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, EventResult};
 use slint::winit_030::WinitWindowAccessor;
 use yoyo_core::{
-    AppCommand, AppConfig, AppSession, HistoryStore, MediaLocator, PlayerBackend, PlayerState,
-    ShortcutAction, ShortcutMap,
+    AppCommand, AppConfig, AppSession, FrameStepDirection, HistoryStore, MediaLocator,
+    PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
 };
 use yoyo_mpv::{MpvBackend, MpvError};
 
@@ -103,10 +103,14 @@ impl<B: PlayerBackend> DesktopController<B> {
     }
 
     pub fn dispatch_shortcut(&mut self, gesture: &str) -> Result<(), yoyo_core::AppError> {
-        if let Some(command) = dispatch_shortcut(&self.shortcuts, gesture) {
+        if let Some(ShortcutDispatch::Command(command)) = self.resolve_shortcut(gesture) {
             self.dispatch(command)?;
         }
         Ok(())
+    }
+
+    pub fn resolve_shortcut(&self, gesture: &str) -> Option<ShortcutDispatch> {
+        resolve_shortcut(&self.shortcuts, gesture)
     }
 
     pub fn poll_backend(&mut self) -> Result<(), yoyo_core::AppError> {
@@ -118,26 +122,62 @@ impl<B: PlayerBackend> DesktopController<B> {
     }
 }
 
-pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShortcutDispatch {
+    Command(AppCommand),
+    TakeScreenshot,
+}
+
+pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDispatch> {
     let shortcut = yoyo_core::Shortcut::parse(gesture).ok()?;
     match map.action_for(&shortcut)? {
-        ShortcutAction::TogglePause => Some(AppCommand::TogglePause),
-        ShortcutAction::SeekBackwardSmall => Some(AppCommand::SeekRelative(-5.0)),
-        ShortcutAction::SeekForwardSmall => Some(AppCommand::SeekRelative(5.0)),
-        ShortcutAction::VolumeUp => Some(AppCommand::AdjustVolume(5)),
-        ShortcutAction::VolumeDown => Some(AppCommand::AdjustVolume(-5)),
-        ShortcutAction::SpeedDown => Some(AppCommand::SetSpeed(0.75)),
-        ShortcutAction::SpeedUp => Some(AppCommand::SetSpeed(1.25)),
-        ShortcutAction::ResetSpeed => Some(AppCommand::ResetSpeed),
-        ShortcutAction::SetABLoopPointA => Some(AppCommand::SetABLoopPointA),
-        ShortcutAction::SetABLoopPointB => Some(AppCommand::SetABLoopPointB),
-        ShortcutAction::ClearABLoop => Some(AppCommand::ClearABLoop),
-        ShortcutAction::RotateClockwise => Some(AppCommand::RotateClockwise),
-        ShortcutAction::ZoomOut => Some(AppCommand::ZoomOut),
-        ShortcutAction::ZoomIn => Some(AppCommand::ZoomIn),
-        ShortcutAction::CycleAudioChannel => Some(AppCommand::CycleAudioChannel),
-        ShortcutAction::ToggleFullscreen => Some(AppCommand::ToggleFullscreen),
+        ShortcutAction::TogglePause => Some(ShortcutDispatch::Command(AppCommand::TogglePause)),
+        ShortcutAction::SeekBackwardSmall => {
+            Some(ShortcutDispatch::Command(AppCommand::SeekRelative(-5.0)))
+        }
+        ShortcutAction::SeekForwardSmall => {
+            Some(ShortcutDispatch::Command(AppCommand::SeekRelative(5.0)))
+        }
+        ShortcutAction::VolumeUp => Some(ShortcutDispatch::Command(AppCommand::AdjustVolume(5))),
+        ShortcutAction::VolumeDown => {
+            Some(ShortcutDispatch::Command(AppCommand::AdjustVolume(-5)))
+        }
+        ShortcutAction::SpeedDown => Some(ShortcutDispatch::Command(AppCommand::SetSpeed(0.75))),
+        ShortcutAction::SpeedUp => Some(ShortcutDispatch::Command(AppCommand::SetSpeed(1.25))),
+        ShortcutAction::ResetSpeed => Some(ShortcutDispatch::Command(AppCommand::ResetSpeed)),
+        ShortcutAction::SetABLoopPointA => {
+            Some(ShortcutDispatch::Command(AppCommand::SetABLoopPointA))
+        }
+        ShortcutAction::SetABLoopPointB => {
+            Some(ShortcutDispatch::Command(AppCommand::SetABLoopPointB))
+        }
+        ShortcutAction::ClearABLoop => Some(ShortcutDispatch::Command(AppCommand::ClearABLoop)),
+        ShortcutAction::RotateClockwise => {
+            Some(ShortcutDispatch::Command(AppCommand::RotateClockwise))
+        }
+        ShortcutAction::ZoomOut => Some(ShortcutDispatch::Command(AppCommand::ZoomOut)),
+        ShortcutAction::ZoomIn => Some(ShortcutDispatch::Command(AppCommand::ZoomIn)),
+        ShortcutAction::CycleAudioChannel => {
+            Some(ShortcutDispatch::Command(AppCommand::CycleAudioChannel))
+        }
+        ShortcutAction::ToggleFullscreen => {
+            Some(ShortcutDispatch::Command(AppCommand::ToggleFullscreen))
+        }
+        ShortcutAction::TakeScreenshot => Some(ShortcutDispatch::TakeScreenshot),
+        ShortcutAction::FrameStepBackward => Some(ShortcutDispatch::Command(
+            AppCommand::StepFrame(FrameStepDirection::Previous),
+        )),
+        ShortcutAction::FrameStepForward => {
+            Some(ShortcutDispatch::Command(AppCommand::StepFrame(FrameStepDirection::Next)))
+        }
         ShortcutAction::OpenFile | ShortcutAction::OpenUrl => None,
+    }
+}
+
+pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand> {
+    match resolve_shortcut(map, gesture)? {
+        ShortcutDispatch::Command(command) => Some(command),
+        ShortcutDispatch::TakeScreenshot => None,
     }
 }
 

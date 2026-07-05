@@ -62,3 +62,21 @@ fn default_shortcut_lookup_matches_the_default_map() {
     assert_eq!(map.action_for(&shortcut), Some(action));
     assert!(MIN_DEFAULT_SPEED < 1.0);
 }
+
+#[test]
+fn video_tool_default_shortcuts_are_registered() {
+    let map = ShortcutMap::default();
+
+    assert_eq!(
+        map.action_for(&Shortcut::parse("S").unwrap()),
+        Some(ShortcutAction::TakeScreenshot)
+    );
+    assert_eq!(
+        map.action_for(&Shortcut::parse(",").unwrap()),
+        Some(ShortcutAction::FrameStepBackward)
+    );
+    assert_eq!(
+        map.action_for(&Shortcut::parse(".").unwrap()),
+        Some(ShortcutAction::FrameStepForward)
+    );
+}

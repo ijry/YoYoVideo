@@ -24,11 +24,14 @@ pub enum ShortcutAction {
     ToggleFullscreen,
     OpenFile,
     OpenUrl,
+    TakeScreenshot,
+    FrameStepBackward,
+    FrameStepForward,
 }
 
 impl ShortcutAction {
     pub fn all() -> &'static [ShortcutAction] {
-        const ACTIONS: [ShortcutAction; 18] = [
+        const ACTIONS: [ShortcutAction; 21] = [
             ShortcutAction::TogglePause,
             ShortcutAction::SeekBackwardSmall,
             ShortcutAction::SeekForwardSmall,
@@ -47,6 +50,9 @@ impl ShortcutAction {
             ShortcutAction::ToggleFullscreen,
             ShortcutAction::OpenFile,
             ShortcutAction::OpenUrl,
+            ShortcutAction::TakeScreenshot,
+            ShortcutAction::FrameStepBackward,
+            ShortcutAction::FrameStepForward,
         ];
 
         &ACTIONS
@@ -72,6 +78,9 @@ impl ShortcutAction {
             ShortcutAction::ToggleFullscreen => "Toggle Fullscreen",
             ShortcutAction::OpenFile => "Open File",
             ShortcutAction::OpenUrl => "Open URL",
+            ShortcutAction::TakeScreenshot => "Take Screenshot",
+            ShortcutAction::FrameStepBackward => "Previous Frame",
+            ShortcutAction::FrameStepForward => "Next Frame",
         }
     }
 
@@ -123,6 +132,9 @@ impl Default for ShortcutMap {
         bindings.insert(Shortcut("F".into()), ShortcutAction::ToggleFullscreen);
         bindings.insert(Shortcut("O".into()), ShortcutAction::OpenFile);
         bindings.insert(Shortcut("U".into()), ShortcutAction::OpenUrl);
+        bindings.insert(Shortcut("S".into()), ShortcutAction::TakeScreenshot);
+        bindings.insert(Shortcut(",".into()), ShortcutAction::FrameStepBackward);
+        bindings.insert(Shortcut(".".into()), ShortcutAction::FrameStepForward);
         Self { bindings }
     }
 }

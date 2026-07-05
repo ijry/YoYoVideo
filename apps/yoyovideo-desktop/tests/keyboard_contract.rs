@@ -34,3 +34,10 @@ fn url_focus_still_suppresses_player_shortcuts() {
     assert!(shortcut_allowed(false));
     assert!(!shortcut_allowed(true));
 }
+
+#[test]
+fn keyboard_input_normalizes_video_tool_shortcuts() {
+    assert_eq!(shortcut_gesture(KeyboardInput::character('s')), Some("S".to_string()));
+    assert_eq!(shortcut_gesture(KeyboardInput::character(',')), Some(",".to_string()));
+    assert_eq!(shortcut_gesture(KeyboardInput::character('.')), Some(".".to_string()));
+}
