@@ -273,8 +273,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetVideoAdjustment(kind, value) => {
-                let clamped =
-                    value.clamp(crate::MIN_VIDEO_ADJUSTMENT, crate::MAX_VIDEO_ADJUSTMENT);
+                let clamped = value.clamp(crate::MIN_VIDEO_ADJUSTMENT, crate::MAX_VIDEO_ADJUSTMENT);
                 self.backend
                     .send(BackendCommand::SetVideoAdjustment(kind, clamped))
                     .map_err(AppError::Message)?;

@@ -87,24 +87,19 @@ fn frame_step_translates_to_mpv_frame_commands() {
 #[test]
 fn video_adjustments_translate_to_matching_mpv_properties() {
     assert_eq!(
-        translate_command(&BackendCommand::SetVideoAdjustment(
-            VideoAdjustmentKind::Brightness,
-            12,
-        )),
+        translate_command(
+            &BackendCommand::SetVideoAdjustment(VideoAdjustmentKind::Brightness, 12,)
+        ),
         vec![MpvAction::SetDouble { name: "brightness".into(), value: 12.0 }]
     );
     assert_eq!(
-        translate_command(&BackendCommand::SetVideoAdjustment(
-            VideoAdjustmentKind::Contrast,
-            -7,
-        )),
+        translate_command(&BackendCommand::SetVideoAdjustment(VideoAdjustmentKind::Contrast, -7,)),
         vec![MpvAction::SetDouble { name: "contrast".into(), value: -7.0 }]
     );
     assert_eq!(
-        translate_command(&BackendCommand::SetVideoAdjustment(
-            VideoAdjustmentKind::Saturation,
-            22,
-        )),
+        translate_command(
+            &BackendCommand::SetVideoAdjustment(VideoAdjustmentKind::Saturation, 22,)
+        ),
         vec![MpvAction::SetDouble { name: "saturation".into(), value: 22.0 }]
     );
     assert_eq!(
@@ -135,11 +130,7 @@ fn reset_video_adjustments_translates_to_neutral_properties() {
 fn filter_presets_translate_to_yoyovideo_owned_vf_slot() {
     assert_eq!(
         translate_command(&BackendCommand::SetVideoFilterPreset(VideoFilterPreset::None)),
-        vec![MpvAction::Command(vec![
-            "vf".into(),
-            "remove".into(),
-            "@yoyovideo-preset".into(),
-        ])]
+        vec![MpvAction::Command(vec!["vf".into(), "remove".into(), "@yoyovideo-preset".into(),])]
     );
     assert_eq!(
         translate_command(&BackendCommand::SetVideoFilterPreset(VideoFilterPreset::Sharpen)),

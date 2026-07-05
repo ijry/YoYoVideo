@@ -180,9 +180,7 @@ pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDisp
             Some(ShortcutDispatch::Command(AppCommand::SeekRelative(5.0)))
         }
         ShortcutAction::VolumeUp => Some(ShortcutDispatch::Command(AppCommand::AdjustVolume(5))),
-        ShortcutAction::VolumeDown => {
-            Some(ShortcutDispatch::Command(AppCommand::AdjustVolume(-5)))
-        }
+        ShortcutAction::VolumeDown => Some(ShortcutDispatch::Command(AppCommand::AdjustVolume(-5))),
         ShortcutAction::SpeedDown => Some(ShortcutDispatch::Command(AppCommand::SetSpeed(0.75))),
         ShortcutAction::SpeedUp => Some(ShortcutDispatch::Command(AppCommand::SetSpeed(1.25))),
         ShortcutAction::ResetSpeed => Some(ShortcutDispatch::Command(AppCommand::ResetSpeed)),
@@ -205,9 +203,9 @@ pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDisp
             Some(ShortcutDispatch::Command(AppCommand::ToggleFullscreen))
         }
         ShortcutAction::TakeScreenshot => Some(ShortcutDispatch::TakeScreenshot),
-        ShortcutAction::FrameStepBackward => Some(ShortcutDispatch::Command(
-            AppCommand::StepFrame(FrameStepDirection::Previous),
-        )),
+        ShortcutAction::FrameStepBackward => {
+            Some(ShortcutDispatch::Command(AppCommand::StepFrame(FrameStepDirection::Previous)))
+        }
         ShortcutAction::FrameStepForward => {
             Some(ShortcutDispatch::Command(AppCommand::StepFrame(FrameStepDirection::Next)))
         }

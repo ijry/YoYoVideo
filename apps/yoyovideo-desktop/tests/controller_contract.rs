@@ -123,9 +123,7 @@ fn controller_forwards_video_tool_commands() {
     controller.dispatch(AppCommand::StepFrame(FrameStepDirection::Next)).unwrap();
     controller.dispatch(AppCommand::SetVideoAdjustment(VideoAdjustmentKind::Gamma, 20)).unwrap();
     controller.dispatch(AppCommand::ResetVideoAdjustments).unwrap();
-    controller
-        .dispatch(AppCommand::SetVideoFilterPreset(VideoFilterPreset::Invert))
-        .unwrap();
+    controller.dispatch(AppCommand::SetVideoFilterPreset(VideoFilterPreset::Invert)).unwrap();
 
     assert_eq!(
         controller.session().backend().commands,

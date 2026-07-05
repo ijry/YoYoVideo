@@ -60,10 +60,7 @@ fn screenshot_and_frame_step_forward_to_backend() {
             BackendCommand::StepFrame(FrameStepDirection::Previous),
         ]
     );
-    assert_eq!(
-        session.state().status_message.as_deref(),
-        Some("Screenshot saved: shot.png")
-    );
+    assert_eq!(session.state().status_message.as_deref(), Some("Screenshot saved: shot.png"));
 }
 
 #[test]
@@ -73,9 +70,7 @@ fn video_adjustment_values_are_clamped_before_state_and_backend_update() {
     session
         .handle_command(AppCommand::SetVideoAdjustment(VideoAdjustmentKind::Brightness, 140))
         .unwrap();
-    session
-        .handle_command(AppCommand::SetVideoAdjustment(VideoAdjustmentKind::Hue, -140))
-        .unwrap();
+    session.handle_command(AppCommand::SetVideoAdjustment(VideoAdjustmentKind::Hue, -140)).unwrap();
 
     assert_eq!(session.state().video_adjustments.brightness, 100);
     assert_eq!(session.state().video_adjustments.hue, -100);

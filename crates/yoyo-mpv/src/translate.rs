@@ -28,11 +28,9 @@ fn video_adjustment_property(kind: VideoAdjustmentKind) -> &'static str {
 
 fn filter_preset_action(preset: VideoFilterPreset) -> MpvAction {
     match preset {
-        VideoFilterPreset::None => MpvAction::Command(vec![
-            "vf".into(),
-            "remove".into(),
-            "@yoyovideo-preset".into(),
-        ]),
+        VideoFilterPreset::None => {
+            MpvAction::Command(vec!["vf".into(), "remove".into(), "@yoyovideo-preset".into()])
+        }
         VideoFilterPreset::Sharpen => MpvAction::Command(vec![
             "vf".into(),
             "add".into(),
