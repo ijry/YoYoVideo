@@ -5,6 +5,8 @@ pub mod platform;
 mod presenter;
 mod settings_controller;
 mod sidebar;
+mod subtitle_prefs;
+mod track_popup;
 mod video_host;
 #[cfg(feature = "mpv-runtime")]
 mod video_host_winit;
@@ -30,6 +32,14 @@ pub use settings_controller::{SettingsController, SettingsShortcutRow, SettingsS
 pub use sidebar::{
     HistorySidebarRow, PlaylistSidebarRow, SidebarState, SidebarTab, build_history_rows,
     build_playlist_rows, expanded_sidebar_width, initial_sidebar_state,
+};
+pub use subtitle_prefs::{
+    SubtitlePreferenceEntry, SubtitlePrefsFlushReason, SubtitlePrefsRuntime, SubtitleRestoreError,
+    SubtitleRestorePlan,
+};
+pub use track_popup::{
+    TrackPopupRow, build_audio_track_rows, build_subtitle_track_rows, build_video_track_rows,
+    format_subtitle_delay_label, format_subtitle_scale_label, format_track_label,
 };
 pub use video_host::{
     LogicalVideoRect, NativeVideoWindowId, UnsupportedVideoHost, VideoHost, VideoHostBounds,

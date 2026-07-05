@@ -12,6 +12,8 @@ directories = "6.0.0"
 i-slint-backend-winit = { version = "1.17.0", optional = true }
 raw-window-handle = { version = "0.6.2", optional = true }
 rfd = "0.17.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
 slint = { version = "1.17.0", features = ["backend-winit", "unstable-winit-030", "raw-window-handle-06"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
