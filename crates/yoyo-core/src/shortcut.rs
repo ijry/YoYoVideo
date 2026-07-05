@@ -146,9 +146,7 @@ impl ShortcutMap {
         if let Some(shortcut) = shortcut {
             if let Some(existing) = self.bindings.get(&shortcut) {
                 if *existing != action {
-                    return Err(ValidationError::DuplicateShortcut(
-                        shortcut.as_str().to_string(),
-                    ));
+                    return Err(ValidationError::DuplicateShortcut(shortcut.as_str().to_string()));
                 }
             }
 

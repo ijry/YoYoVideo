@@ -28,11 +28,7 @@ fn config_validation_rejects_default_volume_above_one_hundred() {
 #[test]
 fn shortcut_map_replaces_the_previous_binding_for_an_action() {
     let mut map = ShortcutMap::default();
-    map.set_binding(
-        ShortcutAction::TogglePause,
-        Some(Shortcut::parse("Ctrl+P").unwrap()),
-    )
-    .unwrap();
+    map.set_binding(ShortcutAction::TogglePause, Some(Shortcut::parse("Ctrl+P").unwrap())).unwrap();
 
     assert_eq!(
         map.action_for(&Shortcut::parse("Ctrl+P").unwrap()),
@@ -48,17 +44,10 @@ fn shortcut_map_replaces_the_previous_binding_for_an_action() {
 #[test]
 fn shortcut_map_rejects_duplicate_bindings_between_actions() {
     let mut map = ShortcutMap::default();
-    map.set_binding(
-        ShortcutAction::TogglePause,
-        Some(Shortcut::parse("Ctrl+P").unwrap()),
-    )
-    .unwrap();
+    map.set_binding(ShortcutAction::TogglePause, Some(Shortcut::parse("Ctrl+P").unwrap())).unwrap();
 
     let error = map
-        .set_binding(
-            ShortcutAction::SpeedUp,
-            Some(Shortcut::parse("Ctrl+P").unwrap()),
-        )
+        .set_binding(ShortcutAction::SpeedUp, Some(Shortcut::parse("Ctrl+P").unwrap()))
         .unwrap_err();
 
     assert!(matches!(error, ValidationError::DuplicateShortcut(_)));

@@ -232,11 +232,7 @@ fn load_boot_config(paths: Option<&AppPaths>) -> AppConfig {
     let Ok(config) = AppConfig::load(&path) else {
         return AppConfig::default();
     };
-    if config.validate().is_ok() {
-        config
-    } else {
-        AppConfig::default()
-    }
+    if config.validate().is_ok() { config } else { AppConfig::default() }
 }
 
 fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::HistoryRuntime {
@@ -338,10 +334,9 @@ fn refresh_settings_window(window: &SettingsWindow, controller: &crate::Settings
 }
 
 fn refresh_runtime_settings_window(runtime: &DesktopRuntime) {
-    if let (Some(window), Some(controller)) = (
-        runtime.settings_window.as_ref(),
-        runtime.settings_controller.as_ref(),
-    ) {
+    if let (Some(window), Some(controller)) =
+        (runtime.settings_window.as_ref(), runtime.settings_controller.as_ref())
+    {
         refresh_settings_window(window, controller);
     }
 }
@@ -786,7 +781,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         if index < 0 {
                             return;
                         }
-                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied()
+                        else {
                             return;
                         };
                         let mut runtime = runtime.borrow_mut();
@@ -802,7 +798,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         if index < 0 {
                             return;
                         }
-                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied()
+                        else {
                             return;
                         };
                         let mut runtime = runtime.borrow_mut();
@@ -818,7 +815,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         if index < 0 {
                             return;
                         }
-                        let Some(action) = ShortcutAction::all().get(index as usize).copied() else {
+                        let Some(action) = ShortcutAction::all().get(index as usize).copied()
+                        else {
                             return;
                         };
                         let mut runtime = runtime.borrow_mut();

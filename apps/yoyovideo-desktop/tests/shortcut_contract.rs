@@ -20,11 +20,7 @@ fn right_arrow_seeks_forward() {
 #[test]
 fn custom_shortcut_binding_dispatches_through_the_same_command_path() {
     let mut map = ShortcutMap::default();
-    map.set_binding(
-        ShortcutAction::TogglePause,
-        Some(Shortcut::parse("Ctrl+P").unwrap()),
-    )
-    .unwrap();
+    map.set_binding(ShortcutAction::TogglePause, Some(Shortcut::parse("Ctrl+P").unwrap())).unwrap();
 
     assert_eq!(dispatch_shortcut(&map, "Ctrl+P"), Some(AppCommand::TogglePause));
     assert_eq!(dispatch_shortcut(&map, "Space"), None);

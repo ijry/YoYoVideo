@@ -17,7 +17,9 @@ pub use app::{
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
 };
-pub use keyboard::{DesktopKey, KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture};
+pub use keyboard::{
+    DesktopKey, KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture,
+};
 pub use platform::scan_media_folder;
 pub use presenter::{
     format_audio_channel_label, format_loop_label, format_rotation_label, format_speed_label,

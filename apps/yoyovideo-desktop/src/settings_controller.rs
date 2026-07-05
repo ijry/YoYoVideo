@@ -116,11 +116,7 @@ impl SettingsDraft {
             if actions.len() < 2 {
                 continue;
             }
-            let labels = actions
-                .iter()
-                .map(|action| action.label())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let labels = actions.iter().map(|action| action.label()).collect::<Vec<_>>().join(", ");
             for action in actions {
                 conflicts.insert(action, format!("Conflicts with {labels}: {gesture}"));
             }

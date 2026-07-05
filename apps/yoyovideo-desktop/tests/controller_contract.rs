@@ -87,8 +87,5 @@ fn controller_can_start_with_non_default_shortcuts() {
     let mut controller = DesktopController::with_shortcuts(session, shortcuts);
     controller.dispatch_shortcut("Ctrl+P").unwrap();
 
-    assert_eq!(
-        controller.session().backend().commands,
-        vec![BackendCommand::SetPaused(false)]
-    );
+    assert_eq!(controller.session().backend().commands, vec![BackendCommand::SetPaused(false)]);
 }

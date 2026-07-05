@@ -35,19 +35,13 @@ fn controller_uses_replaced_shortcut_maps_immediately() {
     let mut controller = DesktopController::new(session);
     let mut shortcuts = ShortcutMap::default();
     shortcuts
-        .set_binding(
-            ShortcutAction::TogglePause,
-            Some(Shortcut::parse("Ctrl+P").unwrap()),
-        )
+        .set_binding(ShortcutAction::TogglePause, Some(Shortcut::parse("Ctrl+P").unwrap()))
         .unwrap();
 
     controller.set_shortcuts(shortcuts);
     controller.dispatch_shortcut("Ctrl+P").unwrap();
 
-    assert_eq!(
-        controller.session().backend().commands,
-        vec![BackendCommand::SetPaused(false)]
-    );
+    assert_eq!(controller.session().backend().commands, vec![BackendCommand::SetPaused(false)]);
 }
 
 #[test]

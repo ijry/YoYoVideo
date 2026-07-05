@@ -14,9 +14,7 @@ fn save_persists_preferences_and_custom_shortcuts() {
     controller.set_remember_history(false);
     controller.set_show_playlist_on_startup(false);
     controller.begin_shortcut_capture(ShortcutAction::TogglePause);
-    controller
-        .capture_shortcut(KeyboardInput::character('p').with_ctrl())
-        .unwrap();
+    controller.capture_shortcut(KeyboardInput::character('p').with_ctrl()).unwrap();
 
     let saved = controller.save(&path).unwrap();
     let loaded = AppConfig::load(&path).unwrap();
@@ -40,23 +38,21 @@ fn conflicting_shortcuts_stay_visible_in_the_snapshot_and_block_save() {
 
     let mut controller = SettingsController::new(AppConfig::default());
     controller.begin_shortcut_capture(ShortcutAction::TogglePause);
-    controller
-        .capture_shortcut(KeyboardInput::character('p').with_ctrl())
-        .unwrap();
+    controller.capture_shortcut(KeyboardInput::character('p').with_ctrl()).unwrap();
     controller.begin_shortcut_capture(ShortcutAction::SpeedUp);
-    controller
-        .capture_shortcut(KeyboardInput::character('p').with_ctrl())
-        .unwrap();
+    controller.capture_shortcut(KeyboardInput::character('p').with_ctrl()).unwrap();
 
     let snapshot = controller.snapshot();
 
     assert!(snapshot.dirty);
     assert!(!snapshot.can_apply);
-    assert!(snapshot
-        .shortcut_rows
-        .iter()
-        .filter_map(|row| row.conflict_message.as_ref())
-        .any(|message| message.contains("Ctrl+P")));
+    assert!(
+        snapshot
+            .shortcut_rows
+            .iter()
+            .filter_map(|row| row.conflict_message.as_ref())
+            .any(|message| message.contains("Ctrl+P"))
+    );
 
     let error = controller.save(&path).unwrap_err();
     assert!(error.to_string().contains("duplicate shortcut"));
@@ -67,9 +63,7 @@ fn restore_defaults_and_row_restore_reset_the_draft() {
     let mut controller = SettingsController::new(AppConfig::default());
     controller.set_remember_history(false);
     controller.begin_shortcut_capture(ShortcutAction::TogglePause);
-    controller
-        .capture_shortcut(KeyboardInput::character('p').with_ctrl())
-        .unwrap();
+    controller.capture_shortcut(KeyboardInput::character('p').with_ctrl()).unwrap();
     controller.restore_shortcut_default(ShortcutAction::TogglePause);
 
     let after_row_restore = controller.snapshot();

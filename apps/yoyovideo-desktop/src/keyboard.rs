@@ -74,11 +74,7 @@ fn normalized_key_name(key: DesktopKey) -> Option<String> {
         DesktopKey::Named(NamedDesktopKey::Up) => Some("Up".to_string()),
         DesktopKey::Named(NamedDesktopKey::Down) => Some("Down".to_string()),
         DesktopKey::Character(ch) if !ch.is_control() => {
-            let normalized = if ch.is_ascii_alphabetic() {
-                ch.to_ascii_uppercase()
-            } else {
-                ch
-            };
+            let normalized = if ch.is_ascii_alphabetic() { ch.to_ascii_uppercase() } else { ch };
             Some(normalized.to_string())
         }
         _ => None,

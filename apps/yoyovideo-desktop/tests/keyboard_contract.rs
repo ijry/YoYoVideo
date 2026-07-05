@@ -1,6 +1,4 @@
-use yoyovideo_desktop::{
-    KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture,
-};
+use yoyovideo_desktop::{KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture};
 
 #[test]
 fn keyboard_input_normalizes_named_and_character_shortcuts() {
@@ -20,10 +18,7 @@ fn keyboard_input_normalizes_named_and_character_shortcuts() {
         shortcut_gesture(KeyboardInput::character('u').with_ctrl().with_shift()),
         Some("Ctrl+Shift+U".to_string())
     );
-    assert_eq!(
-        shortcut_gesture(KeyboardInput::character('[')),
-        Some("[".to_string())
-    );
+    assert_eq!(shortcut_gesture(KeyboardInput::character('[')), Some("[".to_string()));
 }
 
 #[test]
