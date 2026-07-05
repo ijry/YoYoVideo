@@ -21,6 +21,16 @@ Rust + Slint + libmpv cross-platform desktop media player.
 - Real playback alpha: `cargo run -p yoyovideo-desktop --features mpv-runtime`
 - On Windows, the runtime feature requires `mpv.lib` at link time and the matching mpv DLLs at run time.
 
+## Visible Video Runtime
+
+The desktop app uses a native video host for visible video when built with `mpv-runtime` and when the current windowing backend can provide an mpv-compatible window id. If visible video embedding is unavailable, the app stays open and reports the limitation in the status label.
+
+Run:
+
+```powershell
+cargo run -p yoyovideo-desktop --features mpv-runtime
+```
+
 ## Packaging
 
 Runtime-enabled packages are built from repository-local staging files under `third_party/mpv/<platform>/`.

@@ -31,3 +31,13 @@
 - Confirm `bin/yoyovideo-desktop.exe` exists on Windows and `bin/yoyovideo-desktop` exists on macOS and Linux.
 - For runtime-enabled artifacts, confirm Windows includes `bin/mpv-2.dll`, macOS includes `bin/libmpv.dylib`, and Linux includes `bin/libmpv.so*`.
 - Launch the app from the extracted `bin/` directory and run the Playback and UX checks above.
+
+## Visible Video Host
+
+- Launch with `cargo run -p yoyovideo-desktop --features mpv-runtime`.
+- Open a local video and confirm video is visible inside the video area.
+- Confirm the video does not cover controls.
+- Resize the window and confirm the video area tracks the UI.
+- Toggle fullscreen and confirm the video host resizes.
+- Type in the URL input and confirm player shortcuts do not fire while it is focused.
+- Use keyboard shortcuts for play/pause, seek, volume, speed, zoom, rotation, audio channel, A-B loop, and fullscreen.

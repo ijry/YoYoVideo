@@ -44,3 +44,12 @@ Supported repository secrets:
 - `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL`: zip archive whose contents expand into `third_party/mpv/linux-x64/`
 
 If a secret is absent or the archive lacks required files, packaging fails with a missing-runtime message instead of uploading an incomplete artifact.
+
+## Video Host Requirements
+
+Visible video uses mpv's `wid` window binding. The desktop app creates a native video host and passes that id to mpv before initialization.
+
+- Windows: required first target for native video host embedding.
+- Linux X11: required design target using an X11 window id.
+- Wayland: reports unsupported embedding unless a verified host path is implemented.
+- macOS: reports unsupported embedding unless a verified host path is implemented.
