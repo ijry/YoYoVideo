@@ -4,9 +4,14 @@ pub mod platform;
 mod presenter;
 mod settings_controller;
 mod video_host;
+#[cfg(feature = "mpv-runtime")]
+mod video_host_winit;
 mod video_texture;
 
-pub use app::{DesktopController, build_desktop_backend, dispatch_shortcut, refresh_window, run};
+pub use app::{
+    DesktopController, build_desktop_backend, build_desktop_backend_with_video_window,
+    dispatch_shortcut, refresh_window, run,
+};
 pub use keyboard::{DesktopKey, KeyboardInput, shortcut_allowed, shortcut_gesture};
 pub use platform::scan_media_folder;
 pub use presenter::{

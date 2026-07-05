@@ -2,19 +2,38 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+#[cfg(feature = "mpv-runtime")]
+use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, EventResult};
 use slint::winit_030::WinitWindowAccessor;
+#[cfg(feature = "mpv-runtime")]
+use yoyo_core::AppConfig;
 use yoyo_core::{
-    AppCommand, AppConfig, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
+    AppCommand, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
 };
 use yoyo_mpv::{MpvBackend, MpvError};
 
 use crate::platform::{DialogService, RfdDialogService, scan_media_folder};
+#[cfg(feature = "mpv-runtime")]
+use crate::video_host_winit::WinitVideoHost;
+#[cfg(feature = "mpv-runtime")]
+use crate::VideoHost;
+use crate::NativeVideoWindowId;
 use crate::video_texture::VideoTexture;
 
 slint::include_modules!();
 
 pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
     MpvBackend::new_runtime()
+}
+
+pub fn build_desktop_backend_with_video_window(
+    window_id: NativeVideoWindowId,
+) -> Result<MpvBackend, MpvError> {
+    MpvBackend::new_runtime_with_options(yoyo_mpv::MpvClientOptions {
+        video_window: Some(yoyo_mpv::MpvVideoWindow::new(window_id.0)),
+        force_window: true,
+        profile: None,
+    })
 }
 
 pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
@@ -101,153 +120,201 @@ pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand>
     }
 }
 
+struct DesktopRuntime {
+    controller: Option<DesktopController<MpvBackend>>,
+    video_host_error: Option<String>,
+    #[cfg(feature = "mpv-runtime")]
+    video_host: Option<WinitVideoHost>,
+}
+
+impl DesktopRuntime {
+    fn new() -> Self {
+        Self {
+            controller: None,
+            video_host_error: initial_runtime_error(),
+            #[cfg(feature = "mpv-runtime")]
+            video_host: None,
+        }
+    }
+
+    fn controller(&self) -> Option<&DesktopController<MpvBackend>> {
+        self.controller.as_ref()
+    }
+
+    fn controller_mut(&mut self) -> Option<&mut DesktopController<MpvBackend>> {
+        self.controller.as_mut()
+    }
+
+    fn status_message(&self) -> String {
+        self.video_host_error
+            .clone()
+            .unwrap_or_else(|| "Playback runtime is still initializing".to_string())
+    }
+
+    #[cfg(feature = "mpv-runtime")]
+    fn mark_error(&mut self, message: impl Into<String>) {
+        self.video_host_error = Some(message.into());
+    }
+
+    #[cfg(feature = "mpv-runtime")]
+    fn set_runtime(&mut self, controller: DesktopController<MpvBackend>, video_host: WinitVideoHost) {
+        self.controller = Some(controller);
+        self.video_host = Some(video_host);
+        self.video_host_error = None;
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn initial_runtime_error() -> Option<String> {
+    None
+}
+
+#[cfg(not(feature = "mpv-runtime"))]
+fn initial_runtime_error() -> Option<String> {
+    Some("Playback runtime is disabled in this build".to_string())
+}
+
+fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
+    if let Some(controller) = runtime.controller() {
+        refresh_window(window, controller.session().state());
+    } else {
+        window.set_status_label(runtime.status_message().into());
+    }
+}
+
+fn ensure_runtime_ready(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+) -> bool {
+    let runtime = runtime.borrow();
+    if runtime.controller().is_some() {
+        return true;
+    }
+
+    if let Some(app) = app_handle.upgrade() {
+        app.set_status_label(runtime.status_message().into());
+    }
+    false
+}
+
+fn with_runtime_controller<F>(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    action: F,
+) where
+    F: FnOnce(&mut DesktopController<MpvBackend>) -> Result<(), yoyo_core::AppError>,
+{
+    let mut runtime = runtime.borrow_mut();
+    let Some(controller) = runtime.controller_mut() else {
+        if let Some(app) = app_handle.upgrade() {
+            app.set_status_label(runtime.status_message().into());
+        }
+        return;
+    };
+
+    match action(controller) {
+        Ok(()) => {
+            if let Some(app) = app_handle.upgrade() {
+                refresh_window(&app, controller.session().state());
+            }
+        }
+        Err(error) => {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(error.to_string().into());
+            }
+        }
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt().with_target(false).init();
-    slint::BackendSelector::new().backend_name("winit".into()).select()?;
+    let _ = tracing_subscriber::fmt().with_target(false).try_init();
+
+    let runtime = Rc::new(RefCell::new(DesktopRuntime::new()));
+    configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
-    let session = AppSession::new(AppConfig::default(), build_desktop_backend()?);
-    let controller = Rc::new(RefCell::new(DesktopController::new(session)));
     let dialogs = Rc::new(RfdDialogService);
 
-    refresh_window(&app, controller.borrow().session().state());
+    refresh_runtime_window(&app, &runtime.borrow());
 
     app.on_open_file_requested({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         let dialogs = Rc::clone(&dialogs);
         move || {
+            if !ensure_runtime_ready(&app_handle, &runtime) {
+                return;
+            }
             if let Some(path) = dialogs.pick_file() {
-                let mut controller = controller.borrow_mut();
-                if controller.dispatch(AppCommand::OpenFile(path)).is_ok() {
-                    if let Some(app) = app_handle.upgrade() {
-                        refresh_window(&app, controller.session().state());
-                    }
-                }
+                with_runtime_controller(&app_handle, &runtime, move |controller| {
+                    controller.dispatch(AppCommand::OpenFile(path))
+                });
             }
         }
     });
 
     app.on_open_folder_requested({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         let dialogs = Rc::clone(&dialogs);
         move || {
+            if !ensure_runtime_ready(&app_handle, &runtime) {
+                return;
+            }
             if let Some(path) = dialogs.pick_folder() {
-                let mut controller = controller.borrow_mut();
-                if controller.open_folder(&path).is_ok() {
-                    if let Some(app) = app_handle.upgrade() {
-                        refresh_window(&app, controller.session().state());
-                    }
-                }
+                with_runtime_controller(&app_handle, &runtime, move |controller| {
+                    controller.open_folder(&path)
+                });
             }
         }
     });
 
     app.on_open_url_requested({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         move |url| {
-            let mut controller = controller.borrow_mut();
-            if controller.dispatch(AppCommand::OpenUrl(url.to_string())).is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
-                }
-            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::OpenUrl(url.to_string()))
+            });
         }
     });
 
-    app.on_toggle_pause_requested({
-        let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
-        move || {
-            let mut controller = controller.borrow_mut();
-            if controller.dispatch(AppCommand::TogglePause).is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
-                }
-            }
-        }
-    });
-
-    app.on_speed_down_requested({
-        let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
-        move || {
-            let mut controller = controller.borrow_mut();
-            if controller.dispatch(AppCommand::SetSpeed(0.75)).is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
-                }
-            }
-        }
-    });
-
-    app.on_speed_up_requested({
-        let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
-        move || {
-            let mut controller = controller.borrow_mut();
-            if controller.dispatch(AppCommand::SetSpeed(1.25)).is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
-                }
-            }
-        }
-    });
-
-    app.on_reset_speed_requested(command_callback(&app, &controller, AppCommand::ResetSpeed));
+    app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
+    app.on_speed_down_requested(command_callback(&app, &runtime, AppCommand::SetSpeed(0.75)));
+    app.on_speed_up_requested(command_callback(&app, &runtime, AppCommand::SetSpeed(1.25)));
+    app.on_reset_speed_requested(command_callback(&app, &runtime, AppCommand::ResetSpeed));
     app.on_seek_percent_requested({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         move |percent| {
-            let mut controller = controller.borrow_mut();
-            let duration = controller.session().state().duration_seconds;
-            if let Some(duration) = duration {
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                let Some(duration) = controller.session().state().duration_seconds else {
+                    return Ok(());
+                };
                 let position = duration * f64::from(percent.clamp(0.0, 1.0));
-                if controller.dispatch(AppCommand::SeekAbsolute(position)).is_ok() {
-                    if let Some(app) = app_handle.upgrade() {
-                        refresh_window(&app, controller.session().state());
-                    }
-                }
-            }
+                controller.dispatch(AppCommand::SeekAbsolute(position))
+            });
         }
     });
     app.on_volume_changed({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         move |volume| {
-            let mut controller = controller.borrow_mut();
-            let volume = volume.clamp(0, 100) as u8;
-            if controller.dispatch(AppCommand::SetVolume(volume)).is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
-                }
-            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::SetVolume(volume.clamp(0, 100) as u8))
+            });
         }
     });
-    app.on_rotate_requested(command_callback(&app, &controller, AppCommand::RotateClockwise));
-    app.on_cycle_audio_requested(command_callback(
-        &app,
-        &controller,
-        AppCommand::CycleAudioChannel,
-    ));
-    app.on_zoom_in_requested(command_callback(&app, &controller, AppCommand::ZoomIn));
-    app.on_zoom_out_requested(command_callback(&app, &controller, AppCommand::ZoomOut));
-    app.on_set_ab_point_a_requested(command_callback(
-        &app,
-        &controller,
-        AppCommand::SetABLoopPointA,
-    ));
-    app.on_set_ab_point_b_requested(command_callback(
-        &app,
-        &controller,
-        AppCommand::SetABLoopPointB,
-    ));
-    app.on_clear_ab_loop_requested(command_callback(&app, &controller, AppCommand::ClearABLoop));
+    app.on_rotate_requested(command_callback(&app, &runtime, AppCommand::RotateClockwise));
+    app.on_cycle_audio_requested(command_callback(&app, &runtime, AppCommand::CycleAudioChannel));
+    app.on_zoom_in_requested(command_callback(&app, &runtime, AppCommand::ZoomIn));
+    app.on_zoom_out_requested(command_callback(&app, &runtime, AppCommand::ZoomOut));
+    app.on_set_ab_point_a_requested(command_callback(&app, &runtime, AppCommand::SetABLoopPointA));
+    app.on_set_ab_point_b_requested(command_callback(&app, &runtime, AppCommand::SetABLoopPointB));
+    app.on_clear_ab_loop_requested(command_callback(&app, &runtime, AppCommand::ClearABLoop));
     app.on_toggle_fullscreen_requested(command_callback(
         &app,
-        &controller,
+        &runtime,
         AppCommand::ToggleFullscreen,
     ));
 
@@ -264,7 +331,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         Rc::new(RefCell::new(crate::keyboard::winit_adapter::WinitKeyboardState::default()));
     app.window().on_winit_window_event({
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         let keyboard_state = Rc::clone(&keyboard_state);
         move |_window, event| {
             let Some(app) = app_handle.upgrade() else {
@@ -279,7 +346,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let Some(gesture) = crate::shortcut_gesture(input) else {
                 return slint::winit_030::EventResult::Propagate;
             };
-            let mut controller = controller.borrow_mut();
+
+            let mut runtime = runtime.borrow_mut();
+            let Some(controller) = runtime.controller_mut() else {
+                app.set_status_label(runtime.status_message().into());
+                return slint::winit_030::EventResult::PreventDefault;
+            };
+
             if controller.dispatch_shortcut(gesture).is_ok() {
                 refresh_window(&app, controller.session().state());
             }
@@ -290,13 +363,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let poll_timer = slint::Timer::default();
     poll_timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), {
         let app_handle = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let runtime = Rc::clone(&runtime);
         move || {
-            let mut controller = controller.borrow_mut();
-            if controller.poll_backend().is_ok() {
-                if let Some(app) = app_handle.upgrade() {
-                    refresh_window(&app, controller.session().state());
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+
+            let mut runtime = runtime.borrow_mut();
+            if let Some(controller) = runtime.controller_mut() {
+                match controller.poll_backend() {
+                    Ok(()) => refresh_window(&app, controller.session().state()),
+                    Err(error) => app.set_status_label(error.to_string().into()),
                 }
+            } else {
+                refresh_runtime_window(&app, &runtime);
             }
         }
     });
@@ -305,19 +385,92 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn command_callback<B: PlayerBackend + 'static>(
+fn command_callback(
     app: &MainWindow,
-    controller: &Rc<RefCell<DesktopController<B>>>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
     command: AppCommand,
 ) -> impl Fn() + 'static {
     let app_handle = app.as_weak();
-    let controller = Rc::clone(controller);
+    let runtime = Rc::clone(runtime);
     move || {
-        let mut controller = controller.borrow_mut();
-        if controller.dispatch(command.clone()).is_ok() {
-            if let Some(app) = app_handle.upgrade() {
-                refresh_window(&app, controller.session().state());
-            }
+        with_runtime_controller(&app_handle, &runtime, |controller| {
+            controller.dispatch(command.clone())
+        });
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn configure_backend(
+    runtime: Rc<RefCell<DesktopRuntime>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let backend = WinitBackend::builder()
+        .with_custom_application_handler(Box::new(DesktopWinitHandler::new(runtime)))
+        .build()?;
+    slint::platform::set_platform(Box::new(backend))?;
+    Ok(())
+}
+
+#[cfg(not(feature = "mpv-runtime"))]
+fn configure_backend(
+    _runtime: Rc<RefCell<DesktopRuntime>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    slint::BackendSelector::new().backend_name("winit".into()).select()?;
+    Ok(())
+}
+
+#[cfg(feature = "mpv-runtime")]
+struct DesktopWinitHandler {
+    runtime: Rc<RefCell<DesktopRuntime>>,
+}
+
+#[cfg(feature = "mpv-runtime")]
+impl DesktopWinitHandler {
+    fn new(runtime: Rc<RefCell<DesktopRuntime>>) -> Self {
+        Self { runtime }
+    }
+
+    fn initialize_runtime(
+        &mut self,
+        event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+        winit_window: Option<&slint::winit_030::winit::window::Window>,
+    ) {
+        let Some(parent_window) = winit_window else {
+            return;
+        };
+
+        let mut runtime = self.runtime.borrow_mut();
+        if runtime.controller.is_some() || runtime.video_host_error.is_some() {
+            return;
         }
+
+        let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
+            let video_host =
+                WinitVideoHost::new_child(event_loop, parent_window).map_err(|error| error.to_string())?;
+            let window_id = video_host.mpv_window_id().map_err(|error| error.to_string())?;
+            let backend =
+                build_desktop_backend_with_video_window(window_id).map_err(|error| error.to_string())?;
+            let session = AppSession::new(AppConfig::default(), backend);
+            Ok((DesktopController::new(session), video_host))
+        })();
+
+        match result {
+            Ok((controller, video_host)) => runtime.set_runtime(controller, video_host),
+            Err(error) => runtime.mark_error(error),
+        }
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+impl CustomApplicationHandler for DesktopWinitHandler {
+    fn window_event(
+        &mut self,
+        event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+        _window_id: slint::winit_030::winit::window::WindowId,
+        winit_window: Option<&slint::winit_030::winit::window::Window>,
+        _slint_window: Option<&slint::Window>,
+        _event: &slint::winit_030::winit::event::WindowEvent,
+    ) -> EventResult {
+        self.initialize_runtime(event_loop, winit_window);
+        EventResult::Propagate
     }
 }
