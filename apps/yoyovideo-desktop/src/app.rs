@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use slint::winit_030::WinitWindowAccessor;
 use yoyo_core::{
     AppCommand, AppConfig, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap,
 };
@@ -256,6 +257,33 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(app) = app_handle.upgrade() {
                 app.set_status_label("Settings persistence is enabled".into());
             }
+        }
+    });
+
+    let keyboard_state =
+        Rc::new(RefCell::new(crate::keyboard::winit_adapter::WinitKeyboardState::default()));
+    app.window().on_winit_window_event({
+        let app_handle = app.as_weak();
+        let controller = Rc::clone(&controller);
+        let keyboard_state = Rc::clone(&keyboard_state);
+        move |_window, event| {
+            let Some(app) = app_handle.upgrade() else {
+                return slint::winit_030::EventResult::Propagate;
+            };
+            if !crate::shortcut_allowed(app.get_url_focused()) {
+                return slint::winit_030::EventResult::Propagate;
+            }
+            let Some(input) = keyboard_state.borrow_mut().update(event) else {
+                return slint::winit_030::EventResult::Propagate;
+            };
+            let Some(gesture) = crate::shortcut_gesture(input) else {
+                return slint::winit_030::EventResult::Propagate;
+            };
+            let mut controller = controller.borrow_mut();
+            if controller.dispatch_shortcut(gesture).is_ok() {
+                refresh_window(&app, controller.session().state());
+            }
+            slint::winit_030::EventResult::PreventDefault
         }
     });
 
