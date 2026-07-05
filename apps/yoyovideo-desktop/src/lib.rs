@@ -3,6 +3,7 @@ mod keyboard;
 pub mod platform;
 mod presenter;
 mod settings_controller;
+mod video_host;
 mod video_texture;
 
 pub use app::{DesktopController, build_desktop_backend, dispatch_shortcut, refresh_window, run};
@@ -14,3 +15,7 @@ pub use presenter::{
     progress_ratio,
 };
 pub use settings_controller::SettingsController;
+pub use video_host::{
+    LogicalVideoRect, NativeVideoWindowId, UnsupportedVideoHost, VideoHost, VideoHostBounds,
+    VideoHostError,
+};
