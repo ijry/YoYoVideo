@@ -42,6 +42,15 @@
 - Adjust subtitle delay, scale, and vertical position from the popup and confirm the changes apply during playback.
 - Close and reopen the same media and confirm the last subtitle/track preferences are restored.
 - Remove a previously remembered external subtitle file, reopen the same media, and confirm playback still starts while the app shows only a non-blocking warning.
+- Open a local video, open `Video Tools`, click `Screenshot`, and confirm a `.png` file appears in `Pictures/YoYoVideo Screenshots` or the fallback screenshots directory shown by the app.
+- Pause playback, use `Prev Frame` and `Next Frame`, and confirm the displayed frame changes one frame at a time.
+- Use the default `S` shortcut and confirm it saves a screenshot through the same status path as the button.
+- Use the default `,` and `.` shortcuts and confirm previous-frame and next-frame stepping work.
+- Type `s,.` into the URL input and confirm screenshot and frame-step shortcuts do not fire while the input is focused.
+- Move brightness, contrast, saturation, gamma, and hue sliders and confirm visible picture changes.
+- Click `Reset Picture` and confirm brightness, contrast, saturation, gamma, and hue return to neutral.
+- Select `Sharpen`, `Light Denoise`, `Grayscale`, and `Invert` filter presets and confirm each preset applies.
+- Select `None` and confirm the YoYoVideo preset filter is removed.
 
 ## Package Artifacts
 
