@@ -35,6 +35,12 @@
 - Attempt to bind the same shortcut to two different actions and confirm the save is blocked with a clear conflict message.
 - Disable playback history in settings, play a new media item, and confirm no new history entry is written.
 - Change default speed or default volume in settings, open new media, and confirm the new defaults apply without changing media that was already playing before the save.
+- Drag a single local video file onto the window and confirm playback starts.
+- Drag multiple supported media files onto the window and confirm the playlist contains all dropped media in drop order.
+- Drag a folder containing supported and unsupported files and confirm only supported media appears in the playlist.
+- Drag only unsupported files and confirm current playback continues while the status label reports no playable media.
+- Right-click or open `Menu`, then use `Open File`, `Open Folder`, `Playlist`, `History`, `Screenshot`, `Video Tools`, `Fullscreen`, and `Settings`.
+- Trigger a playback/runtime error and confirm it appears in the status label and in the local diagnostic log.
 - Open a media file with multiple audio or subtitle tracks, open the `Tracks` popup, and confirm the lists reflect the available tracks.
 - Switch audio, subtitle, and video tracks from the popup and confirm playback updates without leaving the main window.
 - Choose the subtitle `Off` entry and confirm subtitles disappear immediately.

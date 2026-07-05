@@ -128,12 +128,15 @@ if ($Platform -eq "linux-x64") {
 }
 
 Push-Location $probeRoot
+$oldCargoTargetDir = $env:CARGO_TARGET_DIR
+$env:CARGO_TARGET_DIR = Join-Path $repoRoot "target/runtime-smoke"
 try {
     & cargo run
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 } finally {
+    $env:CARGO_TARGET_DIR = $oldCargoTargetDir
     Pop-Location
     Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -22,8 +22,7 @@ fn append_diagnostic_line_creates_parent_and_appends_text() {
     let dir = tempdir().unwrap();
     let log = dir.path().join("logs").join("yoyovideo.log");
 
-    append_diagnostic_line(&log, "2026-07-06T10:11:12+08:00", "ERROR", "backend failed")
-        .unwrap();
+    append_diagnostic_line(&log, "2026-07-06T10:11:12+08:00", "ERROR", "backend failed").unwrap();
     append_diagnostic_line(&log, "2026-07-06T10:11:13+08:00", "WARN", "retrying").unwrap();
 
     let content = std::fs::read_to_string(log).unwrap();

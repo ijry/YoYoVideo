@@ -860,9 +860,7 @@ fn dispatch_dropped_paths(
             let dispatched = with_runtime_controller(app_handle, runtime, move |controller| {
                 controller.dispatch(AppCommand::OpenFile(path))
             });
-            if dispatched
-                && let Some(app) = app_handle.upgrade()
-            {
+            if dispatched && let Some(app) = app_handle.upgrade() {
                 app.set_status_label(status.into());
             }
         }
@@ -870,9 +868,7 @@ fn dispatch_dropped_paths(
             let dispatched = with_runtime_controller(app_handle, runtime, move |controller| {
                 controller.open_playlist_entries(entries)
             });
-            if dispatched
-                && let Some(app) = app_handle.upgrade()
-            {
+            if dispatched && let Some(app) = app_handle.upgrade() {
                 app.set_status_label(status.into());
             }
         }

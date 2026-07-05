@@ -146,10 +146,7 @@ fn controller_can_open_multiple_playlist_entries_from_drop() {
 
     controller.open_playlist_entries(vec![first.clone(), second.clone()]).unwrap();
 
-    assert_eq!(
-        controller.session().backend().opened,
-        vec![MediaLocator::File("first.mp4".into())]
-    );
+    assert_eq!(controller.session().backend().opened, vec![MediaLocator::File("first.mp4".into())]);
     let snapshot = controller.session().playlist_snapshot();
     assert_eq!(snapshot.entries, vec![first, second]);
     assert_eq!(snapshot.current_index, Some(0));
