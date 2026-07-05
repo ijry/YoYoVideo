@@ -80,9 +80,17 @@ impl HistoryRuntime {
             return;
         }
 
+        let normalized_position =
+            position_seconds.filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+        let unchanged = self.store.entry(0).is_some_and(|entry| {
+            entry.locator == *locator
+                && entry.title == title
+                && entry.last_position_seconds == normalized_position
+        });
+
         self.store
-            .remember(locator.clone(), title.to_string(), position_seconds);
-        self.dirty = true;
+            .remember(locator.clone(), title.to_string(), normalized_position);
+        self.dirty |= !unchanged;
     }
 
     pub fn activation_for(

@@ -1,19 +1,21 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "mpv-runtime")]
 use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, EventResult};
 use slint::winit_030::WinitWindowAccessor;
-#[cfg(feature = "mpv-runtime")]
-use yoyo_core::AppConfig;
-use yoyo_core::{AppCommand, AppSession, PlayerBackend, PlayerState, ShortcutAction, ShortcutMap};
+use yoyo_core::{
+    AppCommand, AppConfig, AppSession, HistoryStore, MediaLocator, PlayerBackend, PlayerState,
+    ShortcutAction, ShortcutMap,
+};
 use yoyo_mpv::{MpvBackend, MpvError};
 
 use crate::NativeVideoWindowId;
 #[cfg(feature = "mpv-runtime")]
 use crate::VideoHost;
-use crate::platform::{DialogService, RfdDialogService, scan_media_folder};
+use crate::platform::{AppPaths, DialogService, RfdDialogService, scan_media_folder};
 #[cfg(feature = "mpv-runtime")]
 use crate::video_host_winit::WinitVideoHost;
 use crate::video_texture::VideoTexture;
@@ -55,6 +57,10 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
     );
 }
 
+fn model_from_vec<T: Clone + 'static>(rows: Vec<T>) -> slint::ModelRc<T> {
+    slint::ModelRc::new(slint::VecModel::from(rows))
+}
+
 pub struct DesktopController<B: PlayerBackend> {
     session: AppSession<B>,
     shortcuts: ShortcutMap,
@@ -80,6 +86,11 @@ impl<B: PlayerBackend> DesktopController<B> {
     pub fn open_folder(&mut self, path: &std::path::Path) -> Result<(), yoyo_core::AppError> {
         let entries = scan_media_folder(path)?;
         self.session.replace_playlist(entries, 0)?;
+        self.session.poll_backend()
+    }
+
+    pub fn open_playlist_index(&mut self, index: usize) -> Result<(), yoyo_core::AppError> {
+        self.session.open_playlist_index(index)?;
         self.session.poll_backend()
     }
 
@@ -122,16 +133,28 @@ struct DesktopRuntime {
     controller: Option<DesktopController<MpvBackend>>,
     video_host_error: Option<String>,
     app_handle: Option<slint::Weak<MainWindow>>,
+    config: AppConfig,
+    history: crate::HistoryRuntime,
+    sidebar: crate::SidebarState,
+    pending_resume: Option<crate::PendingResumeSeek>,
+    last_seen_locator: Option<MediaLocator>,
+    started_at: Instant,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
 }
 
 impl DesktopRuntime {
-    fn new() -> Self {
+    fn new(config: AppConfig, history: crate::HistoryRuntime, sidebar: crate::SidebarState) -> Self {
         Self {
             controller: None,
             video_host_error: initial_runtime_error(),
             app_handle: None,
+            config,
+            history,
+            sidebar,
+            pending_resume: None,
+            last_seen_locator: None,
+            started_at: Instant::now(),
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
         }
@@ -178,12 +201,95 @@ fn initial_runtime_error() -> Option<String> {
     Some("Playback runtime is disabled in this build".to_string())
 }
 
+fn config_file_path(paths: &AppPaths) -> PathBuf {
+    paths.config_dir.join("config.toml")
+}
+
+fn history_file_path(paths: &AppPaths) -> PathBuf {
+    paths.data_dir.join("history.json")
+}
+
+fn load_boot_config(paths: Option<&AppPaths>) -> AppConfig {
+    paths
+        .map(config_file_path)
+        .and_then(|path| AppConfig::load(&path).ok())
+        .unwrap_or_default()
+}
+
+fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::HistoryRuntime {
+    let history_path = paths.map(history_file_path);
+    crate::HistoryRuntime::load(history_path, config.ui.remember_history)
+        .unwrap_or_else(|_| crate::HistoryRuntime::new(None, HistoryStore::default(), false))
+}
+
 fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
     if let Some(controller) = runtime.controller() {
         refresh_window(window, controller.session().state());
     } else {
         window.set_status_label(runtime.status_message().into());
     }
+}
+
+fn history_now(runtime: &DesktopRuntime) -> Duration {
+    runtime.started_at.elapsed()
+}
+
+#[derive(Debug, Clone)]
+struct PlaybackHistorySnapshot {
+    current: Option<MediaLocator>,
+    title: Option<String>,
+    position_seconds: f64,
+    paused: bool,
+}
+
+fn current_playlist_title(session: &AppSession<MpvBackend>) -> Option<String> {
+    let snapshot = session.playlist_snapshot();
+    let index = snapshot.current_index?;
+    snapshot.entries.get(index).map(|entry| entry.title.clone())
+}
+
+fn capture_history_snapshot(session: &AppSession<MpvBackend>) -> PlaybackHistorySnapshot {
+    PlaybackHistorySnapshot {
+        current: session.state().current.clone(),
+        title: current_playlist_title(session),
+        position_seconds: session.state().position_seconds,
+        paused: session.state().paused,
+    }
+}
+
+fn window_width(window: &MainWindow) -> f32 {
+    window
+        .window()
+        .with_winit_window(|winit_window| winit_window.inner_size().width as f32)
+        .unwrap_or(1200.0)
+}
+
+fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
+    window.set_sidebar_visible(runtime.sidebar.visible);
+    window.set_sidebar_tab_index(runtime.sidebar.tab_index());
+    window.set_sidebar_expanded_width_px(crate::expanded_sidebar_width(window_width(window)));
+
+    let playlist_rows = runtime
+        .controller()
+        .map(|controller| crate::build_playlist_rows(&controller.session().playlist_snapshot()))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| PlaylistSidebarRowData {
+            title: row.title.into(),
+            is_current: row.is_current,
+        })
+        .collect::<Vec<_>>();
+
+    let history_rows = crate::build_history_rows(runtime.history.store())
+        .into_iter()
+        .map(|row| HistorySidebarRowData {
+            title: row.title.into(),
+            subtitle: row.subtitle.into(),
+        })
+        .collect::<Vec<_>>();
+
+    window.set_playlist_rows(model_from_vec(playlist_rows));
+    window.set_history_rows(model_from_vec(history_rows));
 }
 
 fn ensure_runtime_ready(
@@ -201,32 +307,104 @@ fn ensure_runtime_ready(
     false
 }
 
+fn sync_history_from_snapshot(
+    runtime: &mut DesktopRuntime,
+    snapshot: &PlaybackHistorySnapshot,
+) -> Result<(), yoyo_core::StorageError> {
+    let now = history_now(runtime);
+    let current = snapshot.current.clone();
+    let switched = current != runtime.last_seen_locator;
+    runtime.last_seen_locator = current.clone();
+
+    if let (Some(locator), Some(title)) = (current.as_ref(), snapshot.title.as_ref()) {
+        runtime
+            .history
+            .remember_playback(locator, title, Some(snapshot.position_seconds));
+    }
+
+    if switched {
+        runtime.history.flush_if_needed(now, crate::FlushReason::MediaSwitch)?;
+    } else if snapshot.paused {
+        runtime.history.flush_if_needed(now, crate::FlushReason::Pause)?;
+    } else {
+        runtime
+            .history
+            .flush_if_needed(now, crate::FlushReason::PeriodicTick)?;
+    }
+
+    Ok(())
+}
+
+fn apply_pending_resume(
+    controller: &mut DesktopController<MpvBackend>,
+    pending: Option<crate::PendingResumeSeek>,
+) -> Result<Option<crate::PendingResumeSeek>, yoyo_core::AppError> {
+    let Some(seek) = pending else {
+        return Ok(None);
+    };
+    let Some(position) = seek.try_resolve(controller.session().state().duration_seconds) else {
+        return Ok(Some(seek));
+    };
+
+    controller.dispatch(AppCommand::SeekAbsolute(position))?;
+    Ok(None)
+}
+
 fn with_runtime_controller<F>(
     app_handle: &slint::Weak<MainWindow>,
     runtime: &Rc<RefCell<DesktopRuntime>>,
     action: F,
-) where
+) -> bool
+where
     F: FnOnce(&mut DesktopController<MpvBackend>) -> Result<(), yoyo_core::AppError>,
 {
     let mut runtime = runtime.borrow_mut();
-    let Some(controller) = runtime.controller_mut() else {
-        if let Some(app) = app_handle.upgrade() {
-            app.set_status_label(runtime.status_message().into());
+    let pending_before = runtime.pending_resume.take();
+
+    let outcome = {
+        let Some(controller) = runtime.controller_mut() else {
+            runtime.pending_resume = pending_before;
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(runtime.status_message().into());
+            }
+            return false;
+        };
+
+        match action(controller) {
+            Ok(()) => match apply_pending_resume(controller, pending_before) {
+                Ok(pending_after) => {
+                    let state = controller.session().state().clone();
+                    let history_snapshot = capture_history_snapshot(controller.session());
+                    Ok((state, history_snapshot, pending_after))
+                }
+                Err(error) => Err((error, pending_before)),
+            },
+            Err(error) => Err((error, pending_before)),
         }
-        return;
     };
 
-    match action(controller) {
-        Ok(()) => {
-            if let Some(app) = app_handle.upgrade() {
-                refresh_window(&app, controller.session().state());
-                apply_fullscreen_state(&app, controller.session().state());
+    match outcome {
+        Ok((state, history_snapshot, pending_after)) => {
+            runtime.pending_resume = pending_after;
+            if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot) {
+                if let Some(app) = app_handle.upgrade() {
+                    app.set_status_label(error.to_string().into());
+                }
+                return false;
             }
+            if let Some(app) = app_handle.upgrade() {
+                refresh_window(&app, &state);
+                refresh_sidebar(&app, &runtime);
+                apply_fullscreen_state(&app, &state);
+            }
+            true
         }
-        Err(error) => {
+        Err((error, pending_restore)) => {
+            runtime.pending_resume = pending_restore;
             if let Some(app) = app_handle.upgrade() {
                 app.set_status_label(error.to_string().into());
             }
+            false
         }
     }
 }
@@ -234,14 +412,26 @@ fn with_runtime_controller<F>(
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
-    let runtime = Rc::new(RefCell::new(DesktopRuntime::new()));
+    let paths = AppPaths::discover();
+    let config = load_boot_config(paths.as_ref());
+    let history = load_history_runtime(paths.as_ref(), &config);
+    let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
+    let runtime = Rc::new(RefCell::new(DesktopRuntime::new(config, history, sidebar)));
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
-    runtime.borrow_mut().app_handle = Some(app.as_weak());
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.app_handle = Some(app.as_weak());
+        runtime.sidebar = crate::initial_sidebar_state(
+            runtime.config.ui.show_playlist_on_startup,
+            window_width(&app),
+        );
+    }
     let dialogs = Rc::new(RfdDialogService);
 
     refresh_runtime_window(&app, &runtime.borrow());
+    refresh_sidebar(&app, &runtime.borrow());
 
     app.on_open_file_requested({
         let app_handle = app.as_weak();
@@ -324,6 +514,91 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         AppCommand::ToggleFullscreen,
     ));
 
+    app.on_toggle_sidebar_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let mut runtime = runtime.borrow_mut();
+            runtime.sidebar.toggle();
+            if let Some(app) = app_handle.upgrade() {
+                refresh_sidebar(&app, &runtime);
+            }
+        }
+    });
+
+    app.on_show_playlist_tab_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let mut runtime = runtime.borrow_mut();
+            runtime.sidebar.show_tab(crate::SidebarTab::Playlist);
+            if let Some(app) = app_handle.upgrade() {
+                refresh_sidebar(&app, &runtime);
+            }
+        }
+    });
+
+    app.on_show_history_tab_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let mut runtime = runtime.borrow_mut();
+            runtime.sidebar.show_tab(crate::SidebarTab::History);
+            if let Some(app) = app_handle.upgrade() {
+                refresh_sidebar(&app, &runtime);
+            }
+        }
+    });
+
+    app.on_playlist_item_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.open_playlist_index(index as usize)
+            });
+        }
+    });
+
+    app.on_history_item_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+
+            let activation = {
+                let runtime = runtime.borrow();
+                runtime.history.activation_for(index as usize)
+            };
+
+            match activation {
+                Ok(Some(activation)) => {
+                    let command = activation.command;
+                    let pending_seek = activation.pending_seek;
+                    let dispatched = with_runtime_controller(&app_handle, &runtime, move |controller| {
+                        controller.dispatch(command)
+                    });
+                    if dispatched {
+                        runtime.borrow_mut().pending_resume = pending_seek;
+                    }
+                }
+                Ok(None) => {}
+                Err(crate::HistoryActivationError::MissingLocalFile(path)) => {
+                    if let Some(app) = app_handle.upgrade() {
+                        app.set_status_label(
+                            format!("History file is missing: {}", path.display()).into(),
+                        );
+                    }
+                }
+            }
+        }
+    });
+
     app.on_settings_requested({
         let app_handle = app.as_weak();
         move || {
@@ -353,16 +628,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return slint::winit_030::EventResult::Propagate;
             };
 
-            let mut runtime = runtime.borrow_mut();
-            let Some(controller) = runtime.controller_mut() else {
-                app.set_status_label(runtime.status_message().into());
-                return slint::winit_030::EventResult::PreventDefault;
-            };
-
-            if controller.dispatch_shortcut(gesture).is_ok() {
-                refresh_window(&app, controller.session().state());
-                apply_fullscreen_state(&app, controller.session().state());
-            }
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch_shortcut(gesture)
+            });
             slint::winit_030::EventResult::PreventDefault
         }
     });
@@ -377,22 +645,61 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut runtime = runtime.borrow_mut();
+            let pending_before = runtime.pending_resume.take();
+
             if let Some(controller) = runtime.controller_mut() {
                 match controller.poll_backend() {
                     Ok(()) => {
-                        refresh_window(&app, controller.session().state());
+                        let next_pending = match apply_pending_resume(controller, pending_before) {
+                            Ok(next_pending) => next_pending,
+                            Err(error) => {
+                                runtime.pending_resume = pending_before;
+                                app.set_status_label(error.to_string().into());
+                                return;
+                            }
+                        };
+                        let state = controller.session().state().clone();
+                        let history_snapshot = capture_history_snapshot(controller.session());
+
+                        runtime.pending_resume = next_pending;
+                        if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot)
+                        {
+                            app.set_status_label(error.to_string().into());
+                        }
+                        refresh_window(&app, &state);
+                        refresh_sidebar(&app, &runtime);
                         #[cfg(feature = "mpv-runtime")]
                         sync_runtime_video_host(&app, &mut runtime);
                     }
-                    Err(error) => app.set_status_label(error.to_string().into()),
+                    Err(error) => {
+                        runtime.pending_resume = pending_before;
+                        app.set_status_label(error.to_string().into());
+                    }
                 }
             } else {
+                runtime.pending_resume = pending_before;
                 refresh_runtime_window(&app, &runtime);
+                refresh_sidebar(&app, &runtime);
             }
         }
     });
 
     app.run()?;
+
+    {
+        let mut runtime = runtime.borrow_mut();
+        if let Some(snapshot) = runtime
+            .controller()
+            .map(|controller| capture_history_snapshot(controller.session()))
+        {
+            let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
+        }
+        let shutdown_now = history_now(&runtime);
+        let _ = runtime
+            .history
+            .flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
+    }
+
     Ok(())
 }
 
@@ -512,13 +819,14 @@ impl DesktopWinitHandler {
             return;
         }
 
+        let config = runtime.config.clone();
         let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
             let video_host = WinitVideoHost::new_child(event_loop, parent_window)
                 .map_err(|error| error.to_string())?;
             let window_id = video_host.mpv_window_id().map_err(|error| error.to_string())?;
             let backend = build_desktop_backend_with_video_window(window_id)
                 .map_err(|error| error.to_string())?;
-            let session = AppSession::new(AppConfig::default(), backend);
+            let session = AppSession::new(config, backend);
             Ok((DesktopController::new(session), video_host))
         })();
 
@@ -526,16 +834,32 @@ impl DesktopWinitHandler {
             Ok((controller, video_host)) => {
                 runtime.set_runtime(controller, video_host);
                 let app_handle = runtime.app_handle.clone();
+                let (state, history_snapshot) = {
+                    let controller = runtime.controller().expect("runtime just initialized");
+                    (
+                        controller.session().state().clone(),
+                        capture_history_snapshot(controller.session()),
+                    )
+                };
+                let _ = sync_history_from_snapshot(&mut runtime, &history_snapshot);
+
                 if let Some(app_handle) = app_handle {
                     if let Some(app) = app_handle.upgrade() {
-                        if let Some(controller) = runtime.controller() {
-                            refresh_window(&app, controller.session().state());
-                        }
+                        refresh_window(&app, &state);
+                        refresh_sidebar(&app, &runtime);
                         sync_runtime_video_host(&app, &mut runtime);
                     }
                 }
             }
-            Err(error) => runtime.mark_error(error),
+            Err(error) => {
+                runtime.mark_error(error.clone());
+                if let Some(app_handle) = runtime.app_handle.clone() {
+                    if let Some(app) = app_handle.upgrade() {
+                        app.set_status_label(error.into());
+                        refresh_sidebar(&app, &runtime);
+                    }
+                }
+            }
         }
     }
 }

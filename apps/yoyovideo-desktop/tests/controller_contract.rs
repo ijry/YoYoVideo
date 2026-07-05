@@ -49,3 +49,29 @@ fn controller_open_url_updates_current_media() {
         Some(MediaLocator::Url("https://example.com/live.m3u8".into()))
     );
 }
+
+#[test]
+fn controller_can_open_a_specific_playlist_index() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session
+        .replace_playlist(
+            vec![
+                yoyo_core::PlaylistEntry::new(MediaLocator::File("a.mp4".into())),
+                yoyo_core::PlaylistEntry::new(MediaLocator::File("b.mp4".into())),
+            ],
+            0,
+        )
+        .unwrap();
+
+    let mut controller = DesktopController::new(session);
+    controller.open_playlist_index(1).unwrap();
+
+    assert_eq!(
+        controller.session().backend().opened.last(),
+        Some(&MediaLocator::File("b.mp4".into()))
+    );
+    assert_eq!(
+        controller.session().state().current,
+        Some(MediaLocator::File("b.mp4".into()))
+    );
+}
