@@ -1,4 +1,7 @@
-use yoyo_core::{AudioChannelMode, BackendCommand, MediaLocator, Rotation};
+use yoyo_core::{
+    AudioChannelMode, BackendCommand, FrameStepDirection, MediaLocator, Rotation,
+    VideoAdjustmentKind, VideoFilterPreset,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MpvAction {
@@ -11,6 +14,46 @@ pub enum MpvAction {
 
 pub fn translate_open(locator: &MediaLocator) -> Vec<MpvAction> {
     vec![MpvAction::Command(vec!["loadfile".into(), locator.as_label(), "replace".into()])]
+}
+
+fn video_adjustment_property(kind: VideoAdjustmentKind) -> &'static str {
+    match kind {
+        VideoAdjustmentKind::Brightness => "brightness",
+        VideoAdjustmentKind::Contrast => "contrast",
+        VideoAdjustmentKind::Saturation => "saturation",
+        VideoAdjustmentKind::Gamma => "gamma",
+        VideoAdjustmentKind::Hue => "hue",
+    }
+}
+
+fn filter_preset_action(preset: VideoFilterPreset) -> MpvAction {
+    match preset {
+        VideoFilterPreset::None => MpvAction::Command(vec![
+            "vf".into(),
+            "remove".into(),
+            "@yoyovideo-preset".into(),
+        ]),
+        VideoFilterPreset::Sharpen => MpvAction::Command(vec![
+            "vf".into(),
+            "add".into(),
+            "@yoyovideo-preset:lavfi=[unsharp=5:5:0.6:3:3:0.3]".into(),
+        ]),
+        VideoFilterPreset::LightDenoise => MpvAction::Command(vec![
+            "vf".into(),
+            "add".into(),
+            "@yoyovideo-preset:lavfi=[hqdn3d=1.5:1.5:6:6]".into(),
+        ]),
+        VideoFilterPreset::Grayscale => MpvAction::Command(vec![
+            "vf".into(),
+            "add".into(),
+            "@yoyovideo-preset:lavfi=[format=gray]".into(),
+        ]),
+        VideoFilterPreset::Invert => MpvAction::Command(vec![
+            "vf".into(),
+            "add".into(),
+            "@yoyovideo-preset:lavfi=[negate]".into(),
+        ]),
+    }
 }
 
 pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
@@ -90,5 +133,29 @@ pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
         BackendCommand::SetSubtitleVerticalPosition(position) => {
             vec![MpvAction::SetInt { name: "sub-pos".into(), value: i64::from(*position) }]
         }
+        BackendCommand::TakeScreenshot(path) => vec![MpvAction::Command(vec![
+            "screenshot-to-file".into(),
+            path.display().to_string(),
+            "subtitles".into(),
+        ])],
+        BackendCommand::StepFrame(direction) => {
+            let command = match direction {
+                FrameStepDirection::Previous => "frame-back-step",
+                FrameStepDirection::Next => "frame-step",
+            };
+            vec![MpvAction::Command(vec![command.into()])]
+        }
+        BackendCommand::SetVideoAdjustment(kind, value) => vec![MpvAction::SetDouble {
+            name: video_adjustment_property(*kind).into(),
+            value: f64::from(*value),
+        }],
+        BackendCommand::ResetVideoAdjustments => VideoAdjustmentKind::ALL
+            .iter()
+            .map(|kind| MpvAction::SetDouble {
+                name: video_adjustment_property(*kind).into(),
+                value: 0.0,
+            })
+            .collect(),
+        BackendCommand::SetVideoFilterPreset(preset) => vec![filter_preset_action(*preset)],
     }
 }
