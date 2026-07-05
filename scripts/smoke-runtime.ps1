@@ -3,7 +3,11 @@ param(
     [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
     [string]$Platform = "windows-x64",
 
-    [int]$TimeoutSeconds = 5
+    [int]$TimeoutSeconds = 5,
+
+    [string]$RuntimeBin,
+
+    [string]$RuntimeLib
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,8 +18,16 @@ function Fail([string]$Message) {
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$runtimeBin = Join-Path $repoRoot "third_party/mpv/$Platform/bin"
-$runtimeLib = Join-Path $repoRoot "third_party/mpv/$Platform/lib"
+if ([string]::IsNullOrWhiteSpace($RuntimeBin)) {
+    $runtimeBin = Join-Path $repoRoot "third_party/mpv/$Platform/bin"
+} else {
+    $runtimeBin = [System.IO.Path]::GetFullPath($RuntimeBin)
+}
+if ([string]::IsNullOrWhiteSpace($RuntimeLib)) {
+    $runtimeLib = Join-Path $repoRoot "third_party/mpv/$Platform/lib"
+} else {
+    $runtimeLib = [System.IO.Path]::GetFullPath($RuntimeLib)
+}
 
 if ($Platform -eq "windows-x64" -and -not (Test-Path -LiteralPath (Join-Path $runtimeBin "mpv-2.dll") -PathType Leaf)) {
     Fail "Missing Windows runtime DLL. Run: pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64"

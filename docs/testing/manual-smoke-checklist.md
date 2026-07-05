@@ -66,6 +66,7 @@
 - Install the Windows setup package and launch YoYoVideo from the Start Menu shortcut.
 - Uninstall YoYoVideo and confirm the installed directory is removed.
 - Run `pwsh -NoProfile -File scripts/smoke-runtime.ps1 -Platform windows-x64` when runtime files are staged.
+- Run `pwsh -NoProfile -File scripts/smoke-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -RequireRuntime` and confirm it writes `smoke/package-smoke.log`.
 - Launch the app from the extracted `bin/` directory and run the Playback and UX checks above.
 
 ## Visible Video Host

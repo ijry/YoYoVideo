@@ -50,6 +50,12 @@ Use `scripts/verify-package.ps1` to validate generated package directories witho
 pwsh -NoProfile -File scripts/verify-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -RequireRuntime
 ```
 
+Run package smoke after verification to launch the packaged binary briefly and, when runtime files are required, run temporary-media playback against the package runtime:
+
+```powershell
+pwsh -NoProfile -File scripts/smoke-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -RequireRuntime
+```
+
 On Windows, build an optional NSIS installer after the portable package is verified:
 
 ```powershell
