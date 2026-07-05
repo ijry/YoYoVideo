@@ -15,7 +15,7 @@ mod video_texture;
 pub use app::{
     DesktopController, MainWindow, SettingsWindow, ShortcutDispatch, TrackPopupRowData,
     build_desktop_backend, build_desktop_backend_with_video_window, dispatch_shortcut,
-    refresh_window, resolve_shortcut, run,
+    dropped_media_status, refresh_window, resolve_shortcut, run,
 };
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,

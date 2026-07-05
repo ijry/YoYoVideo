@@ -228,6 +228,20 @@ pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand>
     }
 }
 
+pub fn dropped_media_status(action: &crate::platform::DroppedMediaAction) -> String {
+    match action {
+        crate::platform::DroppedMediaAction::NoPlayableMedia { .. } => {
+            "No playable media found in dropped items".to_string()
+        }
+        crate::platform::DroppedMediaAction::OpenFile(path) => {
+            format!("Opened dropped file: {}", path.display())
+        }
+        crate::platform::DroppedMediaAction::ReplacePlaylist(entries) => {
+            format!("Opened dropped playlist: {} items", entries.len())
+        }
+    }
+}
+
 struct DesktopRuntime {
     controller: Option<DesktopController<MpvBackend>>,
     video_host_error: Option<String>,
@@ -771,6 +785,55 @@ fn dispatch_video_adjustment(
     with_runtime_controller(app_handle, runtime, move |controller| {
         controller.dispatch(AppCommand::SetVideoAdjustment(kind, value.clamp(-100, 100) as i16))
     });
+}
+
+fn dispatch_dropped_paths(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    paths: Vec<PathBuf>,
+) {
+    if paths.is_empty() {
+        return;
+    }
+
+    let action = match crate::platform::classify_dropped_paths(&paths) {
+        Ok(action) => action,
+        Err(error) => {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(format!("Drop failed: {error}").into());
+            }
+            return;
+        }
+    };
+    let status = dropped_media_status(&action);
+
+    match action {
+        crate::platform::DroppedMediaAction::NoPlayableMedia { .. } => {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(status.into());
+            }
+        }
+        crate::platform::DroppedMediaAction::OpenFile(path) => {
+            let dispatched = with_runtime_controller(app_handle, runtime, move |controller| {
+                controller.dispatch(AppCommand::OpenFile(path))
+            });
+            if dispatched
+                && let Some(app) = app_handle.upgrade()
+            {
+                app.set_status_label(status.into());
+            }
+        }
+        crate::platform::DroppedMediaAction::ReplacePlaylist(entries) => {
+            let dispatched = with_runtime_controller(app_handle, runtime, move |controller| {
+                controller.open_playlist_entries(entries)
+            });
+            if dispatched
+                && let Some(app) = app_handle.upgrade()
+            {
+                app.set_status_label(status.into());
+            }
+        }
+    }
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -1366,12 +1429,31 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyboard_state =
         Rc::new(RefCell::new(crate::keyboard::winit_adapter::WinitKeyboardState::default()));
+    let dropped_paths = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
+    let drop_timer = Rc::new(slint::Timer::default());
     app.window().on_winit_window_event({
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
         let keyboard_state = Rc::clone(&keyboard_state);
         let paths = paths.clone();
+        let dropped_paths = Rc::clone(&dropped_paths);
+        let drop_timer = Rc::clone(&drop_timer);
         move |_window, event| {
+            if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
+                dropped_paths.borrow_mut().push(path.clone());
+                drop_timer.stop();
+                drop_timer.start(slint::TimerMode::SingleShot, Duration::from_millis(120), {
+                    let app_handle = app_handle.clone();
+                    let runtime = Rc::clone(&runtime);
+                    let dropped_paths = Rc::clone(&dropped_paths);
+                    move || {
+                        let paths = std::mem::take(&mut *dropped_paths.borrow_mut());
+                        dispatch_dropped_paths(&app_handle, &runtime, paths);
+                    }
+                });
+                return slint::winit_030::EventResult::PreventDefault;
+            }
+
             let Some(app) = app_handle.upgrade() else {
                 return slint::winit_030::EventResult::Propagate;
             };

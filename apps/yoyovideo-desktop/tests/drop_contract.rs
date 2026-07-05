@@ -2,6 +2,7 @@ use std::fs;
 
 use tempfile::tempdir;
 use yoyo_core::{MediaLocator, PlaylistEntry};
+use yoyovideo_desktop::dropped_media_status;
 use yoyovideo_desktop::platform::{DroppedMediaAction, classify_dropped_paths};
 
 #[test]
@@ -72,4 +73,21 @@ fn unsupported_only_drop_reports_no_playable_media() {
     let action = classify_dropped_paths(&[unsupported]).unwrap();
 
     assert_eq!(action, DroppedMediaAction::NoPlayableMedia { ignored_count: 1 });
+}
+
+#[test]
+fn dropped_media_status_explains_unsupported_only_drop() {
+    let status = dropped_media_status(&DroppedMediaAction::NoPlayableMedia { ignored_count: 2 });
+
+    assert_eq!(status, "No playable media found in dropped items");
+}
+
+#[test]
+fn dropped_media_status_reports_playlist_replacement_count() {
+    let status = dropped_media_status(&DroppedMediaAction::ReplacePlaylist(vec![
+        PlaylistEntry::new(MediaLocator::File("a.mp4".into())),
+        PlaylistEntry::new(MediaLocator::File("b.mp4".into())),
+    ]));
+
+    assert_eq!(status, "Opened dropped playlist: 2 items");
 }

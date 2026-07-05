@@ -113,12 +113,14 @@ export component MainWindow inherits Window {
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
         width: 230px;
-        height: 500px;
+        height: 560px;
 
         VerticalBox {
             spacing: 4px;
             Button { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
             Button { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+            Button { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
+            Button { text: "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
             Button { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
             Button { text: "Speed -"; clicked => { root.speed_down_requested(); menu_popup.close(); } }
             Button { text: "Speed +"; clicked => { root.speed_up_requested(); menu_popup.close(); } }
