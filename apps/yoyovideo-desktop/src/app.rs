@@ -279,6 +279,7 @@ struct DesktopRuntime {
     started_at: Instant,
     diagnostic_log_path: PathBuf,
     diagnostic_log_failed: bool,
+    window_state_path: Option<PathBuf>,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
 }
@@ -291,6 +292,7 @@ impl DesktopRuntime {
         subtitle_prefs: crate::SubtitlePrefsRuntime,
         sidebar: crate::SidebarState,
         diagnostic_log_path: PathBuf,
+        window_state_path: Option<PathBuf>,
     ) -> Self {
         Self {
             controller: None,
@@ -309,6 +311,7 @@ impl DesktopRuntime {
             started_at: Instant::now(),
             diagnostic_log_path,
             diagnostic_log_failed: false,
+            window_state_path,
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
         }
@@ -910,6 +913,26 @@ fn remember_recent_open(
     }
 }
 
+fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &slint::Window) {
+    let size = window.size();
+    let position = window.position();
+    let state = crate::platform::WindowState {
+        width: size.width,
+        height: size.height,
+        x: Some(position.x),
+        y: Some(position.y),
+        maximized: window.is_maximized(),
+    }
+    .clamped();
+
+    let mut runtime = runtime.borrow_mut();
+    if let Err(error) =
+        crate::platform::save_window_state(runtime.window_state_path.clone(), &state)
+    {
+        runtime.record_diagnostic("WARN", format!("Window state save failed: {error}"));
+    }
+}
+
 fn dispatch_dropped_paths(
     app_handle: &slint::Weak<MainWindow>,
     runtime: &Rc<RefCell<DesktopRuntime>>,
@@ -986,6 +1009,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let subtitle_prefs = load_subtitle_prefs_runtime(paths.as_ref());
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
     let diagnostic_log_path = crate::platform::default_log_file(paths.as_ref());
+    let window_state_path = crate::platform::window_state_path(paths.as_ref());
     let runtime = Rc::new(RefCell::new(DesktopRuntime::new(
         config,
         history,
@@ -993,10 +1017,18 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         subtitle_prefs,
         sidebar,
         diagnostic_log_path,
+        window_state_path.clone(),
     )));
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
+    if let Ok(Some(state)) = crate::platform::load_window_state(window_state_path) {
+        app.window().set_size(slint::PhysicalSize::new(state.width, state.height));
+        if let (Some(x), Some(y)) = (state.x, state.y) {
+            app.window().set_position(slint::PhysicalPosition::new(x, y));
+        }
+        app.window().set_maximized(state.maximized);
+    }
     {
         let mut runtime = runtime.borrow_mut();
         runtime.app_handle = Some(app.as_weak());
@@ -1714,7 +1746,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let paths = paths.clone();
         let dropped_paths = Rc::clone(&dropped_paths);
         let drop_timer = Rc::clone(&drop_timer);
-        move |_window, event| {
+        move |window, event| {
+            match event {
+                slint::winit_030::winit::event::WindowEvent::Moved(_)
+                | slint::winit_030::winit::event::WindowEvent::Resized(_)
+                | slint::winit_030::winit::event::WindowEvent::CloseRequested => {
+                    save_current_window_state(&runtime, window);
+                }
+                _ => {}
+            }
+
             if let slint::winit_030::winit::event::WindowEvent::DroppedFile(path) = event {
                 dropped_paths.borrow_mut().push(path.clone());
                 drop_timer.stop();
