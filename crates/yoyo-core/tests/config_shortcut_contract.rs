@@ -116,3 +116,33 @@ show_playlist_on_startup = false
     assert_eq!(config.playback.end_behavior, yoyo_core::PlaybackEndBehavior::PlayNext);
     assert!(!config.ui.show_playlist_on_startup);
 }
+
+#[test]
+fn cinema_deck_shortcuts_are_registered() {
+    let map = yoyo_core::ShortcutMap::default();
+
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("M").unwrap()),
+        Some(yoyo_core::ShortcutAction::ToggleMute)
+    );
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("J").unwrap()),
+        Some(yoyo_core::ShortcutAction::JumpToTime)
+    );
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("Ctrl+M").unwrap()),
+        Some(yoyo_core::ShortcutAction::AddMarker)
+    );
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("P").unwrap()),
+        Some(yoyo_core::ShortcutAction::OpenActionPanel)
+    );
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("Shift+Right").unwrap()),
+        Some(yoyo_core::ShortcutAction::NextChapterOrMarker)
+    );
+    assert_eq!(
+        map.action_for(&yoyo_core::Shortcut::parse("Shift+Left").unwrap()),
+        Some(yoyo_core::ShortcutAction::PreviousChapterOrMarker)
+    );
+}

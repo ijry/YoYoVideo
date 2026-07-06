@@ -27,11 +27,17 @@ pub enum ShortcutAction {
     TakeScreenshot,
     FrameStepBackward,
     FrameStepForward,
+    ToggleMute,
+    JumpToTime,
+    AddMarker,
+    OpenActionPanel,
+    NextChapterOrMarker,
+    PreviousChapterOrMarker,
 }
 
 impl ShortcutAction {
     pub fn all() -> &'static [ShortcutAction] {
-        const ACTIONS: [ShortcutAction; 21] = [
+        const ACTIONS: [ShortcutAction; 27] = [
             ShortcutAction::TogglePause,
             ShortcutAction::SeekBackwardSmall,
             ShortcutAction::SeekForwardSmall,
@@ -53,6 +59,12 @@ impl ShortcutAction {
             ShortcutAction::TakeScreenshot,
             ShortcutAction::FrameStepBackward,
             ShortcutAction::FrameStepForward,
+            ShortcutAction::ToggleMute,
+            ShortcutAction::JumpToTime,
+            ShortcutAction::AddMarker,
+            ShortcutAction::OpenActionPanel,
+            ShortcutAction::NextChapterOrMarker,
+            ShortcutAction::PreviousChapterOrMarker,
         ];
 
         &ACTIONS
@@ -81,6 +93,12 @@ impl ShortcutAction {
             ShortcutAction::TakeScreenshot => "Take Screenshot",
             ShortcutAction::FrameStepBackward => "Previous Frame",
             ShortcutAction::FrameStepForward => "Next Frame",
+            ShortcutAction::ToggleMute => "Toggle Mute",
+            ShortcutAction::JumpToTime => "Jump To Time",
+            ShortcutAction::AddMarker => "Add Marker",
+            ShortcutAction::OpenActionPanel => "Open Action Panel",
+            ShortcutAction::NextChapterOrMarker => "Next Chapter / Marker",
+            ShortcutAction::PreviousChapterOrMarker => "Previous Chapter / Marker",
         }
     }
 
@@ -135,6 +153,12 @@ impl Default for ShortcutMap {
         bindings.insert(Shortcut("S".into()), ShortcutAction::TakeScreenshot);
         bindings.insert(Shortcut(",".into()), ShortcutAction::FrameStepBackward);
         bindings.insert(Shortcut(".".into()), ShortcutAction::FrameStepForward);
+        bindings.insert(Shortcut("M".into()), ShortcutAction::ToggleMute);
+        bindings.insert(Shortcut("J".into()), ShortcutAction::JumpToTime);
+        bindings.insert(Shortcut("Ctrl+M".into()), ShortcutAction::AddMarker);
+        bindings.insert(Shortcut("P".into()), ShortcutAction::OpenActionPanel);
+        bindings.insert(Shortcut("Shift+Right".into()), ShortcutAction::NextChapterOrMarker);
+        bindings.insert(Shortcut("Shift+Left".into()), ShortcutAction::PreviousChapterOrMarker);
         Self { bindings }
     }
 }

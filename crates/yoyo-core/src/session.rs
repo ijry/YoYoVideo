@@ -1,7 +1,8 @@
 use crate::{
-    AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, MediaLocator,
-    MediaTrack, PlaybackEndBehavior, PlayerBackend, PlayerState, Playlist, PlaylistEntry,
-    PlaylistSnapshot, Rotation, SubtitlePlaybackState,
+    AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent,
+    MARKER_DEDUPE_TOLERANCE_SECONDS, MediaLocator, MediaMarker, MediaTrack, PlaybackEndBehavior,
+    PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
+    SubtitlePlaybackState,
 };
 
 pub struct AppSession<B: PlayerBackend> {
@@ -47,6 +48,80 @@ impl<B: PlayerBackend> AppSession<B> {
         self.state.subtitle_preferences_restored = false;
     }
 
+    fn reset_navigation_state_for_new_media(&mut self) {
+        self.state.chapters.clear();
+        self.state.markers.clear();
+    }
+
+    fn clamp_seek_target(&self, seconds: f64) -> Result<f64, AppError> {
+        if !seconds.is_finite() || seconds < 0.0 {
+            return Err(AppError::Message("Invalid seek target".into()));
+        }
+
+        Ok(match self.state.duration_seconds {
+            Some(duration) if duration.is_finite() && duration >= 0.0 => seconds.min(duration),
+            _ => seconds,
+        })
+    }
+
+    fn marker_id_for_position(seconds: f64) -> String {
+        format!("marker-{}", (seconds * 1000.0).round() as u64)
+    }
+
+    fn marker_title_for_position(seconds: f64) -> String {
+        let total = seconds.max(0.0) as u64;
+        format!("Marker {:02}:{:02}", total / 60, total % 60)
+    }
+
+    fn add_marker_at_current_position(&mut self, created_at: String) {
+        let position = self.state.position_seconds.max(0.0);
+        if !position.is_finite() {
+            self.state.status_message = Some("Cannot add marker at invalid position".into());
+            return;
+        }
+
+        if self
+            .state
+            .markers
+            .iter()
+            .any(|marker| (marker.time_seconds - position).abs() <= MARKER_DEDUPE_TOLERANCE_SECONDS)
+        {
+            self.state.status_message = Some("Marker already exists near this position".into());
+            return;
+        }
+
+        self.state.markers.push(MediaMarker {
+            id: Self::marker_id_for_position(position),
+            title: Self::marker_title_for_position(position),
+            time_seconds: position,
+            created_at,
+        });
+        self.state.markers.sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
+        self.state.status_message = Some("Marker added".into());
+    }
+
+    fn chapter_marker_points(&self) -> Vec<f64> {
+        let mut points = self
+            .state
+            .chapters
+            .iter()
+            .map(|chapter| chapter.time_seconds)
+            .chain(self.state.markers.iter().map(|marker| marker.time_seconds))
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .collect::<Vec<_>>();
+        points.sort_by(|left, right| left.total_cmp(right));
+        points.dedup_by(|left, right| (*left - *right).abs() <= 0.001);
+        points
+    }
+
+    pub fn set_markers(&mut self, markers: Vec<MediaMarker>) {
+        self.state.markers = markers
+            .into_iter()
+            .filter(|marker| marker.time_seconds.is_finite() && marker.time_seconds >= 0.0)
+            .collect();
+        self.state.markers.sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
+    }
+
     pub fn replace_playlist(
         &mut self,
         entries: Vec<PlaylistEntry>,
@@ -55,6 +130,7 @@ impl<B: PlayerBackend> AppSession<B> {
         self.playlist.replace(entries, start_index);
         if let Some(entry) = self.playlist.current().cloned() {
             self.reset_track_state_for_new_media();
+            self.reset_navigation_state_for_new_media();
             self.backend.open(&entry.locator).map_err(AppError::Message)?;
             self.state.current = Some(entry.locator.clone());
             self.state.paused = false;
@@ -68,6 +144,7 @@ impl<B: PlayerBackend> AppSession<B> {
         };
 
         self.reset_track_state_for_new_media();
+        self.reset_navigation_state_for_new_media();
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(entry.locator.clone());
         self.state.paused = false;
@@ -78,6 +155,7 @@ impl<B: PlayerBackend> AppSession<B> {
         let entry = PlaylistEntry::new(locator.clone());
         self.playlist.replace(vec![entry.clone()], 0);
         self.reset_track_state_for_new_media();
+        self.reset_navigation_state_for_new_media();
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(locator);
         self.state.paused = false;
@@ -190,6 +268,22 @@ impl<B: PlayerBackend> AppSession<B> {
                 let next = (self.state.volume_percent as i16 + delta as i16).clamp(0, 100) as u8;
                 self.state.volume_percent = next;
                 self.backend.send(BackendCommand::SetVolume(next)).map_err(AppError::Message)?;
+            }
+            AppCommand::SetMuted(muted) => {
+                self.state.muted = muted;
+                self.backend.send(BackendCommand::SetMuted(muted)).map_err(AppError::Message)?;
+            }
+            AppCommand::ToggleMute => {
+                let muted = !self.state.muted;
+                self.state.muted = muted;
+                self.backend.send(BackendCommand::SetMuted(muted)).map_err(AppError::Message)?;
+            }
+            AppCommand::JumpToTime(seconds) => {
+                let target = self.clamp_seek_target(seconds)?;
+                self.backend
+                    .send(BackendCommand::SeekAbsolute(target))
+                    .map_err(AppError::Message)?;
+                self.state.status_message = Some(format!("Jumped to {:.1}s", target));
             }
             AppCommand::CycleAudioChannel => {
                 self.state.audio_channel = match self.state.audio_channel {
@@ -330,6 +424,60 @@ impl<B: PlayerBackend> AppSession<B> {
                     .map_err(AppError::Message)?;
                 self.state.video_filter_preset = preset;
             }
+            AppCommand::AddMarkerAtCurrentPosition { created_at } => {
+                self.add_marker_at_current_position(created_at);
+            }
+            AppCommand::RemoveMarker(id) => {
+                self.state.markers.retain(|marker| marker.id != id);
+                self.state.status_message = Some("Marker removed".into());
+            }
+            AppCommand::SeekToChapter(index) => {
+                if let Some(seconds) =
+                    self.state.chapters.get(index).map(|chapter| chapter.time_seconds)
+                {
+                    let target = self.clamp_seek_target(seconds)?;
+                    self.backend
+                        .send(BackendCommand::SeekAbsolute(target))
+                        .map_err(AppError::Message)?;
+                }
+            }
+            AppCommand::SeekToMarker(id) => {
+                if let Some(seconds) = self
+                    .state
+                    .markers
+                    .iter()
+                    .find(|marker| marker.id == id)
+                    .map(|marker| marker.time_seconds)
+                {
+                    let target = self.clamp_seek_target(seconds)?;
+                    self.backend
+                        .send(BackendCommand::SeekAbsolute(target))
+                        .map_err(AppError::Message)?;
+                }
+            }
+            AppCommand::SeekToNextChapterOrMarker => {
+                if let Some(target) = self
+                    .chapter_marker_points()
+                    .into_iter()
+                    .find(|point| *point > self.state.position_seconds + 0.5)
+                {
+                    self.backend
+                        .send(BackendCommand::SeekAbsolute(target))
+                        .map_err(AppError::Message)?;
+                }
+            }
+            AppCommand::SeekToPreviousChapterOrMarker => {
+                if let Some(target) = self
+                    .chapter_marker_points()
+                    .into_iter()
+                    .rev()
+                    .find(|point| *point < self.state.position_seconds - 0.5)
+                {
+                    self.backend
+                        .send(BackendCommand::SeekAbsolute(target))
+                        .map_err(AppError::Message)?;
+                }
+            }
             AppCommand::OpenFolder(_) => {
                 return Err(AppError::Message(
                     "OpenFolder must be expanded into a playlist by the desktop app".into(),
@@ -347,6 +495,7 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::DurationChanged(duration) => self.state.duration_seconds = duration,
                 BackendEvent::SpeedChanged(speed) => self.state.speed = speed,
                 BackendEvent::VolumeChanged(volume) => self.state.volume_percent = volume,
+                BackendEvent::MutedChanged(muted) => self.state.muted = muted,
                 BackendEvent::AudioChannelChanged(mode) => self.state.audio_channel = mode,
                 BackendEvent::RotationChanged(rotation) => self.state.rotation = rotation,
                 BackendEvent::TracksChanged { audio, subtitles, video } => {
@@ -355,6 +504,17 @@ impl<B: PlayerBackend> AppSession<B> {
                     self.state.video_tracks = video;
                     self.state.subtitle.external_path =
                         Self::selected_external_subtitle_path(&self.state.subtitle_tracks);
+                }
+                BackendEvent::ChaptersChanged(chapters) => {
+                    self.state.chapters = chapters
+                        .into_iter()
+                        .filter(|chapter| {
+                            chapter.time_seconds.is_finite() && chapter.time_seconds >= 0.0
+                        })
+                        .collect();
+                    self.state
+                        .chapters
+                        .sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
                 }
                 BackendEvent::SubtitleVisibilityChanged(visible) => {
                     self.state.subtitle.visible = visible;

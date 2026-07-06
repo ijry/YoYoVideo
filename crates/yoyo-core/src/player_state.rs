@@ -115,6 +115,22 @@ pub struct MediaTrack {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaChapter {
+    pub title: Option<String>,
+    pub time_seconds: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaMarker {
+    pub id: String,
+    pub title: String,
+    pub time_seconds: f64,
+    pub created_at: String,
+}
+
+pub const MARKER_DEDUPE_TOLERANCE_SECONDS: f64 = 0.75;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubtitlePlaybackState {
     pub visible: bool,
     pub delay_seconds: f64,
@@ -142,6 +158,7 @@ pub struct PlayerState {
     pub position_seconds: f64,
     pub duration_seconds: Option<f64>,
     pub volume_percent: u8,
+    pub muted: bool,
     pub speed: f32,
     pub audio_channel: AudioChannelMode,
     pub rotation: Rotation,
@@ -157,6 +174,8 @@ pub struct PlayerState {
     pub subtitle_preferences_restored: bool,
     pub video_adjustments: VideoAdjustments,
     pub video_filter_preset: VideoFilterPreset,
+    pub chapters: Vec<MediaChapter>,
+    pub markers: Vec<MediaMarker>,
 }
 
 impl PlayerState {
@@ -181,6 +200,7 @@ impl Default for PlayerState {
             position_seconds: 0.0,
             duration_seconds: None,
             volume_percent: 100,
+            muted: false,
             speed: 1.0,
             audio_channel: AudioChannelMode::Stereo,
             rotation: Rotation::Deg0,
@@ -196,6 +216,8 @@ impl Default for PlayerState {
             subtitle_preferences_restored: false,
             video_adjustments: VideoAdjustments::default(),
             video_filter_preset: VideoFilterPreset::None,
+            chapters: Vec::new(),
+            markers: Vec::new(),
         }
     }
 }

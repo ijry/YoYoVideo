@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::{
-    AudioChannelMode, FrameStepDirection, MediaLocator, MediaTrack, Rotation, VideoAdjustmentKind,
-    VideoFilterPreset,
+    AudioChannelMode, FrameStepDirection, MediaChapter, MediaLocator, MediaTrack, Rotation,
+    VideoAdjustmentKind, VideoFilterPreset,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +12,7 @@ pub enum BackendCommand {
     SeekAbsolute(f64),
     SetSpeed(f32),
     SetVolume(u8),
+    SetMuted(bool),
     SetAudioChannel(AudioChannelMode),
     SetRotation(Rotation),
     AdjustZoom(i8),
@@ -40,9 +41,11 @@ pub enum BackendEvent {
     DurationChanged(Option<f64>),
     SpeedChanged(f32),
     VolumeChanged(u8),
+    MutedChanged(bool),
     AudioChannelChanged(AudioChannelMode),
     RotationChanged(Rotation),
     TracksChanged { audio: Vec<MediaTrack>, subtitles: Vec<MediaTrack>, video: Vec<MediaTrack> },
+    ChaptersChanged(Vec<MediaChapter>),
     SubtitleVisibilityChanged(bool),
     SubtitleDelayChanged(f64),
     SubtitleScaleChanged(f32),

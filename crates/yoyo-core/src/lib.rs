@@ -19,8 +19,9 @@ pub use error::{AppError, StorageError, ValidationError};
 pub use history::{HistoryEntry, HistoryStore};
 pub use media::MediaLocator;
 pub use player_state::{
-    AudioChannelMode, FrameStepDirection, LoopState, MAX_VIDEO_ADJUSTMENT, MIN_VIDEO_ADJUSTMENT,
-    MediaTrack, MediaTrackKind, PlayerState, Rotation, SubtitlePlaybackState, VideoAdjustmentKind,
+    AudioChannelMode, FrameStepDirection, LoopState, MARKER_DEDUPE_TOLERANCE_SECONDS,
+    MAX_VIDEO_ADJUSTMENT, MIN_VIDEO_ADJUSTMENT, MediaChapter, MediaMarker, MediaTrack,
+    MediaTrackKind, PlayerState, Rotation, SubtitlePlaybackState, VideoAdjustmentKind,
     VideoAdjustments, VideoFilterPreset,
 };
 pub use playlist::{Playlist, PlaylistEntry, PlaylistSnapshot};
