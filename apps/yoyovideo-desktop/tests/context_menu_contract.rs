@@ -54,6 +54,16 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.on_navigation_row_requested(|_| {});
     window.on_previous_chapter_marker_requested(|| {});
     window.on_next_chapter_marker_requested(|| {});
+    window.set_ui_language_code("zh".into());
+    assert_eq!(window.get_ui_language_code().as_str(), "zh");
+    window.on_window_drag_requested(|| {});
+    window.on_window_minimize_requested(|| {});
+    window.on_window_maximize_restore_requested(|| {});
+    window.on_window_close_requested(|| {});
+    window.on_language_changed(|_| {});
+    window.on_video_double_clicked(|| {});
+    window.on_video_dragged(|_, _| {});
+    window.on_reset_video_pan_requested(|| {});
 }
 
 #[test]

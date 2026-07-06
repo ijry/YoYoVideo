@@ -204,6 +204,7 @@ export component MainWindow inherits Window {
     in-out property <bool> action_panel_visible: false;
     in-out property <bool> jump_panel_visible: false;
     in-out property <string> jump_input_text: "";
+    in-out property <string> ui_language_code: "zh";
     out property <bool> url_focused: url_input.has-focus;
 
     out property <length> video_area_x: video_area.x;
@@ -271,6 +272,14 @@ export component MainWindow inherits Window {
     callback navigation_row_requested(int);
     callback previous_chapter_marker_requested();
     callback next_chapter_marker_requested();
+    callback window_drag_requested();
+    callback window_minimize_requested();
+    callback window_maximize_restore_requested();
+    callback window_close_requested();
+    callback language_changed(string);
+    callback video_double_clicked();
+    callback video_dragged(float, float);
+    callback reset_video_pan_requested();
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;

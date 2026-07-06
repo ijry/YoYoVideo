@@ -38,16 +38,35 @@ pub fn build_desktop_backend_with_video_window(
 }
 
 pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
-    window.set_transport_label(crate::format_transport_label(state).into());
+    refresh_window_with_language(window, state, crate::UiLanguage::Chinese);
+}
+
+fn refresh_window_with_language(
+    window: &MainWindow,
+    state: &PlayerState,
+    language: crate::UiLanguage,
+) {
+    window.set_ui_language_code(language.code().into());
+    window.set_transport_label(crate::format_transport_label_for_language(state, language).into());
     window.set_speed_label(crate::format_speed_label(state).into());
     window.set_time_label(crate::format_time_label(state).into());
-    window.set_volume_label(crate::format_volume_label(state).into());
+    window.set_volume_label(crate::format_volume_label_for_language(state, language).into());
     window.set_muted(state.muted);
-    window.set_mute_label(if state.muted { "Muted" } else { "Sound" }.into());
-    window.set_rotation_label(crate::format_rotation_label(state).into());
-    window.set_audio_channel_label(crate::format_audio_channel_label(state).into());
-    window.set_zoom_label(crate::format_zoom_label(state).into());
-    window.set_loop_label(crate::format_loop_label(state).into());
+    window.set_mute_label(
+        match (language, state.muted) {
+            (crate::UiLanguage::Chinese, true) => "静音",
+            (crate::UiLanguage::Chinese, false) => "声音",
+            (crate::UiLanguage::English, true) => "Muted",
+            (crate::UiLanguage::English, false) => "Sound",
+        }
+        .into(),
+    );
+    window.set_rotation_label(crate::format_rotation_label_for_language(state, language).into());
+    window.set_audio_channel_label(
+        crate::format_audio_channel_label_for_language(state, language).into(),
+    );
+    window.set_zoom_label(crate::format_zoom_label_for_language(state, language).into());
+    window.set_loop_label(crate::format_loop_label_for_language(state, language).into());
     window.set_progress_value(crate::progress_ratio(state));
     refresh_navigation_surfaces(window, state);
     window.set_volume_value(i32::from(state.volume_percent));
@@ -57,39 +76,48 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
     window.set_gamma_value(i32::from(state.video_adjustments.gamma));
     window.set_hue_value(i32::from(state.video_adjustments.hue));
     window.set_brightness_label(
-        crate::format_video_adjustment_label(
+        crate::format_video_adjustment_label_for_language(
             VideoAdjustmentKind::Brightness,
             state.video_adjustments.brightness,
+            language,
         )
         .into(),
     );
     window.set_contrast_label(
-        crate::format_video_adjustment_label(
+        crate::format_video_adjustment_label_for_language(
             VideoAdjustmentKind::Contrast,
             state.video_adjustments.contrast,
+            language,
         )
         .into(),
     );
     window.set_saturation_label(
-        crate::format_video_adjustment_label(
+        crate::format_video_adjustment_label_for_language(
             VideoAdjustmentKind::Saturation,
             state.video_adjustments.saturation,
+            language,
         )
         .into(),
     );
     window.set_gamma_label(
-        crate::format_video_adjustment_label(
+        crate::format_video_adjustment_label_for_language(
             VideoAdjustmentKind::Gamma,
             state.video_adjustments.gamma,
+            language,
         )
         .into(),
     );
     window.set_hue_label(
-        crate::format_video_adjustment_label(VideoAdjustmentKind::Hue, state.video_adjustments.hue)
-            .into(),
+        crate::format_video_adjustment_label_for_language(
+            VideoAdjustmentKind::Hue,
+            state.video_adjustments.hue,
+            language,
+        )
+        .into(),
     );
     window.set_video_filter_label(
-        crate::format_video_filter_preset_label(state.video_filter_preset).into(),
+        crate::format_video_filter_preset_label_for_language(state.video_filter_preset, language)
+            .into(),
     );
     window.set_status_label(
         state
@@ -135,7 +163,7 @@ fn refresh_navigation_surfaces(window: &MainWindow, state: &PlayerState) {
 
 fn set_osd(window: &MainWindow, runtime: &mut DesktopRuntime, kind: crate::OsdKind) {
     runtime.osd.visible = true;
-    runtime.osd.message = crate::format_osd_message(kind);
+    runtime.osd.message = crate::format_osd_message_for_language(kind, runtime.ui_language);
     runtime.osd.generation = runtime.osd.generation.saturating_add(1);
     window.set_osd_visible(true);
     window.set_osd_message(runtime.osd.message.clone().into());
@@ -327,6 +355,7 @@ struct DesktopRuntime {
     recent_open: crate::platform::RecentOpenStore,
     subtitle_prefs: crate::SubtitlePrefsRuntime,
     marker_store: crate::platform::MarkerStore,
+    ui_language: crate::UiLanguage,
     osd: crate::OsdState,
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
@@ -363,6 +392,7 @@ impl DesktopRuntime {
             recent_open,
             subtitle_prefs,
             marker_store,
+            ui_language: crate::UiLanguage::Chinese,
             osd: crate::OsdState::default(),
             sidebar,
             settings_window: None,
@@ -500,8 +530,9 @@ fn load_marker_store(paths: Option<&AppPaths>) -> crate::platform::MarkerStore {
 
 fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
     if let Some(controller) = runtime.controller() {
-        refresh_window(window, controller.session().state());
+        refresh_window_with_language(window, controller.session().state(), runtime.ui_language);
     } else {
+        window.set_ui_language_code(runtime.ui_language.code().into());
         window.set_status_label(runtime.status_message().into());
         refresh_navigation_surfaces(window, &PlayerState::default());
     }
@@ -930,7 +961,7 @@ where
             }
             persist_current_markers(&mut runtime, &state);
             if let Some(app) = app_handle.upgrade() {
-                refresh_window(&app, &state);
+                refresh_window_with_language(&app, &state, runtime.ui_language);
                 refresh_sidebar(&app, &runtime);
                 refresh_tracks_popup(&app, &runtime);
                 apply_fullscreen_state(&app, &state);
@@ -1222,6 +1253,104 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+
+    app.on_window_drag_requested({
+        let runtime = Rc::clone(&runtime);
+        let app_handle = app.as_weak();
+        move || {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let result = app.window().with_winit_window(|winit_window| winit_window.drag_window());
+            if let Some(Err(error)) = result {
+                runtime
+                    .borrow_mut()
+                    .record_diagnostic("WARN", format!("Window drag failed: {error}"));
+            }
+        }
+    });
+
+    app.on_window_minimize_requested({
+        let app_handle = app.as_weak();
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.window().with_winit_window(|winit_window| winit_window.set_minimized(true));
+            }
+        }
+    });
+
+    app.on_window_maximize_restore_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.window().set_maximized(!app.window().is_maximized());
+                save_current_window_state(&runtime, app.window());
+            }
+        }
+    });
+
+    app.on_window_close_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                save_current_window_state(&runtime, app.window());
+                let _ = app.hide();
+            }
+        }
+    });
+
+    app.on_language_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |language_code| {
+            let language = crate::UiLanguage::parse(language_code.as_str());
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let mut runtime = runtime.borrow_mut();
+            runtime.ui_language = language;
+            if let Some(controller) = runtime.controller() {
+                refresh_window_with_language(&app, controller.session().state(), language);
+            } else {
+                app.set_ui_language_code(language.code().into());
+                app.set_status_label(runtime.status_message().into());
+            }
+        }
+    });
+
+    app.on_video_double_clicked(command_callback(
+        &app,
+        &runtime,
+        AppCommand::ToggleFullscreen,
+    ));
+
+    app.on_video_dragged({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |delta_x, delta_y| {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let width = (app.get_video_area_width() as f64).max(1.0);
+            let height = (app.get_video_area_height() as f64).max(1.0);
+            let pan_delta_x = f64::from(delta_x) / width;
+            let pan_delta_y = f64::from(delta_y) / height;
+            with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::AdjustVideoPan {
+                    delta_x: pan_delta_x,
+                    delta_y: pan_delta_y,
+                })
+            });
+        }
+    });
+
+    app.on_reset_video_pan_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::ResetVideoPan,
+    ));
 
     app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
     app.on_toggle_mute_requested({
@@ -2179,7 +2308,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         app.set_status_label(error.to_string().into());
                     }
                     persist_current_markers(&mut runtime, &state);
-                    refresh_window(&app, &state);
+                    refresh_window_with_language(&app, &state, runtime.ui_language);
                     refresh_sidebar(&app, &runtime);
                     refresh_tracks_popup(&app, &runtime);
                     #[cfg(feature = "mpv-runtime")]
@@ -2358,7 +2487,7 @@ impl DesktopWinitHandler {
 
                 if let Some(app_handle) = app_handle {
                     if let Some(app) = app_handle.upgrade() {
-                        refresh_window(&app, &state);
+                        refresh_window_with_language(&app, &state, runtime.ui_language);
                         refresh_sidebar(&app, &runtime);
                         refresh_tracks_popup(&app, &runtime);
                         sync_runtime_video_host(&app, &mut runtime);
