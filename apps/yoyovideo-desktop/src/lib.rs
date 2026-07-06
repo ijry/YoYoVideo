@@ -15,10 +15,10 @@ mod video_host_winit;
 mod video_texture;
 
 pub use app::{
-    DesktopController, MainWindow, SettingsWindow, ShortcutDispatch, TrackPopupRowData,
-    build_desktop_backend, build_desktop_backend_with_video_window, dispatch_shortcut,
-    dropped_media_status, format_runtime_startup_error, recent_item_status, refresh_window,
-    resolve_shortcut, run,
+    DesktopController, MainWindow, NavigationRowData, ProgressTickRowData, SettingsWindow,
+    ShortcutDispatch, TrackPopupRowData, build_desktop_backend,
+    build_desktop_backend_with_video_window, dispatch_shortcut, dropped_media_status,
+    format_runtime_startup_error, recent_item_status, refresh_window, resolve_shortcut, run,
 };
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,

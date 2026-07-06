@@ -13,6 +13,32 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.set_action_panel_visible(true);
     window.set_jump_panel_visible(true);
     window.set_jump_input_text("01:15".into());
+    window.set_progress_tick_rows(
+        [
+            yoyovideo_desktop::ProgressTickRowData {
+                percent: 0.25,
+                label: "Chapter 1".into(),
+                is_marker: false,
+            },
+            yoyovideo_desktop::ProgressTickRowData {
+                percent: 0.5,
+                label: "Marker 00:30".into(),
+                is_marker: true,
+            },
+        ]
+        .into(),
+    );
+    window.set_navigation_rows(
+        [yoyovideo_desktop::NavigationRowData {
+            title: "Marker 00:30".into(),
+            subtitle: "00:30".into(),
+            id: "marker-30000".into(),
+            is_marker: true,
+        }]
+        .into(),
+    );
+    assert_eq!(window.get_progress_tick_rows().row_count(), 2);
+    assert_eq!(window.get_navigation_rows().row_count(), 1);
 
     window.on_toggle_mute_requested(|| {});
     window.on_progress_preview_requested(|_| {});

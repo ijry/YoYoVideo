@@ -18,6 +18,11 @@
 
 ## UX
 
+- Launch the installed test build and confirm the main player reads as `Cinema Deck Pro`: OLED black shell, dominant video stage, red primary play control, cyan progress/status accents, and amber marker ticks.
+- Confirm the main deck has two clear priorities: row 1 for play/progress/time/volume/fullscreen, row 2 for secondary actions such as open, speed, jump, tracks, picture, markers, playlist, and actions.
+- Confirm the main control strip no longer looks like default Slint buttons arranged in a long toolbar.
+- Open the action panel, tracks popup, video tools popup, menu popup, and sidebar; confirm all use the same dark glass visual language.
+- Collapse and reopen the sidebar; confirm the collapsed state is a slim rail and the video stage remains visually dominant.
 - Launch and confirm the main player uses the Cinema Deck layout with a video-first surface and custom-styled primary controls.
 - Open a video, drag the progress rail, and confirm preview updates while playback seeks only after release.
 - Use `M`, `J`, `Ctrl+M`, `P`, `Shift+Right`, and `Shift+Left`, and confirm mute, jump, marker, action panel, and chapter/marker navigation work.
