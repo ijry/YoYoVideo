@@ -6018,6 +6018,7 @@ dependencies = [
  "slint",
  "slint-build",
  "tempfile",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "yoyo-core",
