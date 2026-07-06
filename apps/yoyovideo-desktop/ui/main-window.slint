@@ -20,6 +20,19 @@ export struct TrackPopupRowData {
     selected: bool,
 }
 
+export struct ProgressTickRowData {
+    percent: float,
+    label: string,
+    is_marker: bool,
+}
+
+export struct NavigationRowData {
+    title: string,
+    subtitle: string,
+    id: string,
+    is_marker: bool,
+}
+
 export component MainWindow inherits Window {
     title: "YoYoVideo";
     width: 1200px;
@@ -63,6 +76,18 @@ export component MainWindow inherits Window {
     in-out property <string> gamma_label: "Gamma +0";
     in-out property <string> hue_label: "Hue +0";
     in-out property <string> video_filter_label: "Filter: None";
+    in-out property <bool> muted: false;
+    in-out property <string> mute_label: "Sound";
+    in-out property <bool> osd_visible: false;
+    in-out property <string> osd_message: "";
+    in-out property <bool> progress_preview_visible: false;
+    in-out property <string> progress_preview_label: "";
+    in-out property <float> progress_preview_value: 0;
+    in-out property <[ProgressTickRowData]> progress_tick_rows: [];
+    in-out property <[NavigationRowData]> navigation_rows: [];
+    in-out property <bool> action_panel_visible: false;
+    in-out property <bool> jump_panel_visible: false;
+    in-out property <string> jump_input_text: "";
     out property <bool> url_focused: url_input.has-focus;
 
     out property <length> video_area_x: video_area.x;
@@ -116,6 +141,20 @@ export component MainWindow inherits Window {
     callback filter_light_denoise_requested();
     callback filter_grayscale_requested();
     callback filter_invert_requested();
+    callback toggle_mute_requested();
+    callback progress_preview_requested(float);
+    callback progress_commit_requested(float);
+    callback progress_preview_cleared();
+    callback jump_panel_requested();
+    callback jump_input_changed(string);
+    callback jump_commit_requested(string);
+    callback action_panel_requested();
+    callback action_panel_close_requested();
+    callback add_marker_requested();
+    callback remove_marker_requested(string);
+    callback navigation_row_requested(int);
+    callback previous_chapter_marker_requested();
+    callback next_chapter_marker_requested();
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
@@ -296,6 +335,51 @@ export component MainWindow inherits Window {
         }
     }
 
+    action_panel := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 420px;
+        height: 620px;
+
+        ScrollView {
+            VerticalBox {
+                padding: 14px;
+                spacing: 8px;
+                Text { text: "Quick Actions"; color: #f2f5f7; }
+                Button { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
+                Button { text: "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
+                Button { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                Button { text: "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                Button { text: "Add Marker"; clicked => { root.add_marker_requested(); } }
+                Button { text: "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
+                Text { text: "Chapters & Markers"; color: #f2f5f7; }
+                if root.navigation_rows.length == 0: Text { text: "No chapters or markers"; color: #7d8790; }
+                for row[idx] in root.navigation_rows: Button {
+                    text: row.title + "  " + row.subtitle;
+                    clicked => { root.navigation_row_requested(idx); }
+                }
+            }
+        }
+    }
+
+    jump_panel := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 280px;
+        height: 120px;
+
+        VerticalBox {
+            padding: 12px;
+            spacing: 8px;
+            Text { text: "Jump To Time"; color: #f2f5f7; }
+            jump_input := LineEdit {
+                text: root.jump_input_text;
+                placeholder-text: "ss, mm:ss, hh:mm:ss";
+                edited => { root.jump_input_changed(self.text); }
+                accepted => { root.jump_commit_requested(self.text); jump_panel.close(); }
+            }
+            Button { text: "Go"; clicked => { root.jump_commit_requested(jump_input.text); jump_panel.close(); } }
+        }
+    }
+
     HorizontalBox {
         spacing: 8px;
         padding: 10px;
@@ -340,6 +424,12 @@ export component MainWindow inherits Window {
                     Button { text: "Menu"; clicked => { menu_popup.show(); } }
                     Button { text: "Tracks"; clicked => { tracks_popup.show(); } }
                     Button { text: "Video Tools"; clicked => { video_tools_popup.show(); } }
+                    Button { text: root.mute_label; clicked => { root.toggle_mute_requested(); } }
+                    Button { text: "Jump"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                    Button { text: "Actions"; clicked => { action_panel.show(); root.action_panel_requested(); } }
+                    Button { text: "Marker"; clicked => { root.add_marker_requested(); } }
+                    Button { text: "Prev Nav"; clicked => { root.previous_chapter_marker_requested(); } }
+                    Button { text: "Next Nav"; clicked => { root.next_chapter_marker_requested(); } }
                     url_input := LineEdit {
                         placeholder-text: "Open URL";
                         accepted => { root.open_url_requested(self.text); }

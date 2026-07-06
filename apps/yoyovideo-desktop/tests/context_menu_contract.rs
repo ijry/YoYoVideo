@@ -1,6 +1,35 @@
 use slint::Model;
 use yoyovideo_desktop::MainWindow;
 
+fn exercise_cinema_deck_surface(window: &MainWindow) {
+    window.set_muted(true);
+    assert!(window.get_muted());
+    window.set_mute_label("Muted".into());
+    window.set_osd_visible(true);
+    window.set_osd_message("Muted".into());
+    window.set_progress_preview_visible(true);
+    window.set_progress_preview_label("01:15".into());
+    window.set_progress_preview_value(0.5);
+    window.set_action_panel_visible(true);
+    window.set_jump_panel_visible(true);
+    window.set_jump_input_text("01:15".into());
+
+    window.on_toggle_mute_requested(|| {});
+    window.on_progress_preview_requested(|_| {});
+    window.on_progress_commit_requested(|_| {});
+    window.on_progress_preview_cleared(|| {});
+    window.on_jump_panel_requested(|| {});
+    window.on_jump_input_changed(|_| {});
+    window.on_jump_commit_requested(|_| {});
+    window.on_action_panel_requested(|| {});
+    window.on_action_panel_close_requested(|| {});
+    window.on_add_marker_requested(|| {});
+    window.on_remove_marker_requested(|_| {});
+    window.on_navigation_row_requested(|_| {});
+    window.on_previous_chapter_marker_requested(|| {});
+    window.on_next_chapter_marker_requested(|| {});
+}
+
 #[test]
 fn main_window_context_menu_daily_actions_compile() {
     let window = MainWindow::new().unwrap();
@@ -14,4 +43,11 @@ fn main_window_context_menu_daily_actions_compile() {
     window.on_show_history_tab_requested(|| {});
     window.on_recent_open_item_requested(|_| {});
     assert_eq!(window.get_recent_open_rows().row_count(), 0);
+    exercise_cinema_deck_surface(&window);
+}
+
+#[test]
+fn main_window_cinema_deck_surface_compiles() {
+    let surface_check: fn(&MainWindow) = exercise_cinema_deck_surface;
+    let _ = surface_check;
 }
