@@ -1,3 +1,4 @@
+mod chapter_list;
 mod client;
 mod error;
 mod event;

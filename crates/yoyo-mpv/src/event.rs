@@ -1,5 +1,4 @@
-use yoyo_core::BackendEvent;
-use yoyo_core::MediaTrack;
+use yoyo_core::{BackendEvent, MediaChapter, MediaTrack};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MpvEvent {
@@ -8,8 +7,10 @@ pub enum MpvEvent {
     Duration(Option<f64>),
     Speed(f32),
     Volume(u8),
+    Muted(bool),
     Rotation(i64),
     Tracks { audio: Vec<MediaTrack>, subtitles: Vec<MediaTrack>, video: Vec<MediaTrack> },
+    Chapters(Vec<MediaChapter>),
     SubtitleVisible(bool),
     SubtitleDelay(f64),
     SubtitleScale(f32),
@@ -26,6 +27,7 @@ pub fn map_event(event: MpvEvent) -> Option<BackendEvent> {
         MpvEvent::Duration(value) => Some(BackendEvent::DurationChanged(value)),
         MpvEvent::Speed(value) => Some(BackendEvent::SpeedChanged(value)),
         MpvEvent::Volume(value) => Some(BackendEvent::VolumeChanged(value)),
+        MpvEvent::Muted(value) => Some(BackendEvent::MutedChanged(value)),
         MpvEvent::Rotation(0) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg0)),
         MpvEvent::Rotation(90) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg90)),
         MpvEvent::Rotation(180) => Some(BackendEvent::RotationChanged(yoyo_core::Rotation::Deg180)),
@@ -33,6 +35,7 @@ pub fn map_event(event: MpvEvent) -> Option<BackendEvent> {
         MpvEvent::Tracks { audio, subtitles, video } => {
             Some(BackendEvent::TracksChanged { audio, subtitles, video })
         }
+        MpvEvent::Chapters(chapters) => Some(BackendEvent::ChaptersChanged(chapters)),
         MpvEvent::SubtitleVisible(value) => Some(BackendEvent::SubtitleVisibilityChanged(value)),
         MpvEvent::SubtitleDelay(value) => Some(BackendEvent::SubtitleDelayChanged(value)),
         MpvEvent::SubtitleScale(value) => Some(BackendEvent::SubtitleScaleChanged(value)),

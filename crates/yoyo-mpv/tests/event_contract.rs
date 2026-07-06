@@ -57,3 +57,18 @@ fn subtitle_scale_and_position_events_are_preserved() {
         Some(BackendEvent::SubtitleVerticalPositionChanged(90))
     );
 }
+
+#[test]
+fn mute_event_maps_to_backend_muted_changed() {
+    assert_eq!(map_event(MpvEvent::Muted(true)), Some(BackendEvent::MutedChanged(true)));
+}
+
+#[test]
+fn chapter_event_maps_to_backend_chapters_changed() {
+    let chapters = vec![yoyo_core::MediaChapter { title: Some("Intro".into()), time_seconds: 0.0 }];
+
+    assert_eq!(
+        map_event(MpvEvent::Chapters(chapters.clone())),
+        Some(BackendEvent::ChaptersChanged(chapters))
+    );
+}

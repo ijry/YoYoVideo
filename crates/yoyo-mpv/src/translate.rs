@@ -73,6 +73,9 @@ pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
         BackendCommand::SetVolume(volume) => {
             vec![MpvAction::SetDouble { name: "volume".into(), value: *volume as f64 }]
         }
+        BackendCommand::SetMuted(muted) => {
+            vec![MpvAction::SetFlag { name: "mute".into(), value: *muted }]
+        }
         BackendCommand::SetAudioChannel(mode) => {
             let value = match mode {
                 AudioChannelMode::Stereo => "stereo",

@@ -165,3 +165,11 @@ fn filter_presets_translate_to_yoyovideo_owned_vf_slot() {
         ])]
     );
 }
+
+#[test]
+fn mute_translates_to_mpv_mute_property() {
+    assert_eq!(
+        translate_command(&BackendCommand::SetMuted(true)),
+        vec![MpvAction::SetFlag { name: "mute".into(), value: true }]
+    );
+}
