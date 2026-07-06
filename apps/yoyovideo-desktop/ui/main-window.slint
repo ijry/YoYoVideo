@@ -35,21 +35,22 @@ export struct NavigationRowData {
 
 component DeckButton inherits Rectangle {
     in property <string> text;
+    in property <bool> selected: false;
     callback clicked();
-    min-width: 42px;
+    min-width: 48px;
     height: 34px;
     border-radius: 17px;
-    background: touch.has-hover ? #243241 : #15202a;
+    background: selected ? #132638 : (touch.has-hover ? #151f2d : #0b111a);
     border-width: 1px;
-    border-color: touch.has-hover ? #3ba9c9 : #2a3845;
+    border-color: selected ? #38bdf8 : (touch.has-hover ? #34546a : #233040);
 
     Text {
         text: root.text;
-        color: #f2f7fa;
+        color: selected ? #f8fafc : #cbd5e1;
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 700;
     }
 
     touch := TouchArea {
@@ -57,20 +58,96 @@ component DeckButton inherits Rectangle {
     }
 }
 
-component DeckLabel inherits Rectangle {
+component DeckPrimaryButton inherits Rectangle {
     in property <string> text;
-    min-width: 56px;
-    height: 28px;
-    border-radius: 14px;
-    background: #0d151d;
+    callback clicked();
+    width: 72px;
+    height: 44px;
+    border-radius: 22px;
+    background: touch.has-hover ? #fb315f : #e11d48;
+    border-width: 1px;
+    border-color: #ff6b8d;
+
+    Rectangle {
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        x: 4px;
+        y: 4px;
+        border-radius: 18px;
+        background: #ffffff12;
+    }
 
     Text {
         text: root.text;
-        color: #b8c7d4;
+        color: #ffffff;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 13px;
+        font-weight: 800;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component DeckPill inherits Rectangle {
+    in property <string> text;
+    min-width: 62px;
+    height: 30px;
+    border-radius: 15px;
+    background: #050a12;
+    border-width: 1px;
+    border-color: #1f2c3a;
+
+    Text {
+        text: root.text;
+        color: #94a3b8;
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 12px;
+        font-weight: 600;
     }
+}
+
+component DeckLabel inherits DeckPill { }
+
+component DeckSectionTitle inherits Text {
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+component DeckPanelHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle: "";
+    height: 56px;
+    background: transparent;
+
+    VerticalBox {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        spacing: 2px;
+
+        Text {
+            text: root.title;
+            color: #f8fafc;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        Text {
+            text: root.subtitle;
+            color: #64748b;
+            font-size: 11px;
+        }
+    }
+}
+
+component DeckDivider inherits Rectangle {
+    height: 1px;
+    background: #1f2c3a;
 }
 
 export component MainWindow inherits Window {
