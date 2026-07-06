@@ -12,7 +12,8 @@ mod shortcut;
 pub use app_command::AppCommand;
 pub use backend::{BackendCommand, BackendEvent, PlayerBackend};
 pub use config::{
-    AppConfig, MAX_DEFAULT_SPEED, MIN_DEFAULT_SPEED, PlaybackDefaults, UiPreferences,
+    AppConfig, MAX_DEFAULT_SPEED, MIN_DEFAULT_SPEED, PlaybackDefaults, PlaybackEndBehavior,
+    UiPreferences,
 };
 pub use error::{AppError, StorageError, ValidationError};
 pub use history::{HistoryEntry, HistoryStore};

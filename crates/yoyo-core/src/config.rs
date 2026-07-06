@@ -8,11 +8,28 @@ use crate::{ShortcutMap, StorageError, ValidationError};
 pub const MIN_DEFAULT_SPEED: f32 = 0.25;
 pub const MAX_DEFAULT_SPEED: f32 = 4.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlaybackEndBehavior {
+    PlayNext,
+    Stop,
+    LoopCurrent,
+    LoopPlaylist,
+}
+
+impl Default for PlaybackEndBehavior {
+    fn default() -> Self {
+        Self::PlayNext
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackDefaults {
     pub default_speed: f32,
     pub default_volume_percent: u8,
     pub prefer_hardware_decode: bool,
+    #[serde(default)]
+    pub end_behavior: PlaybackEndBehavior,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,6 +52,7 @@ impl Default for AppConfig {
                 default_speed: 1.0,
                 default_volume_percent: 100,
                 prefer_hardware_decode: true,
+                end_behavior: PlaybackEndBehavior::PlayNext,
             },
             ui: UiPreferences { remember_history: true, show_playlist_on_startup: true },
             shortcuts: ShortcutMap::default(),

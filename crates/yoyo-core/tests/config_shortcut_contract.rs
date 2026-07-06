@@ -80,3 +80,39 @@ fn video_tool_default_shortcuts_are_registered() {
         Some(ShortcutAction::FrameStepForward)
     );
 }
+
+#[test]
+fn default_playback_end_behavior_is_play_next() {
+    let config = AppConfig::default();
+
+    assert_eq!(config.playback.end_behavior, yoyo_core::PlaybackEndBehavior::PlayNext);
+}
+
+#[test]
+fn legacy_config_without_playback_end_behavior_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+[playback]
+default_speed = 1.25
+default_volume_percent = 80
+prefer_hardware_decode = true
+
+[ui]
+remember_history = true
+show_playlist_on_startup = false
+
+[shortcuts.bindings]
+"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load(&path).unwrap();
+
+    assert_eq!(config.playback.default_speed, 1.25);
+    assert_eq!(config.playback.default_volume_percent, 80);
+    assert_eq!(config.playback.end_behavior, yoyo_core::PlaybackEndBehavior::PlayNext);
+    assert!(!config.ui.show_playlist_on_startup);
+}

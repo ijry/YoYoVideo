@@ -86,3 +86,102 @@ fn cycle_audio_channel_visits_left_then_right() {
 
     assert_eq!(session.state().audio_channel, AudioChannelMode::MonoRight);
 }
+
+#[test]
+fn eof_stop_behavior_does_not_advance_playlist() {
+    let backend = MockBackend::default();
+    let mut config = AppConfig::default();
+    config.playback.end_behavior = yoyo_core::PlaybackEndBehavior::Stop;
+    let mut session = AppSession::new(config, backend);
+    session
+        .replace_playlist(
+            vec![
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("one.mp4"))),
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("two.mp4"))),
+            ],
+            0,
+        )
+        .unwrap();
+
+    session.backend_mut().events.push(BackendEvent::EndOfFile);
+    session.poll_backend().unwrap();
+
+    assert_eq!(session.backend().opened, vec![MediaLocator::File(PathBuf::from("one.mp4"))]);
+    assert!(session.state().paused);
+    assert_eq!(session.state().status_message.as_deref(), Some("Playback ended"));
+}
+
+#[test]
+fn eof_loop_current_reopens_current_playlist_item() {
+    let backend = MockBackend::default();
+    let mut config = AppConfig::default();
+    config.playback.end_behavior = yoyo_core::PlaybackEndBehavior::LoopCurrent;
+    let mut session = AppSession::new(config, backend);
+    session
+        .replace_playlist(vec![PlaylistEntry::new(MediaLocator::File(PathBuf::from("one.mp4")))], 0)
+        .unwrap();
+
+    session.backend_mut().events.push(BackendEvent::EndOfFile);
+    session.poll_backend().unwrap();
+
+    assert_eq!(
+        session.backend().opened,
+        vec![
+            MediaLocator::File(PathBuf::from("one.mp4")),
+            MediaLocator::File(PathBuf::from("one.mp4")),
+        ]
+    );
+    assert!(!session.state().paused);
+}
+
+#[test]
+fn eof_loop_playlist_wraps_from_last_item_to_first() {
+    let backend = MockBackend::default();
+    let mut config = AppConfig::default();
+    config.playback.end_behavior = yoyo_core::PlaybackEndBehavior::LoopPlaylist;
+    let mut session = AppSession::new(config, backend);
+    session
+        .replace_playlist(
+            vec![
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("one.mp4"))),
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("two.mp4"))),
+            ],
+            1,
+        )
+        .unwrap();
+
+    session.backend_mut().events.push(BackendEvent::EndOfFile);
+    session.poll_backend().unwrap();
+
+    assert_eq!(
+        session.backend().opened,
+        vec![
+            MediaLocator::File(PathBuf::from("two.mp4")),
+            MediaLocator::File(PathBuf::from("one.mp4")),
+        ]
+    );
+    assert_eq!(session.playlist_snapshot().current_index, Some(0));
+}
+
+#[test]
+fn replacing_session_config_changes_future_eof_behavior() {
+    let backend = MockBackend::default();
+    let mut session = AppSession::new(AppConfig::default(), backend);
+    session
+        .replace_playlist(
+            vec![
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("one.mp4"))),
+                PlaylistEntry::new(MediaLocator::File(PathBuf::from("two.mp4"))),
+            ],
+            0,
+        )
+        .unwrap();
+    let mut config = AppConfig::default();
+    config.playback.end_behavior = yoyo_core::PlaybackEndBehavior::Stop;
+
+    session.set_config(config);
+    session.backend_mut().events.push(BackendEvent::EndOfFile);
+    session.poll_backend().unwrap();
+
+    assert_eq!(session.backend().opened, vec![MediaLocator::File(PathBuf::from("one.mp4"))]);
+}

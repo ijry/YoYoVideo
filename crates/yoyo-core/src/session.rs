@@ -1,7 +1,7 @@
 use crate::{
     AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, MediaLocator,
-    MediaTrack, PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
-    SubtitlePlaybackState,
+    MediaTrack, PlaybackEndBehavior, PlayerBackend, PlayerState, Playlist, PlaylistEntry,
+    PlaylistSnapshot, Rotation, SubtitlePlaybackState,
 };
 
 pub struct AppSession<B: PlayerBackend> {
@@ -93,6 +93,45 @@ impl<B: PlayerBackend> AppSession<B> {
 
     fn previous_playlist_index(&self) -> Option<usize> {
         self.playlist.current_index.and_then(|current| current.checked_sub(1))
+    }
+
+    fn current_playlist_index(&self) -> Option<usize> {
+        self.playlist.current_index
+    }
+
+    fn first_playlist_index(&self) -> Option<usize> {
+        (!self.playlist.entries.is_empty()).then_some(0)
+    }
+
+    pub fn set_config(&mut self, config: AppConfig) {
+        self.config = config;
+    }
+
+    fn handle_end_of_file(&mut self) -> Result<(), AppError> {
+        match self.config.playback.end_behavior {
+            PlaybackEndBehavior::PlayNext => {
+                if let Some(index) = self.next_playlist_index() {
+                    self.open_playlist_index(index)?;
+                }
+            }
+            PlaybackEndBehavior::Stop => {
+                self.state.paused = true;
+                self.state.status_message = Some("Playback ended".to_string());
+            }
+            PlaybackEndBehavior::LoopCurrent => {
+                if let Some(index) = self.current_playlist_index() {
+                    self.open_playlist_index(index)?;
+                }
+            }
+            PlaybackEndBehavior::LoopPlaylist => {
+                if let Some(index) =
+                    self.next_playlist_index().or_else(|| self.first_playlist_index())
+                {
+                    self.open_playlist_index(index)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn mark_selected(tracks: &mut [MediaTrack], id: i64) {
@@ -331,11 +370,7 @@ impl<B: PlayerBackend> AppSession<B> {
                 }
                 BackendEvent::Warning(message) => self.state.status_message = Some(message),
                 BackendEvent::Error(message) => self.state.last_error = Some(message),
-                BackendEvent::EndOfFile => {
-                    if let Some(index) = self.next_playlist_index() {
-                        self.open_playlist_index(index)?;
-                    }
-                }
+                BackendEvent::EndOfFile => self.handle_end_of_file()?,
             }
         }
         Ok(())
