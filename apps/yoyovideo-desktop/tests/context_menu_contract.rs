@@ -1,3 +1,4 @@
+use slint::Model;
 use yoyovideo_desktop::MainWindow;
 
 #[test]
@@ -11,4 +12,6 @@ fn main_window_context_menu_daily_actions_compile() {
     window.on_toggle_fullscreen_requested(|| {});
     window.on_show_playlist_tab_requested(|| {});
     window.on_show_history_tab_requested(|| {});
+    window.on_recent_open_item_requested(|_| {});
+    assert_eq!(window.get_recent_open_rows().row_count(), 0);
 }

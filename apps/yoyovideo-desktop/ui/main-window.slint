@@ -10,6 +10,11 @@ export struct HistorySidebarRowData {
     subtitle: string,
 }
 
+export struct RecentOpenRowData {
+    title: string,
+    subtitle: string,
+}
+
 export struct TrackPopupRowData {
     label: string,
     selected: bool,
@@ -36,6 +41,7 @@ export component MainWindow inherits Window {
     in-out property <float> sidebar_expanded_width_px: 320.0;
     in-out property <[PlaylistSidebarRowData]> playlist_rows: [];
     in-out property <[HistorySidebarRowData]> history_rows: [];
+    in-out property <[RecentOpenRowData]> recent_open_rows: [];
     in-out property <[TrackPopupRowData]> audio_track_rows: [];
     in-out property <[TrackPopupRowData]> subtitle_track_rows: [];
     in-out property <[TrackPopupRowData]> video_track_rows: [];
@@ -87,6 +93,7 @@ export component MainWindow inherits Window {
     callback show_history_tab_requested();
     callback playlist_item_requested(int);
     callback history_item_requested(int);
+    callback recent_open_item_requested(int);
     callback audio_track_requested(int);
     callback subtitle_track_requested(int);
     callback video_track_requested(int);
@@ -113,12 +120,24 @@ export component MainWindow inherits Window {
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
         width: 230px;
-        height: 560px;
+        height: 660px;
 
         VerticalBox {
             spacing: 4px;
             Button { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
             Button { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+            Text { text: "Recent"; color: #9ba6ad; }
+            if root.recent_open_rows.length == 0: Text {
+                text: "No Recent Items";
+                color: #66737c;
+            }
+            for row[index] in root.recent_open_rows: Button {
+                text: row.title;
+                clicked => {
+                    root.recent_open_item_requested(index);
+                    menu_popup.close();
+                }
+            }
             Button { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
             Button { text: "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
             Button { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }

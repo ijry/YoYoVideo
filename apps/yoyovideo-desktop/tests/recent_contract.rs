@@ -69,3 +69,18 @@ fn recent_store_corrupt_file_loads_empty() {
 
     assert!(store.items.is_empty());
 }
+
+#[test]
+fn recent_item_status_describes_selected_item() {
+    let row = item(
+        RecentOpenKind::Url,
+        "https://example.test/movie.mp4",
+        "movie.mp4",
+        "2026-07-06T10:00:00+08:00",
+    );
+
+    assert_eq!(
+        yoyovideo_desktop::recent_item_status(&row),
+        "Opening recent URL: https://example.test/movie.mp4"
+    );
+}

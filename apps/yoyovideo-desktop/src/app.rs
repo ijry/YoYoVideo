@@ -250,12 +250,25 @@ pub fn dropped_media_status(action: &crate::platform::DroppedMediaAction) -> Str
     }
 }
 
+pub fn recent_item_status(item: &crate::platform::RecentOpenItem) -> String {
+    match item.kind {
+        crate::platform::RecentOpenKind::File => {
+            format!("Opening recent file: {}", item.target)
+        }
+        crate::platform::RecentOpenKind::Folder => {
+            format!("Opening recent folder: {}", item.target)
+        }
+        crate::platform::RecentOpenKind::Url => format!("Opening recent URL: {}", item.target),
+    }
+}
+
 struct DesktopRuntime {
     controller: Option<DesktopController<MpvBackend>>,
     video_host_error: Option<String>,
     app_handle: Option<slint::Weak<MainWindow>>,
     config: AppConfig,
     history: crate::HistoryRuntime,
+    recent_open: crate::platform::RecentOpenStore,
     subtitle_prefs: crate::SubtitlePrefsRuntime,
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
@@ -274,6 +287,7 @@ impl DesktopRuntime {
     fn new(
         config: AppConfig,
         history: crate::HistoryRuntime,
+        recent_open: crate::platform::RecentOpenStore,
         subtitle_prefs: crate::SubtitlePrefsRuntime,
         sidebar: crate::SidebarState,
         diagnostic_log_path: PathBuf,
@@ -284,6 +298,7 @@ impl DesktopRuntime {
             app_handle: None,
             config,
             history,
+            recent_open,
             subtitle_prefs,
             sidebar,
             settings_window: None,
@@ -400,6 +415,11 @@ fn load_history_runtime(paths: Option<&AppPaths>, config: &AppConfig) -> crate::
         .unwrap_or_else(|_| crate::HistoryRuntime::new(None, HistoryStore::default(), false))
 }
 
+fn load_recent_open_store(paths: Option<&AppPaths>) -> crate::platform::RecentOpenStore {
+    crate::platform::RecentOpenStore::load(crate::platform::recent_open_path(paths))
+        .unwrap_or_default()
+}
+
 fn load_subtitle_prefs_runtime(paths: Option<&AppPaths>) -> crate::SubtitlePrefsRuntime {
     let prefs_path = paths.map(subtitle_prefs_file_path);
     crate::SubtitlePrefsRuntime::load(prefs_path.clone())
@@ -468,6 +488,20 @@ fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
 
     window.set_playlist_rows(model_from_vec(playlist_rows));
     window.set_history_rows(model_from_vec(history_rows));
+}
+
+fn refresh_recent_open_menu(window: &MainWindow, runtime: &DesktopRuntime) {
+    let rows = runtime
+        .recent_open
+        .items
+        .iter()
+        .map(|item| RecentOpenRowData {
+            title: item.title.clone().into(),
+            subtitle: item.target.clone().into(),
+        })
+        .collect::<Vec<_>>();
+
+    window.set_recent_open_rows(model_from_vec(rows));
 }
 
 fn refresh_tracks_popup(window: &MainWindow, runtime: &DesktopRuntime) {
@@ -840,6 +874,42 @@ fn dispatch_video_adjustment(
     });
 }
 
+fn recent_title_for_target(kind: crate::platform::RecentOpenKind, target: &str) -> String {
+    match kind {
+        crate::platform::RecentOpenKind::File | crate::platform::RecentOpenKind::Folder => {
+            std::path::Path::new(target)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(target)
+                .to_string()
+        }
+        crate::platform::RecentOpenKind::Url => target.to_string(),
+    }
+}
+
+fn remember_recent_open(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    kind: crate::platform::RecentOpenKind,
+    target: String,
+) {
+    let opened_at = chrono::Local::now().to_rfc3339();
+    let title = recent_title_for_target(kind, &target);
+    let mut runtime = runtime.borrow_mut();
+    runtime.recent_open.remember(crate::platform::RecentOpenItem {
+        kind,
+        target,
+        title,
+        opened_at,
+    });
+    if let Err(error) = runtime.recent_open.save() {
+        runtime.record_diagnostic("WARN", format!("Recent open save failed: {error}"));
+    }
+    if let Some(app) = app_handle.upgrade() {
+        refresh_recent_open_menu(&app, &runtime);
+    }
+}
+
 fn dispatch_dropped_paths(
     app_handle: &slint::Weak<MainWindow>,
     runtime: &Rc<RefCell<DesktopRuntime>>,
@@ -859,6 +929,8 @@ fn dispatch_dropped_paths(
         }
     };
     let status = dropped_media_status(&action);
+    let single_folder_drop =
+        if paths.len() == 1 && paths[0].is_dir() { Some(paths[0].clone()) } else { None };
 
     match action {
         crate::platform::DroppedMediaAction::NoPlayableMedia { .. } => {
@@ -867,11 +939,20 @@ fn dispatch_dropped_paths(
             }
         }
         crate::platform::DroppedMediaAction::OpenFile(path) => {
+            let target = path.display().to_string();
             let dispatched = with_runtime_controller(app_handle, runtime, move |controller| {
                 controller.dispatch(AppCommand::OpenFile(path))
             });
             if dispatched && let Some(app) = app_handle.upgrade() {
                 app.set_status_label(status.into());
+            }
+            if dispatched {
+                remember_recent_open(
+                    app_handle,
+                    runtime,
+                    crate::platform::RecentOpenKind::File,
+                    target,
+                );
             }
         }
         crate::platform::DroppedMediaAction::ReplacePlaylist(entries) => {
@@ -880,6 +961,14 @@ fn dispatch_dropped_paths(
             });
             if dispatched && let Some(app) = app_handle.upgrade() {
                 app.set_status_label(status.into());
+            }
+            if dispatched && let Some(path) = single_folder_drop {
+                remember_recent_open(
+                    app_handle,
+                    runtime,
+                    crate::platform::RecentOpenKind::Folder,
+                    path.display().to_string(),
+                );
             }
         }
     }
@@ -893,12 +982,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
     let config = load_boot_config(paths.as_ref());
     let history = load_history_runtime(paths.as_ref(), &config);
+    let recent_open = load_recent_open_store(paths.as_ref());
     let subtitle_prefs = load_subtitle_prefs_runtime(paths.as_ref());
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
     let diagnostic_log_path = crate::platform::default_log_file(paths.as_ref());
     let runtime = Rc::new(RefCell::new(DesktopRuntime::new(
         config,
         history,
+        recent_open,
         subtitle_prefs,
         sidebar,
         diagnostic_log_path,
@@ -918,6 +1009,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     refresh_runtime_window(&app, &runtime.borrow());
     refresh_sidebar(&app, &runtime.borrow());
+    refresh_recent_open_menu(&app, &runtime.borrow());
     refresh_tracks_popup(&app, &runtime.borrow());
 
     app.on_open_file_requested({
@@ -929,9 +1021,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if let Some(path) = dialogs.pick_file() {
-                with_runtime_controller(&app_handle, &runtime, move |controller| {
-                    controller.dispatch(AppCommand::OpenFile(path))
-                });
+                let target = path.display().to_string();
+                let dispatched =
+                    with_runtime_controller(&app_handle, &runtime, move |controller| {
+                        controller.dispatch(AppCommand::OpenFile(path))
+                    });
+                if dispatched {
+                    remember_recent_open(
+                        &app_handle,
+                        &runtime,
+                        crate::platform::RecentOpenKind::File,
+                        target,
+                    );
+                }
             }
         }
     });
@@ -945,9 +1047,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if let Some(path) = dialogs.pick_folder() {
-                with_runtime_controller(&app_handle, &runtime, move |controller| {
-                    controller.open_folder(&path)
-                });
+                let target = path.display().to_string();
+                let dispatched =
+                    with_runtime_controller(&app_handle, &runtime, move |controller| {
+                        controller.open_folder(&path)
+                    });
+                if dispatched {
+                    remember_recent_open(
+                        &app_handle,
+                        &runtime,
+                        crate::platform::RecentOpenKind::Folder,
+                        target,
+                    );
+                }
             }
         }
     });
@@ -956,9 +1068,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
         move |url| {
-            with_runtime_controller(&app_handle, &runtime, move |controller| {
-                controller.dispatch(AppCommand::OpenUrl(url.to_string()))
+            let target = url.to_string();
+            let command_target = target.clone();
+            let dispatched = with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::OpenUrl(command_target))
             });
+            if dispatched {
+                remember_recent_open(
+                    &app_handle,
+                    &runtime,
+                    crate::platform::RecentOpenKind::Url,
+                    target,
+                );
+            }
         }
     });
 
@@ -1164,6 +1286,95 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(app) = app_handle.upgrade() {
                         app.set_status_label(
                             format!("History file is missing: {}", path.display()).into(),
+                        );
+                    }
+                }
+            }
+        }
+    });
+
+    app.on_recent_open_item_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+
+            let item = {
+                let runtime = runtime.borrow();
+                runtime.recent_open.items.get(index as usize).cloned()
+            };
+            let Some(item) = item else {
+                return;
+            };
+
+            if let Some(app) = app_handle.upgrade() {
+                app.set_status_label(recent_item_status(&item).into());
+            }
+
+            match item.kind {
+                crate::platform::RecentOpenKind::File => {
+                    let path = PathBuf::from(&item.target);
+                    if !path.is_file() {
+                        if let Some(app) = app_handle.upgrade() {
+                            app.set_status_label(
+                                format!("Recent item is missing: {}", path.display()).into(),
+                            );
+                        }
+                        return;
+                    }
+                    let target = item.target.clone();
+                    let dispatched =
+                        with_runtime_controller(&app_handle, &runtime, move |controller| {
+                            controller.dispatch(AppCommand::OpenFile(path))
+                        });
+                    if dispatched {
+                        remember_recent_open(
+                            &app_handle,
+                            &runtime,
+                            crate::platform::RecentOpenKind::File,
+                            target,
+                        );
+                    }
+                }
+                crate::platform::RecentOpenKind::Folder => {
+                    let path = PathBuf::from(&item.target);
+                    if !path.is_dir() {
+                        if let Some(app) = app_handle.upgrade() {
+                            app.set_status_label(
+                                format!("Recent item is missing: {}", path.display()).into(),
+                            );
+                        }
+                        return;
+                    }
+                    let target = item.target.clone();
+                    let dispatched =
+                        with_runtime_controller(&app_handle, &runtime, move |controller| {
+                            controller.open_folder(&path)
+                        });
+                    if dispatched {
+                        remember_recent_open(
+                            &app_handle,
+                            &runtime,
+                            crate::platform::RecentOpenKind::Folder,
+                            target,
+                        );
+                    }
+                }
+                crate::platform::RecentOpenKind::Url => {
+                    let target = item.target.clone();
+                    let command_target = target.clone();
+                    let dispatched =
+                        with_runtime_controller(&app_handle, &runtime, move |controller| {
+                            controller.dispatch(AppCommand::OpenUrl(command_target))
+                        });
+                    if dispatched {
+                        remember_recent_open(
+                            &app_handle,
+                            &runtime,
+                            crate::platform::RecentOpenKind::Url,
+                            target,
                         );
                     }
                 }
