@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 use yoyo_core::{
-    AppConfig, AppSession, BackendCommand, BackendEvent, MediaLocator, PlayerBackend, Shortcut,
-    ShortcutAction, ShortcutMap,
+    AppConfig, AppSession, BackendCommand, BackendEvent, MediaLocator, PlaybackEndBehavior,
+    PlayerBackend, PlaylistEntry, Shortcut, ShortcutAction, ShortcutMap,
 };
 use yoyovideo_desktop::{DesktopController, FlushReason, HistoryRuntime};
 
@@ -11,6 +11,7 @@ use yoyovideo_desktop::{DesktopController, FlushReason, HistoryRuntime};
 struct MockBackend {
     opened: Vec<MediaLocator>,
     commands: Vec<BackendCommand>,
+    events: Vec<BackendEvent>,
 }
 
 impl PlayerBackend for MockBackend {
@@ -25,7 +26,7 @@ impl PlayerBackend for MockBackend {
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
-        Vec::new()
+        std::mem::take(&mut self.events)
     }
 }
 
@@ -59,4 +60,24 @@ fn disabling_history_runtime_stops_future_history_writes() {
 
     assert!(!runtime.flush_if_needed(Duration::from_secs(5), FlushReason::Pause).unwrap());
     assert!(!path.exists());
+}
+
+#[test]
+fn saved_playback_end_behavior_updates_active_session() {
+    let session = AppSession::new(AppConfig::default(), MockBackend::default());
+    let mut controller = DesktopController::new(session);
+    controller
+        .open_playlist_entries(vec![
+            PlaylistEntry::new(MediaLocator::File("one.mp4".into())),
+            PlaylistEntry::new(MediaLocator::File("two.mp4".into())),
+        ])
+        .unwrap();
+    let mut config = AppConfig::default();
+    config.playback.end_behavior = PlaybackEndBehavior::Stop;
+
+    controller.set_config(config);
+    controller.session_mut().backend_mut().events.push(BackendEvent::EndOfFile);
+    controller.poll_backend().unwrap();
+
+    assert_eq!(controller.session().backend().opened, vec![MediaLocator::File("one.mp4".into())]);
 }

@@ -94,3 +94,19 @@ fn clear_shortcut_removes_the_binding_from_the_saved_config() {
     let loaded = AppConfig::load(&path).unwrap();
     assert!(loaded.shortcuts.action_for(&Shortcut::parse("Space").unwrap()).is_none());
 }
+
+#[test]
+fn save_persists_playback_end_behavior() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+
+    let mut controller = SettingsController::new(AppConfig::default());
+    controller.set_playback_end_behavior(yoyo_core::PlaybackEndBehavior::LoopPlaylist);
+
+    let saved = controller.save(&path).unwrap();
+    let loaded = AppConfig::load(&path).unwrap();
+
+    assert_eq!(saved.playback.end_behavior, yoyo_core::PlaybackEndBehavior::LoopPlaylist);
+    assert_eq!(loaded.playback.end_behavior, yoyo_core::PlaybackEndBehavior::LoopPlaylist);
+    assert_eq!(controller.snapshot().playback_end_behavior_index, 3);
+}

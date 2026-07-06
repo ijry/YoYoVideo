@@ -128,6 +128,14 @@ impl<B: PlayerBackend> DesktopController<B> {
         &self.session
     }
 
+    pub fn session_mut(&mut self) -> &mut AppSession<B> {
+        &mut self.session
+    }
+
+    pub fn set_config(&mut self, config: AppConfig) {
+        self.session.set_config(config);
+    }
+
     pub fn open_folder(&mut self, path: &std::path::Path) -> Result<(), yoyo_core::AppError> {
         let entries = scan_media_folder(path)?;
         self.session.replace_playlist(entries, 0)?;
@@ -521,6 +529,7 @@ fn refresh_settings_window(window: &SettingsWindow, controller: &crate::Settings
     window.set_default_speed_label(format!("{:.2}x", snapshot.default_speed).into());
     window.set_default_volume_value(i32::from(snapshot.default_volume_percent));
     window.set_default_volume_label(format!("{}%", snapshot.default_volume_percent).into());
+    window.set_playback_end_behavior_index(snapshot.playback_end_behavior_index);
     window.set_prefer_hardware_decode(snapshot.prefer_hardware_decode);
     window.set_remember_history(snapshot.remember_history);
     window.set_show_playlist_on_startup(snapshot.show_playlist_on_startup);
@@ -566,6 +575,7 @@ where
 fn apply_saved_settings(runtime: &mut DesktopRuntime, saved: AppConfig) {
     if let Some(controller) = runtime.controller_mut() {
         controller.set_shortcuts(saved.shortcuts.clone());
+        controller.set_config(saved.clone());
     }
     runtime.history.set_enabled(saved.ui.remember_history);
     runtime.config = saved;
@@ -1311,6 +1321,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let mut runtime = runtime.borrow_mut();
                         mutate_settings_controller(&mut runtime, |controller| {
                             controller.set_default_volume_percent(volume.clamp(0, 100) as u8);
+                        });
+                    }
+                });
+
+                window.on_playback_end_behavior_changed({
+                    let runtime = Rc::clone(&runtime);
+                    move |index| {
+                        let mut runtime = runtime.borrow_mut();
+                        mutate_settings_controller(&mut runtime, |controller| {
+                            controller.set_playback_end_behavior_index(index);
                         });
                     }
                 });

@@ -4,7 +4,8 @@ use std::path::Path;
 
 use crate::{KeyboardInput, shortcut_gesture};
 use yoyo_core::{
-    AppConfig, AppError, Shortcut, ShortcutAction, ShortcutMap, StorageError, ValidationError,
+    AppConfig, AppError, PlaybackEndBehavior, Shortcut, ShortcutAction, ShortcutMap, StorageError,
+    ValidationError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +22,7 @@ pub struct SettingsSnapshot {
     pub section_index: i32,
     pub default_speed: f32,
     pub default_volume_percent: u8,
+    pub playback_end_behavior_index: i32,
     pub prefer_hardware_decode: bool,
     pub remember_history: bool,
     pub show_playlist_on_startup: bool,
@@ -34,6 +36,7 @@ pub struct SettingsSnapshot {
 struct SettingsDraft {
     default_speed: f32,
     default_volume_percent: u8,
+    playback_end_behavior: PlaybackEndBehavior,
     prefer_hardware_decode: bool,
     remember_history: bool,
     show_playlist_on_startup: bool,
@@ -57,6 +60,7 @@ impl SettingsDraft {
         Self {
             default_speed: config.playback.default_speed,
             default_volume_percent: config.playback.default_volume_percent,
+            playback_end_behavior: config.playback.end_behavior,
             prefer_hardware_decode: config.playback.prefer_hardware_decode,
             remember_history: config.ui.remember_history,
             show_playlist_on_startup: config.ui.show_playlist_on_startup,
@@ -68,6 +72,7 @@ impl SettingsDraft {
         let mut config = AppConfig::default();
         config.playback.default_speed = self.default_speed;
         config.playback.default_volume_percent = self.default_volume_percent;
+        config.playback.end_behavior = self.playback_end_behavior;
         config.playback.prefer_hardware_decode = self.prefer_hardware_decode;
         config.ui.remember_history = self.remember_history;
         config.ui.show_playlist_on_startup = self.show_playlist_on_startup;
@@ -125,6 +130,24 @@ impl SettingsDraft {
     }
 }
 
+fn playback_end_behavior_index(value: PlaybackEndBehavior) -> i32 {
+    match value {
+        PlaybackEndBehavior::PlayNext => 0,
+        PlaybackEndBehavior::Stop => 1,
+        PlaybackEndBehavior::LoopCurrent => 2,
+        PlaybackEndBehavior::LoopPlaylist => 3,
+    }
+}
+
+fn playback_end_behavior_from_index(index: i32) -> PlaybackEndBehavior {
+    match index {
+        1 => PlaybackEndBehavior::Stop,
+        2 => PlaybackEndBehavior::LoopCurrent,
+        3 => PlaybackEndBehavior::LoopPlaylist,
+        _ => PlaybackEndBehavior::PlayNext,
+    }
+}
+
 pub struct SettingsController {
     baseline: AppConfig,
     draft: SettingsDraft,
@@ -172,6 +195,9 @@ impl SettingsController {
             section_index: self.section_index,
             default_speed: self.draft.default_speed,
             default_volume_percent: self.draft.default_volume_percent,
+            playback_end_behavior_index: playback_end_behavior_index(
+                self.draft.playback_end_behavior,
+            ),
             prefer_hardware_decode: self.draft.prefer_hardware_decode,
             remember_history: self.draft.remember_history,
             show_playlist_on_startup: self.draft.show_playlist_on_startup,
@@ -192,6 +218,14 @@ impl SettingsController {
 
     pub fn set_default_volume_percent(&mut self, volume: u8) {
         self.draft.default_volume_percent = volume;
+    }
+
+    pub fn set_playback_end_behavior(&mut self, value: PlaybackEndBehavior) {
+        self.draft.playback_end_behavior = value;
+    }
+
+    pub fn set_playback_end_behavior_index(&mut self, index: i32) {
+        self.draft.playback_end_behavior = playback_end_behavior_from_index(index);
     }
 
     pub fn set_prefer_hardware_decode(&mut self, value: bool) {

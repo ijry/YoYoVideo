@@ -458,6 +458,7 @@ export component SettingsWindow inherits Window {
     in-out property <string> default_speed_label: "1.00x";
     in-out property <int> default_volume_value: 100;
     in-out property <string> default_volume_label: "100%";
+    in-out property <int> playback_end_behavior_index: 0;
     in-out property <bool> prefer_hardware_decode: true;
     in-out property <bool> remember_history: true;
     in-out property <bool> show_playlist_on_startup: true;
@@ -469,6 +470,7 @@ export component SettingsWindow inherits Window {
     callback section_requested(int);
     callback default_speed_changed(float);
     callback default_volume_changed(int);
+    callback playback_end_behavior_changed(int);
     callback prefer_hardware_decode_changed(bool);
     callback remember_history_changed(bool);
     callback show_playlist_on_startup_changed(bool);
@@ -515,6 +517,26 @@ export component SettingsWindow inherits Window {
                     changed(value) => { root.default_volume_changed(value); }
                 }
                 Text { text: root.default_volume_label; color: #c7d1d8; }
+                Text { text: "Playback End"; color: #f2f5f7; }
+                HorizontalBox {
+                    spacing: 6px;
+                    Button {
+                        text: root.playback_end_behavior_index == 0 ? "Play Next *" : "Play Next";
+                        clicked => { root.playback_end_behavior_changed(0); }
+                    }
+                    Button {
+                        text: root.playback_end_behavior_index == 1 ? "Stop *" : "Stop";
+                        clicked => { root.playback_end_behavior_changed(1); }
+                    }
+                    Button {
+                        text: root.playback_end_behavior_index == 2 ? "Loop Current *" : "Loop Current";
+                        clicked => { root.playback_end_behavior_changed(2); }
+                    }
+                    Button {
+                        text: root.playback_end_behavior_index == 3 ? "Loop Playlist *" : "Loop Playlist";
+                        clicked => { root.playback_end_behavior_changed(3); }
+                    }
+                }
                 CheckBox {
                     text: "Prefer Hardware Decode";
                     checked: root.prefer_hardware_decode;
