@@ -21,6 +21,12 @@
 - Verify context menu actions match toolbar actions.
 - Verify keyboard shortcuts trigger the same commands as buttons.
 - Verify settings changes persist across restarts.
+- Resize and move the window, close the app, restart, and confirm size and position are restored.
+- Maximize the window, close the app, restart, and confirm the maximized state is restored.
+- Open several files, folders, and URLs, then confirm the `Recent` section in the menu shows newest entries first.
+- Select a recent file, folder, and URL, and confirm each opens through the normal playback path.
+- Remove a recent local file, select it from the menu, and confirm the app shows a non-fatal missing item message without clearing current playback.
+- Change playback-end behavior in settings to `Stop`, `Loop Current`, `Loop Playlist`, and `Play Next`, then confirm EOF handling matches each mode.
 - Verify recent history and last position are restored when enabled.
 - Confirm the right sidebar honors the startup preference on wide windows.
 - Launch the app with a window narrower than `1050px` and confirm the sidebar starts collapsed.
