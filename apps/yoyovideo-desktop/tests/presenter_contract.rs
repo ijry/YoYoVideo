@@ -75,3 +75,45 @@ fn video_tool_presenter_formats_adjustments_and_presets() {
         "Filter: Light Denoise"
     );
 }
+
+#[test]
+fn parse_jump_time_accepts_seconds_minutes_and_hours() {
+    assert_eq!(yoyovideo_desktop::parse_jump_time("75").unwrap(), 75.0);
+    assert_eq!(yoyovideo_desktop::parse_jump_time("01:15").unwrap(), 75.0);
+    assert_eq!(yoyovideo_desktop::parse_jump_time("1:02:03.5").unwrap(), 3723.5);
+    assert!(yoyovideo_desktop::parse_jump_time("1:2:3:4").is_err());
+    assert!(yoyovideo_desktop::parse_jump_time("-1").is_err());
+}
+
+#[test]
+fn progress_ticks_and_preview_labels_are_stable() {
+    let chapters =
+        vec![yoyo_core::MediaChapter { title: Some("Intro".into()), time_seconds: 10.0 }];
+    let markers = vec![yoyo_core::MediaMarker {
+        id: "m1".into(),
+        title: "Marker 00:20".into(),
+        time_seconds: 20.0,
+        created_at: "2026-07-06T10:00:00+08:00".into(),
+    }];
+
+    let ticks = yoyovideo_desktop::build_progress_ticks(&chapters, &markers, Some(100.0));
+    assert_eq!(ticks.len(), 2);
+    assert_eq!(ticks[0].kind, yoyovideo_desktop::ProgressTickKind::Chapter);
+    assert_eq!(ticks[0].percent, 0.1);
+    assert_eq!(
+        yoyovideo_desktop::format_preview_label(20.0, Some("Marker 00:20")),
+        "00:20 - Marker 00:20"
+    );
+}
+
+#[test]
+fn osd_message_formats_common_actions() {
+    assert_eq!(
+        yoyovideo_desktop::format_osd_message(yoyovideo_desktop::OsdKind::Muted(true)),
+        "Muted"
+    );
+    assert_eq!(
+        yoyovideo_desktop::format_osd_message(yoyovideo_desktop::OsdKind::JumpedTo(75.0)),
+        "Jumped to 01:15"
+    );
+}

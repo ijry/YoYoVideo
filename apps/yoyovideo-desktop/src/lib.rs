@@ -1,8 +1,10 @@
 mod app;
 mod history_runtime;
 mod keyboard;
+mod osd;
 pub mod platform;
 mod presenter;
+mod progress;
 mod settings_controller;
 mod sidebar;
 mod subtitle_prefs;
@@ -24,11 +26,16 @@ pub use history_runtime::{
 pub use keyboard::{
     DesktopKey, KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture,
 };
+pub use osd::{OsdKind, OsdState, format_osd_message};
 pub use platform::scan_media_folder;
 pub use presenter::{
     format_audio_channel_label, format_loop_label, format_rotation_label, format_speed_label,
     format_time_label, format_transport_label, format_video_adjustment_label,
     format_video_filter_preset_label, format_volume_label, format_zoom_label, progress_ratio,
+};
+pub use progress::{
+    NavigationRow, ProgressTick, ProgressTickKind, build_navigation_rows, build_progress_ticks,
+    format_preview_label, parse_jump_time,
 };
 pub use settings_controller::{SettingsController, SettingsShortcutRow, SettingsSnapshot};
 pub use sidebar::{

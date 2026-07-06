@@ -1,6 +1,7 @@
 mod dialogs;
 mod drop;
 mod logging;
+mod markers;
 mod media_scan;
 mod paths;
 mod recent;
@@ -11,6 +12,9 @@ pub use dialogs::{DialogService, RfdDialogService};
 pub use drop::{DroppedMediaAction, classify_dropped_paths};
 pub use logging::{
     append_diagnostic, append_diagnostic_line, default_log_file, diagnostic_timestamp_now,
+};
+pub use markers::{
+    MAX_MARKER_SETS, MAX_MARKERS_PER_MEDIA, MarkerStore, MediaMarkerSet, marker_store_path,
 };
 pub use media_scan::scan_media_folder;
 pub use paths::AppPaths;
