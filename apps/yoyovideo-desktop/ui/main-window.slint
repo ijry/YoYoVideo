@@ -110,8 +110,6 @@ component DeckPill inherits Rectangle {
     }
 }
 
-component DeckLabel inherits DeckPill { }
-
 component DeckSectionTitle inherits Text {
     color: #f8fafc;
     font-size: 13px;
@@ -276,44 +274,44 @@ export component MainWindow inherits Window {
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
-        width: 230px;
-        height: 660px;
+        width: 280px;
+        height: 520px;
 
-        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #080d14;
+            border-width: 1px;
+            border-color: #263241;
+        }
 
-        VerticalBox {
-            spacing: 4px;
-            Button { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
-            Button { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
-            Text { text: "Recent"; color: #9ba6ad; }
-            if root.recent_open_rows.length == 0: Text {
-                text: "No Recent Items";
-                color: #66737c;
-            }
-            for row[index] in root.recent_open_rows: Button {
-                text: row.title;
-                clicked => {
-                    root.recent_open_item_requested(index);
-                    menu_popup.close();
+        ScrollView {
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+                DeckPanelHeader { title: "Menu"; subtitle: "Open, recent, playback, settings"; }
+                DeckButton { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
+                DeckButton { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+                DeckDivider { }
+                DeckSectionTitle { text: "Recent"; }
+                if root.recent_open_rows.length == 0: Text {
+                    text: "No Recent Items";
+                    color: #64748b;
                 }
+                for row[index] in root.recent_open_rows: DeckButton {
+                    text: row.title;
+                    clicked => {
+                        root.recent_open_item_requested(index);
+                        menu_popup.close();
+                    }
+                }
+                DeckDivider { }
+                DeckButton { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
+                DeckButton { text: "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
+                DeckButton { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
+                DeckButton { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
+                DeckButton { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
             }
-            Button { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
-            Button { text: "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
-            Button { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
-            Button { text: "Speed -"; clicked => { root.speed_down_requested(); menu_popup.close(); } }
-            Button { text: "Speed +"; clicked => { root.speed_up_requested(); menu_popup.close(); } }
-            Button { text: "Speed 1x"; clicked => { root.reset_speed_requested(); menu_popup.close(); } }
-            Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); menu_popup.close(); } }
-            Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); menu_popup.close(); } }
-            Button { text: "Rotate"; clicked => { root.rotate_requested(); menu_popup.close(); } }
-            Button { text: "Audio Channel"; clicked => { root.cycle_audio_requested(); menu_popup.close(); } }
-            Button { text: "Set A"; clicked => { root.set_ab_point_a_requested(); menu_popup.close(); } }
-            Button { text: "Set B"; clicked => { root.set_ab_point_b_requested(); menu_popup.close(); } }
-            Button { text: "Clear A-B"; clicked => { root.clear_ab_loop_requested(); menu_popup.close(); } }
-            Button { text: "Screenshot"; clicked => { root.screenshot_requested(); menu_popup.close(); } }
-            Button { text: "Video Tools"; clicked => { video_tools_popup.show(); menu_popup.close(); } }
-            Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
-            Button { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
         }
     }
 
@@ -322,26 +320,36 @@ export component MainWindow inherits Window {
         width: 360px;
         height: 520px;
 
-        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #080d14;
+            border-width: 1px;
+            border-color: #263241;
+        }
 
         ScrollView {
             VerticalBox {
                 padding: 12px;
                 spacing: 8px;
 
-                Text { text: "Audio Tracks"; color: #f2f5f7; }
-                for row[idx] in root.audio_track_rows: Button {
+                DeckPanelHeader { title: "Tracks"; subtitle: "Audio, subtitles, and video streams"; }
+                DeckSectionTitle { text: "Audio Tracks"; }
+                for row[idx] in root.audio_track_rows: DeckButton {
                     text: row.label;
+                    selected: row.selected;
                     clicked => { root.audio_track_requested(idx); }
                 }
 
-                Text { text: "Subtitle Tracks"; color: #f2f5f7; }
-                for row[idx] in root.subtitle_track_rows: Button {
+                DeckDivider { }
+                DeckSectionTitle { text: "Subtitle Tracks"; }
+                for row[idx] in root.subtitle_track_rows: DeckButton {
                     text: row.label;
+                    selected: row.selected;
                     clicked => { root.subtitle_track_requested(idx); }
                 }
 
-                Button {
+                DeckButton {
                     text: "Load Subtitle...";
                     clicked => { root.load_external_subtitle_requested(); }
                 }
@@ -376,9 +384,11 @@ export component MainWindow inherits Window {
                     changed(value) => { root.subtitle_position_changed(value); }
                 }
 
-                Text { text: "Video Tracks"; color: #f2f5f7; }
-                for row[idx] in root.video_track_rows: Button {
+                DeckDivider { }
+                DeckSectionTitle { text: "Video Tracks"; }
+                for row[idx] in root.video_track_rows: DeckButton {
                     text: row.label;
+                    selected: row.selected;
                     clicked => { root.video_track_requested(idx); }
                 }
 
@@ -392,24 +402,32 @@ export component MainWindow inherits Window {
         width: 340px;
         height: 620px;
 
-        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #080d14;
+            border-width: 1px;
+            border-color: #263241;
+        }
 
         ScrollView {
             VerticalBox {
                 padding: 12px;
                 spacing: 8px;
 
-                Text { text: "Capture"; color: #f2f5f7; }
-                Button { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
+                DeckPanelHeader { title: "Picture"; subtitle: "Screenshot, frame step, filters"; }
+                DeckSectionTitle { text: "Capture"; }
+                DeckButton { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
 
-                Text { text: "Frame Step"; color: #f2f5f7; }
+                DeckSectionTitle { text: "Frame Step"; }
                 HorizontalBox {
                     spacing: 8px;
-                    Button { text: "Prev Frame"; clicked => { root.frame_step_previous_requested(); } }
-                    Button { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                    DeckButton { text: "Prev Frame"; clicked => { root.frame_step_previous_requested(); } }
+                    DeckButton { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
                 }
 
-                Text { text: "Picture"; color: #f2f5f7; }
+                DeckDivider { }
+                DeckSectionTitle { text: "Adjustments"; }
                 Text { text: root.brightness_label; color: #c7d1d8; }
                 Slider {
                     minimum: -100;
@@ -445,14 +463,16 @@ export component MainWindow inherits Window {
                     value: root.hue_value;
                     changed(value) => { root.hue_changed(value); }
                 }
-                Button { text: "Reset Picture"; clicked => { root.reset_video_adjustments_requested(); } }
+                DeckButton { text: "Reset Picture"; clicked => { root.reset_video_adjustments_requested(); } }
 
-                Text { text: root.video_filter_label; color: #f2f5f7; }
-                Button { text: "None"; clicked => { root.filter_none_requested(); } }
-                Button { text: "Sharpen"; clicked => { root.filter_sharpen_requested(); } }
-                Button { text: "Light Denoise"; clicked => { root.filter_light_denoise_requested(); } }
-                Button { text: "Grayscale"; clicked => { root.filter_grayscale_requested(); } }
-                Button { text: "Invert"; clicked => { root.filter_invert_requested(); } }
+                DeckDivider { }
+                DeckSectionTitle { text: "Filters"; }
+                DeckPill { text: root.video_filter_label; }
+                DeckButton { text: "None"; clicked => { root.filter_none_requested(); } }
+                DeckButton { text: "Sharpen"; clicked => { root.filter_sharpen_requested(); } }
+                DeckButton { text: "Light Denoise"; clicked => { root.filter_light_denoise_requested(); } }
+                DeckButton { text: "Grayscale"; clicked => { root.filter_grayscale_requested(); } }
+                DeckButton { text: "Invert"; clicked => { root.filter_invert_requested(); } }
 
                 Text { text: root.status_label; color: #7d8790; }
             }
@@ -464,23 +484,41 @@ export component MainWindow inherits Window {
         width: 420px;
         height: 620px;
 
-        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #080d14;
+            border-width: 1px;
+            border-color: #263241;
+        }
 
         ScrollView {
             VerticalBox {
                 padding: 14px;
                 spacing: 8px;
-                Text { text: "Quick Actions"; color: #f2f5f7; }
+                DeckPanelHeader { title: "Actions"; subtitle: "Quick tools, navigation, and loop controls"; }
+                DeckSectionTitle { text: "Quick"; }
                 DeckButton { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
                 DeckButton { text: "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
                 DeckButton { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
                 DeckButton { text: "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
                 DeckButton { text: "Add Marker"; clicked => { root.add_marker_requested(); } }
                 DeckButton { text: "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
-                Text { text: "Chapters & Markers"; color: #f2f5f7; }
-                if root.navigation_rows.length == 0: Text { text: "No chapters or markers"; color: #7d8790; }
-                for row[idx] in root.navigation_rows: Button {
+                DeckDivider { }
+                DeckSectionTitle { text: "Loop"; }
+                HorizontalBox {
+                    spacing: 8px;
+                    DeckButton { text: "Set A"; clicked => { root.set_ab_point_a_requested(); } }
+                    DeckButton { text: "Set B"; clicked => { root.set_ab_point_b_requested(); } }
+                    DeckButton { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
+                }
+                DeckPill { text: loop_label; }
+                DeckDivider { }
+                DeckSectionTitle { text: "Chapters & Markers"; }
+                if root.navigation_rows.length == 0: Text { text: "No chapters or markers"; color: #64748b; }
+                for row[idx] in root.navigation_rows: DeckButton {
                     text: row.title + "  " + row.subtitle;
+                    selected: row.is_marker;
                     clicked => { root.navigation_row_requested(idx); }
                 }
             }
@@ -490,19 +528,27 @@ export component MainWindow inherits Window {
     jump_panel := PopupWindow {
         close-policy: close-on-click-outside;
         width: 280px;
-        height: 120px;
+        height: 150px;
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #080d14;
+            border-width: 1px;
+            border-color: #263241;
+        }
 
         VerticalBox {
-            padding: 12px;
-            spacing: 8px;
-            Text { text: "Jump To Time"; color: #f2f5f7; }
+            padding: 14px;
+            spacing: 10px;
+            DeckSectionTitle { text: "Jump To Time"; }
             jump_input := LineEdit {
                 text: root.jump_input_text;
                 placeholder-text: "ss, mm:ss, hh:mm:ss";
                 edited => { root.jump_input_changed(self.text); }
                 accepted => { root.jump_commit_requested(self.text); jump_panel.close(); }
             }
-            Button { text: "Go"; clicked => { root.jump_commit_requested(jump_input.text); jump_panel.close(); } }
+            DeckPrimaryButton { text: "Go"; clicked => { root.jump_commit_requested(jump_input.text); jump_panel.close(); } }
         }
     }
 
@@ -774,26 +820,94 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    width: root.sidebar_visible ? root.sidebar_expanded_width_px * 1px : 40px;
+                    width: root.sidebar_visible ? root.sidebar_expanded_width_px * 1px : 42px;
                     border-radius: 22px;
                     background: #080d14cc;
                     border-width: 1px;
                     border-color: #1f2c3a;
 
-                    Text {
-                        text: root.sidebar_visible ? "Playlist / History" : "List";
-                        color: #94a3b8;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        font-size: 12px;
-                        font-weight: 800;
+                    if root.sidebar_visible: VerticalBox {
+                        padding: 12px;
+                        spacing: 10px;
+
+                        HorizontalBox {
+                            spacing: 8px;
+                            DeckButton {
+                                text: "Playlist";
+                                selected: root.sidebar_tab_index == 0;
+                                clicked => { root.show_playlist_tab_requested(); }
+                            }
+                            DeckButton {
+                                text: "History";
+                                selected: root.sidebar_tab_index == 1;
+                                clicked => { root.show_history_tab_requested(); }
+                            }
+                            DeckButton { text: "Close"; clicked => { root.toggle_sidebar_requested(); } }
+                        }
+
+                        ScrollView {
+                            if root.sidebar_tab_index == 0: VerticalBox {
+                                spacing: 6px;
+
+                                for row[idx] in root.playlist_rows: Rectangle {
+                                    min-height: 48px;
+                                    border-radius: 14px;
+                                    background: row.is_current ? #132638 : #0b111a;
+                                    border-width: 1px;
+                                    border-color: row.is_current ? #38bdf8 : #1f2c3a;
+
+                                    TouchArea { clicked => { root.playlist_item_requested(idx); } }
+
+                                    Text {
+                                        text: row.title;
+                                        color: row.is_current ? #f8fafc : #cbd5e1;
+                                        vertical-alignment: center;
+                                        x: 12px;
+                                        y: 14px;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+
+                            if root.sidebar_tab_index == 1: VerticalBox {
+                                spacing: 6px;
+
+                                for row[idx] in root.history_rows: Rectangle {
+                                    min-height: 58px;
+                                    border-radius: 14px;
+                                    background: #0b111a;
+                                    border-width: 1px;
+                                    border-color: #1f2c3a;
+
+                                    TouchArea { clicked => { root.history_item_requested(idx); } }
+
+                                    VerticalBox {
+                                        padding-left: 12px;
+                                        padding-top: 8px;
+                                        spacing: 3px;
+                                        Text { text: row.title; color: #f8fafc; font-size: 12px; font-weight: 700; }
+                                        Text { text: row.subtitle; color: #64748b; font-size: 11px; }
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    TouchArea {
-                        clicked => {
-                            if (!root.sidebar_visible) {
-                                root.toggle_sidebar_requested();
-                            }
+                    if !root.sidebar_visible: Rectangle {
+                        background: transparent;
+
+                        TouchArea {
+                            clicked => { root.toggle_sidebar_requested(); }
+                        }
+
+                        Text {
+                            text: "List";
+                            color: #94a3b8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            font-weight: 800;
                         }
                     }
                 }
