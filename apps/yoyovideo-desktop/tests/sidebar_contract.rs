@@ -5,13 +5,15 @@ use yoyovideo_desktop::{
 };
 
 #[test]
-fn startup_visibility_uses_config_but_forces_narrow_windows_collapsed() {
-    let wide = initial_sidebar_state(true, 1280.0);
-    let narrow = initial_sidebar_state(true, 980.0);
+fn startup_visibility_defaults_to_compact_but_respects_explicit_preference() {
+    let default_wide = initial_sidebar_state(false, 1280.0);
+    let explicit_wide = initial_sidebar_state(true, 1280.0);
+    let explicit_narrow = initial_sidebar_state(true, 980.0);
 
-    assert!(wide.visible);
-    assert_eq!(wide.active_tab, SidebarTab::Playlist);
-    assert!(!narrow.visible);
+    assert!(!default_wide.visible);
+    assert_eq!(default_wide.active_tab, SidebarTab::Playlist);
+    assert!(explicit_wide.visible);
+    assert!(!explicit_narrow.visible);
     assert_eq!(expanded_sidebar_width(980.0), 260.0);
     assert_eq!(expanded_sidebar_width(1280.0), 320.0);
 }

@@ -259,8 +259,8 @@ export component MainWindow inherits Window {
     in-out property <string> ui_language_code: "zh";
     in-out property <bool> url_focused: false;
 
-    out property <length> video_area_x: video_area.x;
-    out property <length> video_area_y: video_area.y;
+    out property <length> video_area_x: video_area.absolute-position.x - root.absolute-position.x;
+    out property <length> video_area_y: video_area.absolute-position.y - root.absolute-position.y;
     out property <length> video_area_width: video_area.width;
     out property <length> video_area_height: video_area.height;
 
@@ -983,7 +983,7 @@ export component SettingsWindow inherits Window {
     in-out property <int> playback_end_behavior_index: 0;
     in-out property <bool> prefer_hardware_decode: true;
     in-out property <bool> remember_history: true;
-    in-out property <bool> show_playlist_on_startup: true;
+    in-out property <bool> show_playlist_on_startup: false;
     in-out property <bool> dirty: false;
     in-out property <bool> can_apply: false;
     in-out property <string> status_label: "";

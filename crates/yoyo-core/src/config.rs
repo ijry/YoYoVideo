@@ -54,7 +54,7 @@ impl Default for AppConfig {
                 prefer_hardware_decode: true,
                 end_behavior: PlaybackEndBehavior::PlayNext,
             },
-            ui: UiPreferences { remember_history: true, show_playlist_on_startup: true },
+            ui: UiPreferences { remember_history: true, show_playlist_on_startup: false },
             shortcuts: ShortcutMap::default(),
         }
     }

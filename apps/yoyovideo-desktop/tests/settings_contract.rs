@@ -79,7 +79,7 @@ fn restore_defaults_and_row_restore_reset_the_draft() {
     let snapshot = controller.snapshot();
 
     assert!(snapshot.remember_history);
-    assert!(snapshot.show_playlist_on_startup);
+    assert!(!snapshot.show_playlist_on_startup);
 }
 
 #[test]

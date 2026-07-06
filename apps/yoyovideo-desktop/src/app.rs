@@ -1320,11 +1320,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    app.on_video_double_clicked(command_callback(
-        &app,
-        &runtime,
-        AppCommand::ToggleFullscreen,
-    ));
+    app.on_video_double_clicked(command_callback(&app, &runtime, AppCommand::ToggleFullscreen));
 
     app.on_video_dragged({
         let app_handle = app.as_weak();
@@ -1346,11 +1342,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    app.on_reset_video_pan_requested(command_callback(
-        &app,
-        &runtime,
-        AppCommand::ResetVideoPan,
-    ));
+    app.on_reset_video_pan_requested(command_callback(&app, &runtime, AppCommand::ResetVideoPan));
 
     app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
     app.on_toggle_mute_requested({

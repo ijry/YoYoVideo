@@ -89,6 +89,14 @@ fn default_playback_end_behavior_is_play_next() {
 }
 
 #[test]
+fn default_ui_preferences_keep_compact_player_surface() {
+    let config = AppConfig::default();
+
+    assert!(config.ui.remember_history);
+    assert!(!config.ui.show_playlist_on_startup);
+}
+
+#[test]
 fn legacy_config_without_playback_end_behavior_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

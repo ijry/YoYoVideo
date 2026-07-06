@@ -66,10 +66,21 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.on_reset_video_pan_requested(|| {});
 }
 
+fn assert_video_host_bounds_in_window_coordinates(window: &MainWindow) {
+    assert!(window.get_video_area_x() as i32 >= 0);
+    assert!(
+        window.get_video_area_y() as i32 >= 38,
+        "video host must start below the frameless title bar"
+    );
+    assert!(window.get_video_area_width() as i32 > 0);
+    assert!(window.get_video_area_height() as i32 > 0);
+}
+
 #[test]
 fn main_window_context_menu_daily_actions_compile() {
     let window = MainWindow::new().unwrap();
 
+    assert_video_host_bounds_in_window_coordinates(&window);
     assert_eq!(window.get_ui_language_code().as_str(), "zh");
     window.on_open_file_requested(|| {});
     window.on_open_folder_requested(|| {});
