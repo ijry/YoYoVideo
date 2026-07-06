@@ -47,3 +47,21 @@ fn legacy_dispatch_shortcut_returns_none_for_screenshot_requiring_desktop_path()
 
     assert_eq!(dispatch_shortcut(&map, "S"), None);
 }
+
+#[test]
+fn cinema_deck_shortcuts_resolve_to_dispatches() {
+    let map = yoyo_core::ShortcutMap::default();
+
+    assert_eq!(
+        yoyovideo_desktop::dispatch_shortcut(&map, "M"),
+        Some(yoyo_core::AppCommand::ToggleMute)
+    );
+    assert_eq!(
+        yoyovideo_desktop::dispatch_shortcut(&map, "Ctrl+M"),
+        Some(yoyo_core::AppCommand::AddMarkerAtCurrentPosition { created_at: "shortcut".into() })
+    );
+    assert_eq!(
+        yoyovideo_desktop::dispatch_shortcut(&map, "Shift+Right"),
+        Some(yoyo_core::AppCommand::SeekToNextChapterOrMarker)
+    );
+}

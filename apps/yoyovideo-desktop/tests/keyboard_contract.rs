@@ -41,3 +41,15 @@ fn keyboard_input_normalizes_video_tool_shortcuts() {
     assert_eq!(shortcut_gesture(KeyboardInput::character(',')), Some(",".to_string()));
     assert_eq!(shortcut_gesture(KeyboardInput::character('.')), Some(".".to_string()));
 }
+
+#[test]
+fn keyboard_input_normalizes_shifted_chapter_marker_shortcuts() {
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::named(NamedDesktopKey::Right).with_shift()),
+        Some("Shift+Right".to_string())
+    );
+    assert_eq!(
+        shortcut_gesture(KeyboardInput::named(NamedDesktopKey::Left).with_shift()),
+        Some("Shift+Left".to_string())
+    );
+}

@@ -42,11 +42,14 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
     window.set_speed_label(crate::format_speed_label(state).into());
     window.set_time_label(crate::format_time_label(state).into());
     window.set_volume_label(crate::format_volume_label(state).into());
+    window.set_muted(state.muted);
+    window.set_mute_label(if state.muted { "Muted" } else { "Sound" }.into());
     window.set_rotation_label(crate::format_rotation_label(state).into());
     window.set_audio_channel_label(crate::format_audio_channel_label(state).into());
     window.set_zoom_label(crate::format_zoom_label(state).into());
     window.set_loop_label(crate::format_loop_label(state).into());
     window.set_progress_value(crate::progress_ratio(state));
+    refresh_navigation_surfaces(window, state);
     window.set_volume_value(i32::from(state.volume_percent));
     window.set_brightness_value(i32::from(state.video_adjustments.brightness));
     window.set_contrast_value(i32::from(state.video_adjustments.contrast));
@@ -100,6 +103,42 @@ pub fn refresh_window(window: &MainWindow, state: &PlayerState) {
 
 fn model_from_vec<T: Clone + 'static>(rows: Vec<T>) -> slint::ModelRc<T> {
     slint::ModelRc::new(slint::VecModel::from(rows))
+}
+
+fn current_locator_key(state: &PlayerState) -> Option<String> {
+    state.current.as_ref().map(MediaLocator::as_label)
+}
+
+fn refresh_navigation_surfaces(window: &MainWindow, state: &PlayerState) {
+    let rows = crate::build_navigation_rows(&state.chapters, &state.markers)
+        .into_iter()
+        .map(|row| NavigationRowData {
+            title: row.title.into(),
+            subtitle: row.subtitle.into(),
+            id: row.id.into(),
+            is_marker: row.is_marker,
+        })
+        .collect::<Vec<_>>();
+    window.set_navigation_rows(model_from_vec(rows));
+
+    let ticks =
+        crate::build_progress_ticks(&state.chapters, &state.markers, state.duration_seconds)
+            .into_iter()
+            .map(|tick| ProgressTickRowData {
+                percent: tick.percent,
+                label: tick.label.into(),
+                is_marker: tick.kind == crate::ProgressTickKind::Marker,
+            })
+            .collect::<Vec<_>>();
+    window.set_progress_tick_rows(model_from_vec(ticks));
+}
+
+fn set_osd(window: &MainWindow, runtime: &mut DesktopRuntime, kind: crate::OsdKind) {
+    runtime.osd.visible = true;
+    runtime.osd.message = crate::format_osd_message(kind);
+    runtime.osd.generation = runtime.osd.generation.saturating_add(1);
+    window.set_osd_visible(true);
+    window.set_osd_message(runtime.osd.message.clone().into());
 }
 
 pub struct DesktopController<B: PlayerBackend> {
@@ -287,12 +326,15 @@ struct DesktopRuntime {
     history: crate::HistoryRuntime,
     recent_open: crate::platform::RecentOpenStore,
     subtitle_prefs: crate::SubtitlePrefsRuntime,
+    marker_store: crate::platform::MarkerStore,
+    osd: crate::OsdState,
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
     settings_controller: Option<crate::SettingsController>,
     pending_resume: Option<crate::PendingResumeSeek>,
     last_seen_locator: Option<MediaLocator>,
     last_seen_subtitle_locator: Option<MediaLocator>,
+    last_marker_locator_key: Option<String>,
     started_at: Instant,
     diagnostic_log_path: PathBuf,
     diagnostic_log_failed: bool,
@@ -307,6 +349,7 @@ impl DesktopRuntime {
         history: crate::HistoryRuntime,
         recent_open: crate::platform::RecentOpenStore,
         subtitle_prefs: crate::SubtitlePrefsRuntime,
+        marker_store: crate::platform::MarkerStore,
         sidebar: crate::SidebarState,
         diagnostic_log_path: PathBuf,
         window_state_path: Option<PathBuf>,
@@ -319,12 +362,15 @@ impl DesktopRuntime {
             history,
             recent_open,
             subtitle_prefs,
+            marker_store,
+            osd: crate::OsdState::default(),
             sidebar,
             settings_window: None,
             settings_controller: None,
             pending_resume: None,
             last_seen_locator: None,
             last_seen_subtitle_locator: None,
+            last_marker_locator_key: None,
             started_at: Instant::now(),
             diagnostic_log_path,
             diagnostic_log_failed: false,
@@ -446,11 +492,18 @@ fn load_subtitle_prefs_runtime(paths: Option<&AppPaths>) -> crate::SubtitlePrefs
         .unwrap_or_else(|_| crate::SubtitlePrefsRuntime::new(prefs_path, Default::default()))
 }
 
+fn load_marker_store(paths: Option<&AppPaths>) -> crate::platform::MarkerStore {
+    let marker_path = crate::platform::marker_store_path(paths);
+    crate::platform::MarkerStore::load(marker_path.clone())
+        .unwrap_or_else(|_| crate::platform::MarkerStore::with_path(marker_path))
+}
+
 fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
     if let Some(controller) = runtime.controller() {
         refresh_window(window, controller.session().state());
     } else {
         window.set_status_label(runtime.status_message().into());
+        refresh_navigation_surfaces(window, &PlayerState::default());
     }
 }
 
@@ -732,6 +785,39 @@ fn sync_subtitle_prefs_from_state(
     Ok(())
 }
 
+fn restore_markers_for_current_media(
+    runtime: &mut DesktopRuntime,
+    controller: &mut DesktopController<MpvBackend>,
+) {
+    let locator_key = current_locator_key(controller.session().state());
+    if locator_key == runtime.last_marker_locator_key {
+        return;
+    }
+
+    runtime.last_marker_locator_key = locator_key.clone();
+    let Some(locator_key) = locator_key else {
+        return;
+    };
+
+    let markers = runtime.marker_store.markers_for(&locator_key);
+    controller.session_mut().set_markers(markers);
+}
+
+fn persist_current_markers(runtime: &mut DesktopRuntime, state: &PlayerState) {
+    let Some(locator_key) = current_locator_key(state) else {
+        return;
+    };
+
+    if runtime.marker_store.markers_for(&locator_key) == state.markers {
+        return;
+    }
+
+    runtime.marker_store.set_markers(locator_key, state.markers.clone());
+    if let Err(error) = runtime.marker_store.save() {
+        runtime.record_diagnostic("WARN", format!("Marker store save failed: {error}"));
+    }
+}
+
 fn apply_subtitle_restore_if_needed(
     runtime: &mut DesktopRuntime,
     controller: &mut DesktopController<MpvBackend>,
@@ -816,6 +902,7 @@ where
                 match apply_subtitle_restore_if_needed(&mut runtime, &mut controller, app.as_ref())
                 {
                     Ok(()) => {
+                        restore_markers_for_current_media(&mut runtime, &mut controller);
                         let state = controller.session().state().clone();
                         let history_snapshot = capture_history_snapshot(controller.session());
                         match sync_subtitle_prefs_from_state(&mut runtime, &state) {
@@ -841,6 +928,7 @@ where
                 }
                 return false;
             }
+            persist_current_markers(&mut runtime, &state);
             if let Some(app) = app_handle.upgrade() {
                 refresh_window(&app, &state);
                 refresh_sidebar(&app, &runtime);
@@ -1024,6 +1112,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let history = load_history_runtime(paths.as_ref(), &config);
     let recent_open = load_recent_open_store(paths.as_ref());
     let subtitle_prefs = load_subtitle_prefs_runtime(paths.as_ref());
+    let marker_store = load_marker_store(paths.as_ref());
     let sidebar = crate::initial_sidebar_state(config.ui.show_playlist_on_startup, 1200.0);
     let diagnostic_log_path = crate::platform::default_log_file(paths.as_ref());
     let window_state_path = crate::platform::window_state_path(paths.as_ref());
@@ -1032,6 +1121,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         history,
         recent_open,
         subtitle_prefs,
+        marker_store,
         sidebar,
         diagnostic_log_path,
         window_state_path.clone(),
@@ -1134,6 +1224,23 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
+    app.on_toggle_mute_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            if with_runtime_controller(&app_handle, &runtime, |controller| {
+                controller.dispatch(AppCommand::ToggleMute)
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                let muted = runtime
+                    .controller()
+                    .map(|controller| controller.session().state().muted)
+                    .unwrap_or(false);
+                set_osd(&app, &mut runtime, crate::OsdKind::Muted(muted));
+            }
+        }
+    });
     app.on_speed_down_requested(command_callback(&app, &runtime, AppCommand::SetSpeed(0.75)));
     app.on_speed_up_requested(command_callback(&app, &runtime, AppCommand::SetSpeed(1.25)));
     app.on_reset_speed_requested(command_callback(&app, &runtime, AppCommand::ResetSpeed));
@@ -1150,6 +1257,60 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
     });
+    app.on_progress_preview_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |percent| {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let runtime = runtime.borrow();
+            let Some(controller) = runtime.controller() else {
+                return;
+            };
+            let state = controller.session().state();
+            let Some(duration) = state.duration_seconds else {
+                return;
+            };
+            let percent = percent.clamp(0.0, 1.0);
+            let seconds = duration * f64::from(percent);
+            app.set_progress_preview_visible(true);
+            app.set_progress_preview_value(percent);
+            app.set_progress_preview_label(crate::format_preview_label(seconds, None).into());
+        }
+    });
+    app.on_progress_commit_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |percent| {
+            let percent = percent.clamp(0.0, 1.0);
+            let target = {
+                let runtime = runtime.borrow();
+                runtime
+                    .controller()
+                    .and_then(|controller| controller.session().state().duration_seconds)
+                    .map(|duration| duration * f64::from(percent))
+            };
+            let Some(target) = target else {
+                return;
+            };
+            if with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::SeekAbsolute(target))
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                set_osd(&app, &mut runtime, crate::OsdKind::SeekedTo(target));
+            }
+        }
+    });
+    app.on_progress_preview_cleared({
+        let app_handle = app.as_weak();
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_progress_preview_visible(false);
+            }
+        }
+    });
     app.on_volume_changed({
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
@@ -1159,6 +1320,135 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
     });
+    app.on_jump_panel_requested({
+        let app_handle = app.as_weak();
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_jump_panel_visible(true);
+            }
+        }
+    });
+    app.on_jump_input_changed({
+        let app_handle = app.as_weak();
+        move |input| {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_jump_input_text(input);
+            }
+        }
+    });
+    app.on_jump_commit_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |input| match crate::parse_jump_time(input.as_str()) {
+            Ok(seconds) => {
+                if with_runtime_controller(&app_handle, &runtime, move |controller| {
+                    controller.dispatch(AppCommand::JumpToTime(seconds))
+                }) && let Some(app) = app_handle.upgrade()
+                {
+                    let mut runtime = runtime.borrow_mut();
+                    set_osd(&app, &mut runtime, crate::OsdKind::JumpedTo(seconds));
+                    app.set_jump_panel_visible(false);
+                }
+            }
+            Err(message) => {
+                if let Some(app) = app_handle.upgrade() {
+                    app.set_status_label(message.into());
+                }
+            }
+        }
+    });
+    app.on_action_panel_requested({
+        let app_handle = app.as_weak();
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_action_panel_visible(true);
+            }
+        }
+    });
+    app.on_action_panel_close_requested({
+        let app_handle = app.as_weak();
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_action_panel_visible(false);
+            }
+        }
+    });
+    app.on_add_marker_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let created_at = chrono::Local::now().to_rfc3339();
+            if with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::AddMarkerAtCurrentPosition { created_at })
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                set_osd(&app, &mut runtime, crate::OsdKind::MarkerAdded);
+            }
+        }
+    });
+    app.on_remove_marker_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |id| {
+            let id = id.to_string();
+            if with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(AppCommand::RemoveMarker(id))
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                set_osd(&app, &mut runtime, crate::OsdKind::MarkerRemoved);
+            }
+        }
+    });
+    app.on_navigation_row_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            let row = {
+                let runtime = runtime.borrow();
+                let Some(controller) = runtime.controller() else {
+                    return;
+                };
+                let state = controller.session().state();
+                crate::build_navigation_rows(&state.chapters, &state.markers)
+                    .get(index as usize)
+                    .cloned()
+            };
+            let Some(row) = row else {
+                return;
+            };
+            let title = row.title.clone();
+            let command = if row.is_marker {
+                AppCommand::SeekToMarker(row.id)
+            } else {
+                let Ok(chapter_index) = row.id.parse::<usize>() else {
+                    return;
+                };
+                AppCommand::SeekToChapter(chapter_index)
+            };
+            if with_runtime_controller(&app_handle, &runtime, move |controller| {
+                controller.dispatch(command)
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                set_osd(&app, &mut runtime, crate::OsdKind::Chapter(title));
+            }
+        }
+    });
+    app.on_previous_chapter_marker_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SeekToPreviousChapterOrMarker,
+    ));
+    app.on_next_chapter_marker_requested(command_callback(
+        &app,
+        &runtime,
+        AppCommand::SeekToNextChapterOrMarker,
+    ));
     app.on_screenshot_requested({
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
@@ -1818,13 +2108,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     dispatch_screenshot(&app_handle, &runtime, paths.clone());
                 }
                 Some(ShortcutDispatch::AddMarker) => {
+                    let created_at = chrono::Local::now().to_rfc3339();
                     with_runtime_controller(&app_handle, &runtime, move |controller| {
-                        controller.dispatch(AppCommand::AddMarkerAtCurrentPosition {
-                            created_at: "shortcut".into(),
-                        })
+                        controller.dispatch(AppCommand::AddMarkerAtCurrentPosition { created_at })
                     });
                 }
-                Some(ShortcutDispatch::OpenJumpPanel | ShortcutDispatch::OpenActionPanel) => {}
+                Some(ShortcutDispatch::OpenJumpPanel) => {
+                    app.set_jump_panel_visible(true);
+                    app.set_status_label("Jump to time".into());
+                }
+                Some(ShortcutDispatch::OpenActionPanel) => {
+                    app.set_action_panel_visible(true);
+                    app.set_status_label("Action panel".into());
+                }
                 None => {}
             }
             slint::winit_030::EventResult::PreventDefault
@@ -1859,6 +2155,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             Some(&app),
                         ) {
                             Ok(()) => {
+                                restore_markers_for_current_media(&mut runtime, &mut controller);
                                 let state = controller.session().state().clone();
                                 let history_snapshot =
                                     capture_history_snapshot(controller.session());
@@ -1881,6 +2178,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         app.set_status_label(error.to_string().into());
                     }
+                    persist_current_markers(&mut runtime, &state);
                     refresh_window(&app, &state);
                     refresh_sidebar(&app, &runtime);
                     refresh_tracks_popup(&app, &runtime);
@@ -1905,6 +2203,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let state = controller.session().state().clone();
             let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
             let _ = sync_subtitle_prefs_from_state(&mut runtime, &state);
+            persist_current_markers(&mut runtime, &state);
         }
         let shutdown_now = history_now(&runtime);
         let _ = runtime.history.flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
