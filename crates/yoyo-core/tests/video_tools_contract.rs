@@ -103,6 +103,48 @@ fn reset_video_adjustments_restores_neutral_state() {
 }
 
 #[test]
+fn video_pan_updates_state_and_backend_properties() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+
+    session
+        .handle_command(AppCommand::AdjustVideoPan { delta_x: 0.25, delta_y: -0.5 })
+        .unwrap();
+    session
+        .handle_command(AppCommand::AdjustVideoPan { delta_x: 4.0, delta_y: -4.0 })
+        .unwrap();
+
+    assert_eq!(session.state().video_pan_x, 3.0);
+    assert_eq!(session.state().video_pan_y, -3.0);
+    assert_eq!(
+        session.backend().commands,
+        vec![
+            BackendCommand::SetVideoPan { x: 0.25, y: -0.5 },
+            BackendCommand::SetVideoPan { x: 3.0, y: -3.0 },
+        ]
+    );
+}
+
+#[test]
+fn reset_video_pan_restores_center_position() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+
+    session
+        .handle_command(AppCommand::AdjustVideoPan { delta_x: 0.5, delta_y: 0.5 })
+        .unwrap();
+    session.handle_command(AppCommand::ResetVideoPan).unwrap();
+
+    assert_eq!(session.state().video_pan_x, 0.0);
+    assert_eq!(session.state().video_pan_y, 0.0);
+    assert_eq!(
+        session.backend().commands,
+        vec![
+            BackendCommand::SetVideoPan { x: 0.5, y: 0.5 },
+            BackendCommand::SetVideoPan { x: 0.0, y: 0.0 },
+        ]
+    );
+}
+
+#[test]
 fn filter_state_is_not_changed_when_backend_rejects_command() {
     let mut backend = MockBackend::default();
     backend.fail_next_send = true;

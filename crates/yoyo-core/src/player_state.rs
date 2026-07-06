@@ -163,6 +163,10 @@ pub struct PlayerState {
     pub audio_channel: AudioChannelMode,
     pub rotation: Rotation,
     pub zoom_step: i8,
+    #[serde(default)]
+    pub video_pan_x: f64,
+    #[serde(default)]
+    pub video_pan_y: f64,
     pub loop_state: LoopState,
     pub fullscreen: bool,
     pub status_message: Option<String>,
@@ -205,6 +209,8 @@ impl Default for PlayerState {
             audio_channel: AudioChannelMode::Stereo,
             rotation: Rotation::Deg0,
             zoom_step: 0,
+            video_pan_x: 0.0,
+            video_pan_y: 0.0,
             loop_state: LoopState::default(),
             fullscreen: false,
             status_message: None,

@@ -21,6 +21,8 @@ pub enum AppCommand {
     RotateClockwise,
     ZoomIn,
     ZoomOut,
+    AdjustVideoPan { delta_x: f64, delta_y: f64 },
+    ResetVideoPan,
     SetABLoopPointA,
     SetABLoopPointB,
     ClearABLoop,

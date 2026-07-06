@@ -16,6 +16,7 @@ pub enum BackendCommand {
     SetAudioChannel(AudioChannelMode),
     SetRotation(Rotation),
     AdjustZoom(i8),
+    SetVideoPan { x: f64, y: f64 },
     SetABLoopPointA(f64),
     SetABLoopPointB(f64),
     ClearABLoop,

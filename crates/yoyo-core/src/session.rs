@@ -5,6 +5,9 @@ use crate::{
     SubtitlePlaybackState,
 };
 
+const MIN_VIDEO_PAN: f64 = -3.0;
+const MAX_VIDEO_PAN: f64 = 3.0;
+
 pub struct AppSession<B: PlayerBackend> {
     config: AppConfig,
     backend: B,
@@ -313,6 +316,24 @@ impl<B: PlayerBackend> AppSession<B> {
             AppCommand::ZoomOut => {
                 self.state.zoom_step -= 1;
                 self.backend.send(BackendCommand::AdjustZoom(-1)).map_err(AppError::Message)?;
+            }
+            AppCommand::AdjustVideoPan { delta_x, delta_y } => {
+                let next_x =
+                    (self.state.video_pan_x + delta_x).clamp(MIN_VIDEO_PAN, MAX_VIDEO_PAN);
+                let next_y =
+                    (self.state.video_pan_y + delta_y).clamp(MIN_VIDEO_PAN, MAX_VIDEO_PAN);
+                self.backend
+                    .send(BackendCommand::SetVideoPan { x: next_x, y: next_y })
+                    .map_err(AppError::Message)?;
+                self.state.video_pan_x = next_x;
+                self.state.video_pan_y = next_y;
+            }
+            AppCommand::ResetVideoPan => {
+                self.backend
+                    .send(BackendCommand::SetVideoPan { x: 0.0, y: 0.0 })
+                    .map_err(AppError::Message)?;
+                self.state.video_pan_x = 0.0;
+                self.state.video_pan_y = 0.0;
             }
             AppCommand::SetABLoopPointA => {
                 self.state.loop_state.point_a = Some(self.state.position_seconds);

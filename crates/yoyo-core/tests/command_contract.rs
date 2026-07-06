@@ -12,6 +12,8 @@ fn default_player_state_is_safe_for_empty_launch() {
     assert_eq!(state.volume_percent, 100);
     assert_eq!(state.audio_channel, AudioChannelMode::Stereo);
     assert_eq!(state.rotation, Rotation::Deg0);
+    assert_eq!(state.video_pan_x, 0.0);
+    assert_eq!(state.video_pan_y, 0.0);
     assert_eq!(state.loop_state, LoopState::default());
 }
 

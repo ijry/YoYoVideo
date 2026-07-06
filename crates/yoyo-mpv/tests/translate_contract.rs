@@ -37,6 +37,17 @@ fn rotation_translates_to_video_rotate() {
 }
 
 #[test]
+fn video_pan_translates_to_mpv_pan_properties() {
+    assert_eq!(
+        translate_command(&BackendCommand::SetVideoPan { x: 0.25, y: -0.5 }),
+        vec![
+            MpvAction::SetDouble { name: "video-pan-x".into(), value: 0.25 },
+            MpvAction::SetDouble { name: "video-pan-y".into(), value: -0.5 },
+        ]
+    );
+}
+
+#[test]
 fn track_selection_and_subtitle_controls_translate_to_expected_properties() {
     assert_eq!(
         translate_command(&BackendCommand::SelectAudioTrack(2)),

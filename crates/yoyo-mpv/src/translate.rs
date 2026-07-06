@@ -98,6 +98,10 @@ pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
             "video-zoom".into(),
             (*delta as f64 * 0.25).to_string(),
         ])],
+        BackendCommand::SetVideoPan { x, y } => vec![
+            MpvAction::SetDouble { name: "video-pan-x".into(), value: *x },
+            MpvAction::SetDouble { name: "video-pan-y".into(), value: *y },
+        ],
         BackendCommand::SetABLoopPointA(seconds) => {
             vec![MpvAction::SetDouble { name: "ab-loop-a".into(), value: *seconds }]
         }
