@@ -18,6 +18,12 @@
 
 ## UX
 
+- Launch and confirm the main player uses the Cinema Deck layout with a video-first surface and custom-styled primary controls.
+- Open a video, drag the progress rail, and confirm preview updates while playback seeks only after release.
+- Use `M`, `J`, `Ctrl+M`, `P`, `Shift+Right`, and `Shift+Left`, and confirm mute, jump, marker, action panel, and chapter/marker navigation work.
+- Open media with embedded chapters and confirm chapter ticks appear on the progress rail and rows appear in the action panel.
+- Add and remove a user marker, restart, reopen the same media, and confirm markers persist.
+- Confirm OSD messages appear for mute, seek, jump, speed, marker, screenshot, and filter actions.
 - Verify context menu actions match toolbar actions.
 - Verify keyboard shortcuts trigger the same commands as buttons.
 - Verify settings changes persist across restarts.

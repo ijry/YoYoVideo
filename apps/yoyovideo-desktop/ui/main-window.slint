@@ -33,10 +33,51 @@ export struct NavigationRowData {
     is_marker: bool,
 }
 
+component DeckButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    min-width: 42px;
+    height: 34px;
+    border-radius: 17px;
+    background: touch.has-hover ? #243241 : #15202a;
+    border-width: 1px;
+    border-color: touch.has-hover ? #3ba9c9 : #2a3845;
+
+    Text {
+        text: root.text;
+        color: #f2f7fa;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component DeckLabel inherits Rectangle {
+    in property <string> text;
+    min-width: 56px;
+    height: 28px;
+    border-radius: 14px;
+    background: #0d151d;
+
+    Text {
+        text: root.text;
+        color: #b8c7d4;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 12px;
+    }
+}
+
 export component MainWindow inherits Window {
     title: "YoYoVideo";
     width: 1200px;
     height: 760px;
+    background: #05080d;
 
     in-out property <string> transport_label: "Play";
     in-out property <string> speed_label: "1.00x";
@@ -161,6 +202,8 @@ export component MainWindow inherits Window {
         width: 230px;
         height: 660px;
 
+        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+
         VerticalBox {
             spacing: 4px;
             Button { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
@@ -201,6 +244,8 @@ export component MainWindow inherits Window {
         close-policy: close-on-click-outside;
         width: 360px;
         height: 520px;
+
+        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
 
         ScrollView {
             VerticalBox {
@@ -269,6 +314,8 @@ export component MainWindow inherits Window {
         close-policy: close-on-click-outside;
         width: 340px;
         height: 620px;
+
+        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
 
         ScrollView {
             VerticalBox {
@@ -340,17 +387,19 @@ export component MainWindow inherits Window {
         width: 420px;
         height: 620px;
 
+        Rectangle { width: parent.width; height: parent.height; background: #08111f; }
+
         ScrollView {
             VerticalBox {
                 padding: 14px;
                 spacing: 8px;
                 Text { text: "Quick Actions"; color: #f2f5f7; }
-                Button { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
-                Button { text: "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
-                Button { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
-                Button { text: "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
-                Button { text: "Add Marker"; clicked => { root.add_marker_requested(); } }
-                Button { text: "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
+                DeckButton { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
+                DeckButton { text: "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
+                DeckButton { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                DeckButton { text: "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                DeckButton { text: "Add Marker"; clicked => { root.add_marker_requested(); } }
+                DeckButton { text: "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
                 Text { text: "Chapters & Markers"; color: #f2f5f7; }
                 if root.navigation_rows.length == 0: Text { text: "No chapters or markers"; color: #7d8790; }
                 for row[idx] in root.navigation_rows: Button {
@@ -400,46 +449,117 @@ export component MainWindow inherits Window {
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
+
+                if root.osd_visible: Rectangle {
+                    width: 220px;
+                    height: 54px;
+                    border-radius: 18px;
+                    background: #020817dd;
+                    border-width: 1px;
+                    border-color: #3ba9c966;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: root.osd_message;
+                        color: #f8fafc;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                }
             }
 
             VerticalBox {
                 spacing: 6px;
 
-                Slider {
-                    minimum: 0;
-                    maximum: 1;
-                    value: progress_value;
-                    changed(value) => { root.seek_percent_requested(value); }
+                progress_rail := Rectangle {
+                    height: 28px;
+                    background: transparent;
+
+                    Rectangle {
+                        x: 0;
+                        y: 11px;
+                        width: parent.width;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: #1d2a34;
+                    }
+
+                    Rectangle {
+                        x: 0;
+                        y: 11px;
+                        width: root.progress_value * parent.width;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: #38bdf8;
+                    }
+
+                    for tick in root.progress_tick_rows: Rectangle {
+                        x: tick.percent * parent.width - 1px;
+                        y: 7px;
+                        width: tick.is_marker ? 4px : 2px;
+                        height: 14px;
+                        border-radius: 2px;
+                        background: tick.is_marker ? #f59e0b : #7dd3fc;
+                    }
+
+                    if root.progress_preview_visible: Rectangle {
+                        x: root.progress_preview_value * parent.width - 42px;
+                        y: -24px;
+                        width: 84px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: #08111acc;
+
+                        Text {
+                            text: root.progress_preview_label;
+                            color: #f8fafc;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 11px;
+                        }
+                    }
+
+                    touch := TouchArea {
+                        moved => {
+                            root.progress_preview_requested(self.mouse-x / progress_rail.width);
+                        }
+                        clicked => {
+                            root.progress_commit_requested(self.mouse-x / progress_rail.width);
+                        }
+                    }
                 }
 
                 HorizontalBox {
                     spacing: 8px;
-                    Button { text: transport_label; clicked => { root.toggle_pause_requested(); } }
-                    Button { text: "Open"; clicked => { root.open_file_requested(); } }
-                    Button { text: "Folder"; clicked => { root.open_folder_requested(); } }
-                    Button {
+                    DeckButton { text: transport_label; clicked => { root.toggle_pause_requested(); } }
+                    DeckButton { text: "Open"; clicked => { root.open_file_requested(); } }
+                    DeckButton { text: "Folder"; clicked => { root.open_folder_requested(); } }
+                    DeckButton {
                         text: root.sidebar_visible ? "List <<" : "List >>";
                         clicked => { root.toggle_sidebar_requested(); }
                     }
-                    Button { text: "Menu"; clicked => { menu_popup.show(); } }
-                    Button { text: "Tracks"; clicked => { tracks_popup.show(); } }
-                    Button { text: "Video Tools"; clicked => { video_tools_popup.show(); } }
-                    Button { text: root.mute_label; clicked => { root.toggle_mute_requested(); } }
-                    Button { text: "Jump"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
-                    Button { text: "Actions"; clicked => { action_panel.show(); root.action_panel_requested(); } }
-                    Button { text: "Marker"; clicked => { root.add_marker_requested(); } }
-                    Button { text: "Prev Nav"; clicked => { root.previous_chapter_marker_requested(); } }
-                    Button { text: "Next Nav"; clicked => { root.next_chapter_marker_requested(); } }
+                    DeckButton { text: "Menu"; clicked => { menu_popup.show(); } }
+                    DeckButton { text: "Tracks"; clicked => { tracks_popup.show(); } }
+                    DeckButton { text: "Video Tools"; clicked => { video_tools_popup.show(); } }
+                    DeckButton { text: root.mute_label; clicked => { root.toggle_mute_requested(); } }
+                    DeckButton { text: "Jump"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                    DeckButton { text: "Actions"; clicked => { action_panel.show(); root.action_panel_requested(); } }
+                    DeckButton { text: "Marker"; clicked => { root.add_marker_requested(); } }
+                    DeckButton { text: "Prev Nav"; clicked => { root.previous_chapter_marker_requested(); } }
+                    DeckButton { text: "Next Nav"; clicked => { root.next_chapter_marker_requested(); } }
                     url_input := LineEdit {
                         placeholder-text: "Open URL";
                         accepted => { root.open_url_requested(self.text); }
                     }
-                    Text { text: time_label; }
-                    Text { text: speed_label; }
-                    Button { text: "-"; clicked => { root.speed_down_requested(); } }
-                    Button { text: "+"; clicked => { root.speed_up_requested(); } }
-                    Button { text: "1x"; clicked => { root.reset_speed_requested(); } }
-                    Text { text: volume_label; }
+                    DeckLabel { text: time_label; }
+                    DeckLabel { text: speed_label; }
+                    DeckButton { text: "-"; clicked => { root.speed_down_requested(); } }
+                    DeckButton { text: "+"; clicked => { root.speed_up_requested(); } }
+                    DeckButton { text: "1x"; clicked => { root.reset_speed_requested(); } }
+                    DeckLabel { text: volume_label; }
                     Slider {
                         minimum: 0;
                         maximum: 100;
@@ -450,18 +570,18 @@ export component MainWindow inherits Window {
 
                 HorizontalBox {
                     spacing: 8px;
-                    Button { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
-                    Button { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
-                    Text { text: zoom_label; }
-                    Button { text: "Rotate"; clicked => { root.rotate_requested(); } }
-                    Text { text: rotation_label; }
-                    Button { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
-                    Text { text: audio_channel_label; }
-                    Button { text: "A"; clicked => { root.set_ab_point_a_requested(); } }
-                    Button { text: "B"; clicked => { root.set_ab_point_b_requested(); } }
-                    Button { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
-                    Text { text: loop_label; }
-                    Button { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); } }
+                    DeckButton { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
+                    DeckButton { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
+                    DeckLabel { text: zoom_label; }
+                    DeckButton { text: "Rotate"; clicked => { root.rotate_requested(); } }
+                    DeckLabel { text: rotation_label; }
+                    DeckButton { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
+                    DeckLabel { text: audio_channel_label; }
+                    DeckButton { text: "A"; clicked => { root.set_ab_point_a_requested(); } }
+                    DeckButton { text: "B"; clicked => { root.set_ab_point_b_requested(); } }
+                    DeckButton { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
+                    DeckLabel { text: loop_label; }
+                    DeckButton { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); } }
                     Text { text: status_label; color: #7d8790; }
                 }
             }
