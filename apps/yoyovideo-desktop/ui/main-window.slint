@@ -148,24 +148,76 @@ component DeckDivider inherits Rectangle {
     background: #1f2c3a;
 }
 
+component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> selected: false;
+    in property <color> accent: #d5dde8;
+    callback clicked();
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: selected ? #172434 : (touch.has-hover ? #121923 : transparent);
+    border-width: selected ? 1px : 0px;
+    border-color: selected ? #38bdf8 : transparent;
+
+    Text {
+        text: root.icon;
+        color: root.selected ? #f8fafc : root.accent;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 15px;
+        font-weight: 800;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component MenuRow inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    height: 32px;
+    border-radius: 6px;
+    background: touch.has-hover ? #121923 : transparent;
+
+    Text {
+        x: 10px;
+        width: parent.width - 20px;
+        text: root.text;
+        color: #d5dde8;
+        vertical-alignment: center;
+        font-size: 12px;
+        font-weight: 650;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "YoYoVideo";
-    width: 1200px;
-    height: 760px;
-    background: #05080d;
+    preferred-width: 1200px;
+    preferred-height: 760px;
+    min-width: 860px;
+    min-height: 520px;
+    background: #000000;
+    no-frame: true;
+    resize-border-width: 6px;
 
-    in-out property <string> transport_label: "Play";
+    in-out property <string> transport_label: "播放";
     in-out property <string> speed_label: "1.00x";
     in-out property <string> time_label: "00:00 / --:--";
     in-out property <string> status_label: "";
-    in-out property <string> volume_label: "Vol 100%";
-    in-out property <string> rotation_label: "0 deg";
-    in-out property <string> audio_channel_label: "Stereo";
-    in-out property <string> zoom_label: "Zoom 0";
+    in-out property <string> volume_label: "音量 100%";
+    in-out property <string> rotation_label: "0°";
+    in-out property <string> audio_channel_label: "立体声";
+    in-out property <string> zoom_label: "缩放 0";
     in-out property <string> loop_label: "A --:-- / B --:--";
     in-out property <float> progress_value: 0;
     in-out property <int> volume_value: 100;
-    in-out property <bool> sidebar_visible: true;
+    in-out property <bool> sidebar_visible: false;
     in-out property <int> sidebar_tab_index: 0;
     in-out property <float> sidebar_expanded_width_px: 320.0;
     in-out property <[PlaylistSidebarRowData]> playlist_rows: [];
@@ -186,14 +238,14 @@ export component MainWindow inherits Window {
     in-out property <int> saturation_value: 0;
     in-out property <int> gamma_value: 0;
     in-out property <int> hue_value: 0;
-    in-out property <string> brightness_label: "Brightness +0";
-    in-out property <string> contrast_label: "Contrast +0";
-    in-out property <string> saturation_label: "Saturation +0";
-    in-out property <string> gamma_label: "Gamma +0";
-    in-out property <string> hue_label: "Hue +0";
-    in-out property <string> video_filter_label: "Filter: None";
+    in-out property <string> brightness_label: "亮度 +0";
+    in-out property <string> contrast_label: "对比度 +0";
+    in-out property <string> saturation_label: "饱和度 +0";
+    in-out property <string> gamma_label: "伽马 +0";
+    in-out property <string> hue_label: "色调 +0";
+    in-out property <string> video_filter_label: "滤镜: 无";
     in-out property <bool> muted: false;
-    in-out property <string> mute_label: "Sound";
+    in-out property <string> mute_label: "声音";
     in-out property <bool> osd_visible: false;
     in-out property <string> osd_message: "";
     in-out property <bool> progress_preview_visible: false;
@@ -205,7 +257,7 @@ export component MainWindow inherits Window {
     in-out property <bool> jump_panel_visible: false;
     in-out property <string> jump_input_text: "";
     in-out property <string> ui_language_code: "zh";
-    out property <bool> url_focused: url_input.has-focus;
+    in-out property <bool> url_focused: false;
 
     out property <length> video_area_x: video_area.x;
     out property <length> video_area_y: video_area.y;
@@ -283,13 +335,13 @@ export component MainWindow inherits Window {
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
-        width: 280px;
-        height: 520px;
+        width: 320px;
+        height: 620px;
 
         Rectangle {
             width: parent.width;
             height: parent.height;
-            background: #080d14;
+            background: #05070bee;
             border-width: 1px;
             border-color: #263241;
         }
@@ -297,29 +349,64 @@ export component MainWindow inherits Window {
         ScrollView {
             VerticalBox {
                 padding: 12px;
-                spacing: 8px;
-                DeckPanelHeader { title: "Menu"; subtitle: "Open, recent, playback, settings"; }
-                DeckButton { text: "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
-                DeckButton { text: "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
-                DeckDivider { }
-                DeckSectionTitle { text: "Recent"; }
+                spacing: 6px;
+
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "文件" : "File"; }
+                MenuRow { text: root.ui_language_code == "zh" ? "打开文件" : "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "打开文件夹" : "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+                url_input := LineEdit {
+                    placeholder-text: root.ui_language_code == "zh" ? "输入链接并回车" : "Enter URL and press Enter";
+                    changed has-focus => { root.url_focused = self.has-focus; }
+                    accepted => { root.open_url_requested(self.text); menu_popup.close(); }
+                }
+                MenuRow { text: root.ui_language_code == "zh" ? "打开链接" : "Open URL"; clicked => { root.open_url_requested(url_input.text); menu_popup.close(); } }
                 if root.recent_open_rows.length == 0: Text {
-                    text: "No Recent Items";
+                    text: root.ui_language_code == "zh" ? "暂无最近项目" : "No Recent Items";
                     color: #64748b;
+                    font-size: 12px;
                 }
-                for row[index] in root.recent_open_rows: DeckButton {
+                for row[index] in root.recent_open_rows: MenuRow {
                     text: row.title;
-                    clicked => {
-                        root.recent_open_item_requested(index);
-                        menu_popup.close();
-                    }
+                    clicked => { root.recent_open_item_requested(index); menu_popup.close(); }
                 }
+
                 DeckDivider { }
-                DeckButton { text: "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
-                DeckButton { text: "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
-                DeckButton { text: "Play/Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
-                DeckButton { text: "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
-                DeckButton { text: "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "播放" : "Playback"; }
+                MenuRow { text: root.ui_language_code == "zh" ? "播放/暂停" : "Play / Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "上一章节/标记" : "Previous Chapter / Marker"; clicked => { root.previous_chapter_marker_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "下一章节/标记" : "Next Chapter / Marker"; clicked => { root.next_chapter_marker_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "速度降低" : "Speed Down"; clicked => { root.speed_down_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "速度提高" : "Speed Up"; clicked => { root.speed_up_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "恢复 1x" : "Reset 1x"; clicked => { root.reset_speed_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "设置 A 点" : "Set A"; clicked => { root.set_ab_point_a_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "设置 B 点" : "Set B"; clicked => { root.set_ab_point_b_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "清除 AB 重复" : "Clear AB Loop"; clicked => { root.clear_ab_loop_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "章节/标记列表" : "Chapters / Markers"; clicked => { action_panel.show(); root.action_panel_requested(); menu_popup.close(); } }
+
+                DeckDivider { }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "音轨/字幕" : "Tracks"; }
+                MenuRow { text: root.ui_language_code == "zh" ? "音轨和字幕" : "Audio and Subtitles"; clicked => { tracks_popup.show(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "切换声道" : "Cycle Audio Channel"; clicked => { root.cycle_audio_requested(); } }
+
+                DeckDivider { }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "画面" : "Picture"; }
+                MenuRow { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "上一帧" : "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "缩小" : "Zoom Out"; clicked => { root.zoom_out_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "放大" : "Zoom In"; clicked => { root.zoom_in_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "旋转" : "Rotate"; clicked => { root.rotate_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "重置画面位置" : "Reset Picture Position"; clicked => { root.reset_video_pan_requested(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "画面参数/滤镜" : "Adjustments / Filters"; clicked => { video_tools_popup.show(); menu_popup.close(); } }
+
+                DeckDivider { }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "视图/设置" : "View / Settings"; }
+                MenuRow { text: root.ui_language_code == "zh" ? "播放列表" : "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "历史记录" : "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "全屏" : "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "设置" : "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
+                MenuRow { text: root.ui_language_code == "zh" ? "English" : "中文"; clicked => { root.language_changed(root.ui_language_code == "zh" ? "en" : "zh"); } }
             }
         }
     }
@@ -342,8 +429,11 @@ export component MainWindow inherits Window {
                 padding: 12px;
                 spacing: 8px;
 
-                DeckPanelHeader { title: "Tracks"; subtitle: "Audio, subtitles, and video streams"; }
-                DeckSectionTitle { text: "Audio Tracks"; }
+                DeckPanelHeader {
+                    title: root.ui_language_code == "zh" ? "音轨/字幕" : "Tracks";
+                    subtitle: root.ui_language_code == "zh" ? "音频、字幕和视频流" : "Audio, subtitles, and video streams";
+                }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "音轨" : "Audio Tracks"; }
                 for row[idx] in root.audio_track_rows: DeckButton {
                     text: row.label;
                     selected: row.selected;
@@ -351,7 +441,7 @@ export component MainWindow inherits Window {
                 }
 
                 DeckDivider { }
-                DeckSectionTitle { text: "Subtitle Tracks"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "字幕轨" : "Subtitle Tracks"; }
                 for row[idx] in root.subtitle_track_rows: DeckButton {
                     text: row.label;
                     selected: row.selected;
@@ -359,12 +449,12 @@ export component MainWindow inherits Window {
                 }
 
                 DeckButton {
-                    text: "Load Subtitle...";
+                    text: root.ui_language_code == "zh" ? "加载外部字幕..." : "Load Subtitle...";
                     clicked => { root.load_external_subtitle_requested(); }
                 }
 
                 CheckBox {
-                    text: "Subtitle Visible";
+                    text: root.ui_language_code == "zh" ? "显示字幕" : "Subtitle Visible";
                     checked: root.subtitle_visible;
                     toggled => { root.subtitle_visible_changed(self.checked); }
                 }
@@ -385,7 +475,7 @@ export component MainWindow inherits Window {
                     changed(value) => { root.subtitle_scale_changed(value); }
                 }
 
-                Text { text: "Subtitle Position"; color: #c7d1d8; }
+                Text { text: root.ui_language_code == "zh" ? "字幕位置" : "Subtitle Position"; color: #c7d1d8; }
                 Slider {
                     minimum: 0;
                     maximum: 100;
@@ -394,7 +484,7 @@ export component MainWindow inherits Window {
                 }
 
                 DeckDivider { }
-                DeckSectionTitle { text: "Video Tracks"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "视频轨" : "Video Tracks"; }
                 for row[idx] in root.video_track_rows: DeckButton {
                     text: row.label;
                     selected: row.selected;
@@ -424,19 +514,22 @@ export component MainWindow inherits Window {
                 padding: 12px;
                 spacing: 8px;
 
-                DeckPanelHeader { title: "Picture"; subtitle: "Screenshot, frame step, filters"; }
-                DeckSectionTitle { text: "Capture"; }
-                DeckButton { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
+                DeckPanelHeader {
+                    title: root.ui_language_code == "zh" ? "画面" : "Picture";
+                    subtitle: root.ui_language_code == "zh" ? "截图、逐帧、滤镜和画面参数" : "Screenshot, frame step, filters";
+                }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "截图" : "Capture"; }
+                DeckButton { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
 
-                DeckSectionTitle { text: "Frame Step"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "逐帧" : "Frame Step"; }
                 HorizontalBox {
                     spacing: 8px;
-                    DeckButton { text: "Prev Frame"; clicked => { root.frame_step_previous_requested(); } }
-                    DeckButton { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                    DeckButton { text: root.ui_language_code == "zh" ? "上一帧" : "Prev Frame"; clicked => { root.frame_step_previous_requested(); } }
+                    DeckButton { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
                 }
 
                 DeckDivider { }
-                DeckSectionTitle { text: "Adjustments"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "画面参数" : "Adjustments"; }
                 Text { text: root.brightness_label; color: #c7d1d8; }
                 Slider {
                     minimum: -100;
@@ -472,16 +565,16 @@ export component MainWindow inherits Window {
                     value: root.hue_value;
                     changed(value) => { root.hue_changed(value); }
                 }
-                DeckButton { text: "Reset Picture"; clicked => { root.reset_video_adjustments_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "重置参数" : "Reset Picture"; clicked => { root.reset_video_adjustments_requested(); } }
 
                 DeckDivider { }
-                DeckSectionTitle { text: "Filters"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "滤镜" : "Filters"; }
                 DeckPill { text: root.video_filter_label; }
-                DeckButton { text: "None"; clicked => { root.filter_none_requested(); } }
-                DeckButton { text: "Sharpen"; clicked => { root.filter_sharpen_requested(); } }
-                DeckButton { text: "Light Denoise"; clicked => { root.filter_light_denoise_requested(); } }
-                DeckButton { text: "Grayscale"; clicked => { root.filter_grayscale_requested(); } }
-                DeckButton { text: "Invert"; clicked => { root.filter_invert_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "无" : "None"; clicked => { root.filter_none_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "锐化" : "Sharpen"; clicked => { root.filter_sharpen_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "轻降噪" : "Light Denoise"; clicked => { root.filter_light_denoise_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "灰度" : "Grayscale"; clicked => { root.filter_grayscale_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "反色" : "Invert"; clicked => { root.filter_invert_requested(); } }
 
                 Text { text: root.status_label; color: #7d8790; }
             }
@@ -505,26 +598,32 @@ export component MainWindow inherits Window {
             VerticalBox {
                 padding: 14px;
                 spacing: 8px;
-                DeckPanelHeader { title: "Actions"; subtitle: "Quick tools, navigation, and loop controls"; }
-                DeckSectionTitle { text: "Quick"; }
-                DeckButton { text: "Screenshot"; clicked => { root.screenshot_requested(); } }
-                DeckButton { text: "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
-                DeckButton { text: "Next Frame"; clicked => { root.frame_step_next_requested(); } }
-                DeckButton { text: "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
-                DeckButton { text: "Add Marker"; clicked => { root.add_marker_requested(); } }
-                DeckButton { text: "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
+                DeckPanelHeader {
+                    title: root.ui_language_code == "zh" ? "动作" : "Actions";
+                    subtitle: root.ui_language_code == "zh" ? "快捷工具、导航和段落重复" : "Quick tools, navigation, and loop controls";
+                }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "快捷操作" : "Quick"; }
+                DeckButton { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "上一帧" : "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "添加标记" : "Add Marker"; clicked => { root.add_marker_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "关闭" : "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
                 DeckDivider { }
-                DeckSectionTitle { text: "Loop"; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "段落重复" : "Loop"; }
                 HorizontalBox {
                     spacing: 8px;
-                    DeckButton { text: "Set A"; clicked => { root.set_ab_point_a_requested(); } }
-                    DeckButton { text: "Set B"; clicked => { root.set_ab_point_b_requested(); } }
-                    DeckButton { text: "Clear"; clicked => { root.clear_ab_loop_requested(); } }
+                    DeckButton { text: root.ui_language_code == "zh" ? "设 A" : "Set A"; clicked => { root.set_ab_point_a_requested(); } }
+                    DeckButton { text: root.ui_language_code == "zh" ? "设 B" : "Set B"; clicked => { root.set_ab_point_b_requested(); } }
+                    DeckButton { text: root.ui_language_code == "zh" ? "清除" : "Clear"; clicked => { root.clear_ab_loop_requested(); } }
                 }
                 DeckPill { text: loop_label; }
                 DeckDivider { }
-                DeckSectionTitle { text: "Chapters & Markers"; }
-                if root.navigation_rows.length == 0: Text { text: "No chapters or markers"; color: #64748b; }
+                DeckSectionTitle { text: root.ui_language_code == "zh" ? "章节和标记" : "Chapters & Markers"; }
+                if root.navigation_rows.length == 0: Text {
+                    text: root.ui_language_code == "zh" ? "暂无章节或标记" : "No chapters or markers";
+                    color: #64748b;
+                }
                 for row[idx] in root.navigation_rows: DeckButton {
                     text: row.title + "  " + row.subtitle;
                     selected: row.is_marker;
@@ -550,144 +649,103 @@ export component MainWindow inherits Window {
         VerticalBox {
             padding: 14px;
             spacing: 10px;
-            DeckSectionTitle { text: "Jump To Time"; }
+            DeckSectionTitle { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; }
             jump_input := LineEdit {
                 text: root.jump_input_text;
                 placeholder-text: "ss, mm:ss, hh:mm:ss";
                 edited => { root.jump_input_changed(self.text); }
                 accepted => { root.jump_commit_requested(self.text); jump_panel.close(); }
             }
-            DeckPrimaryButton { text: "Go"; clicked => { root.jump_commit_requested(jump_input.text); jump_panel.close(); } }
+            DeckPrimaryButton { text: root.ui_language_code == "zh" ? "跳转" : "Go"; clicked => { root.jump_commit_requested(jump_input.text); jump_panel.close(); } }
         }
     }
 
     Rectangle {
         background: #000000;
 
-        Rectangle {
-            x: -160px;
-            y: -180px;
-            width: 520px;
-            height: 520px;
-            border-radius: 260px;
-            background: #0f172a66;
-        }
-
-        Rectangle {
-            x: parent.width - 420px;
-            y: parent.height - 360px;
-            width: 520px;
-            height: 420px;
-            border-radius: 210px;
-            background: #164e6333;
-        }
-
         VerticalBox {
-            padding: 14px;
-            spacing: 12px;
+            spacing: 0px;
 
             Rectangle {
-                height: 44px;
-                border-radius: 22px;
-                background: #050a12cc;
-                border-width: 1px;
-                border-color: #1f2c3a;
+                height: 38px;
+                background: #030405;
 
                 HorizontalBox {
-                    padding-left: 16px;
-                    padding-right: 12px;
-                    spacing: 10px;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 8px;
+
+                    IconButton { icon: "="; clicked => { menu_popup.show(); } }
 
                     Text {
                         text: "YoYoVideo";
                         color: #f8fafc;
-                        font-size: 18px;
-                        font-weight: 900;
+                        font-size: 13px;
+                        font-weight: 850;
                         vertical-alignment: center;
-                    }
-
-                    Rectangle {
-                        width: 1px;
-                        height: 18px;
-                        background: #263241;
                     }
 
                     Text {
-                        text: status_label == "" ? "Cinema Deck Pro" : status_label;
-                        color: #94a3b8;
-                        font-size: 12px;
+                        text: status_label == "" ? (root.ui_language_code == "zh" ? "就绪" : "Ready") : status_label;
+                        color: #7b8794;
+                        font-size: 11px;
                         vertical-alignment: center;
                     }
 
-                    Rectangle { }
-
-                    DeckButton {
-                        text: root.sidebar_visible ? "Hide List" : "Show List";
-                        clicked => { root.toggle_sidebar_requested(); }
+                    drag_space := Rectangle {
+                        TouchArea {
+                            moved => {
+                                if self.pressed {
+                                    root.window_drag_requested();
+                                }
+                            }
+                            double-clicked => { root.window_maximize_restore_requested(); }
+                        }
                     }
-                    DeckButton { text: "Menu"; clicked => { menu_popup.show(); } }
-                    DeckButton { text: "Settings"; clicked => { root.settings_requested(); } }
+
+                    IconButton { icon: "_"; clicked => { root.window_minimize_requested(); } }
+                    IconButton { icon: "[]"; clicked => { root.window_maximize_restore_requested(); } }
+                    IconButton { icon: "x"; accent: #fda4af; clicked => { root.window_close_requested(); } }
                 }
             }
 
             HorizontalBox {
-                spacing: 12px;
+                spacing: 0px;
 
                 VerticalBox {
-                    spacing: 10px;
+                    spacing: 0px;
 
                     video_area := Rectangle {
-                        background: #05070b;
-                        border-color: #263241;
-                        border-width: 1px;
-                        border-radius: 22px;
-                        min-height: 520px;
-
-                        Rectangle {
-                            x: 12px;
-                            y: 12px;
-                            width: parent.width - 24px;
-                            height: parent.height - 24px;
-                            border-radius: 18px;
-                            background: #00000033;
-                            border-width: 1px;
-                            border-color: #0f172a;
-                        }
+                        background: #000000;
+                        min-height: 360px;
 
                         VerticalBox {
-                            x: (parent.width - 320px) / 2;
-                            y: (parent.height - 118px) / 2;
-                            width: 320px;
-                            height: 118px;
+                            x: (parent.width - 360px) / 2;
+                            y: (parent.height - 116px) / 2;
+                            width: 360px;
+                            height: 116px;
                             spacing: 8px;
 
                             Text {
-                                text: "Drop video here";
+                                text: root.ui_language_code == "zh" ? "拖入视频或打开文件" : "Drop video here";
                                 color: #f8fafc;
                                 horizontal-alignment: center;
-                                font-size: 24px;
-                                font-weight: 900;
+                                font-size: 22px;
+                                font-weight: 850;
                             }
 
                             Text {
-                                text: "Open file, folder, URL, or use keyboard shortcuts";
+                                text: root.ui_language_code == "zh" ? "支持播放、字幕、截图、逐帧、滤镜和快捷键" : "Open file, folder, URL, or use shortcuts";
                                 color: #64748b;
                                 horizontal-alignment: center;
                                 font-size: 12px;
-                            }
-
-                            HorizontalBox {
-                                spacing: 8px;
-                                DeckButton { text: "Open"; clicked => { root.open_file_requested(); } }
-                                DeckButton { text: "Folder"; clicked => { root.open_folder_requested(); } }
-                                DeckPill { text: "URL opens from the deck"; }
                             }
                         }
 
                         if root.osd_visible: Rectangle {
                             width: 260px;
-                            height: 64px;
-                            border-radius: 22px;
+                            height: 58px;
+                            border-radius: 8px;
                             background: #020817e6;
                             border-width: 1px;
                             border-color: #38bdf866;
@@ -699,159 +757,156 @@ export component MainWindow inherits Window {
                                 color: #f8fafc;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
-                                font-size: 17px;
+                                font-size: 16px;
                                 font-weight: 800;
+                            }
+                        }
+
+                        TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            double-clicked => { root.video_double_clicked(); }
+                            moved => {
+                                if self.pressed {
+                                    root.video_dragged(
+                                        (self.mouse-x - self.pressed-x) / 1px,
+                                        (self.mouse-y - self.pressed-y) / 1px
+                                    );
+                                }
                             }
                         }
                     }
 
                     Rectangle {
-                        height: 126px;
-                        border-radius: 26px;
-                        background: #080d14e6;
+                        height: 66px;
+                        background: #030405ee;
                         border-width: 1px;
-                        border-color: #263241;
+                        border-color: #151d29;
 
-                        VerticalBox {
-                            padding: 12px;
-                            spacing: 10px;
+                        HorizontalBox {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
 
-                            HorizontalBox {
-                                spacing: 10px;
+                            IconButton { icon: "|<"; clicked => { root.previous_chapter_marker_requested(); } }
+                            IconButton {
+                                icon: root.transport_label == "播放" || root.transport_label == "Play" ? ">" : "||";
+                                selected: true;
+                                clicked => { root.toggle_pause_requested(); }
+                            }
+                            IconButton { icon: ">|"; clicked => { root.next_chapter_marker_requested(); } }
 
-                                DeckPrimaryButton { text: transport_label; clicked => { root.toggle_pause_requested(); } }
-                                DeckPill { text: time_label; }
-
-                                progress_rail := Rectangle {
-                                    height: 34px;
-                                    background: transparent;
-
-                                    Rectangle {
-                                        x: 0;
-                                        y: 14px;
-                                        width: parent.width;
-                                        height: 7px;
-                                        border-radius: 4px;
-                                        background: #111827;
-                                        border-width: 1px;
-                                        border-color: #1f2c3a;
-                                    }
-
-                                    Rectangle {
-                                        x: 0;
-                                        y: 14px;
-                                        width: root.progress_value * parent.width;
-                                        height: 7px;
-                                        border-radius: 4px;
-                                        background: #38bdf8;
-                                    }
-
-                                    for tick in root.progress_tick_rows: Rectangle {
-                                        x: tick.percent * parent.width - 1px;
-                                        y: tick.is_marker ? 8px : 10px;
-                                        width: tick.is_marker ? 4px : 2px;
-                                        height: tick.is_marker ? 20px : 16px;
-                                        border-radius: 2px;
-                                        background: tick.is_marker ? #f59e0b : #7dd3fc;
-                                    }
-
-                                    if root.progress_preview_visible: Rectangle {
-                                        x: root.progress_preview_value * parent.width - 44px;
-                                        y: -20px;
-                                        width: 88px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #020817ee;
-                                        border-width: 1px;
-                                        border-color: #38bdf866;
-
-                                        Text {
-                                            text: root.progress_preview_label;
-                                            color: #f8fafc;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                        }
-                                    }
-
-                                    touch := TouchArea {
-                                        moved => {
-                                            root.progress_preview_requested(self.mouse-x / progress_rail.width);
-                                        }
-                                        clicked => {
-                                            root.progress_commit_requested(self.mouse-x / progress_rail.width);
-                                        }
-                                    }
-                                }
-
-                                DeckButton { text: root.mute_label; selected: root.muted; clicked => { root.toggle_mute_requested(); } }
-                                DeckPill { text: volume_label; }
-                                Slider {
-                                    minimum: 0;
-                                    maximum: 100;
-                                    value: volume_value;
-                                    changed(value) => { root.volume_changed(value); }
-                                }
-                                DeckButton { text: "Full"; clicked => { root.toggle_fullscreen_requested(); } }
+                            Text {
+                                text: root.time_label;
+                                color: #cbd5e1;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
                             }
 
-                            HorizontalBox {
-                                spacing: 8px;
+                            progress_rail := Rectangle {
+                                height: 34px;
+                                background: transparent;
 
-                                DeckButton { text: "Open"; clicked => { root.open_file_requested(); } }
-                                DeckButton { text: "Folder"; clicked => { root.open_folder_requested(); } }
-                                url_input := LineEdit {
-                                    placeholder-text: "Open URL";
-                                    accepted => { root.open_url_requested(self.text); }
+                                Rectangle {
+                                    x: 0;
+                                    y: 14px;
+                                    width: parent.width;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: #101722;
+                                    border-width: 1px;
+                                    border-color: #1f2c3a;
                                 }
-                                DeckButton { text: "Jump"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
-                                DeckButton { text: "Actions"; clicked => { action_panel.show(); root.action_panel_requested(); } }
-                                DeckButton { text: "Tracks"; clicked => { tracks_popup.show(); } }
-                                DeckButton { text: "Picture"; clicked => { video_tools_popup.show(); } }
-                                DeckButton { text: "Mark"; clicked => { root.add_marker_requested(); } }
-                                DeckButton { text: "Prev"; clicked => { root.previous_chapter_marker_requested(); } }
-                                DeckButton { text: "Next"; clicked => { root.next_chapter_marker_requested(); } }
-                                DeckPill { text: speed_label; }
-                                DeckButton { text: "-"; clicked => { root.speed_down_requested(); } }
-                                DeckButton { text: "+"; clicked => { root.speed_up_requested(); } }
-                                DeckButton { text: "1x"; clicked => { root.reset_speed_requested(); } }
-                                DeckPill { text: zoom_label; }
-                                DeckButton { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
-                                DeckButton { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
-                                DeckButton { text: "Rot"; clicked => { root.rotate_requested(); } }
-                                DeckPill { text: rotation_label; }
-                                DeckButton { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
-                                DeckPill { text: audio_channel_label; }
+
+                                Rectangle {
+                                    x: 0;
+                                    y: 14px;
+                                    width: root.progress_value * parent.width;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: #38bdf8;
+                                }
+
+                                for tick in root.progress_tick_rows: Rectangle {
+                                    x: tick.percent * parent.width - 1px;
+                                    y: tick.is_marker ? 8px : 10px;
+                                    width: tick.is_marker ? 4px : 2px;
+                                    height: tick.is_marker ? 20px : 16px;
+                                    border-radius: 2px;
+                                    background: tick.is_marker ? #f59e0b : #7dd3fc;
+                                }
+
+                                if root.progress_preview_visible: Rectangle {
+                                    x: root.progress_preview_value * parent.width - 44px;
+                                    y: -20px;
+                                    width: 88px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: #020817ee;
+                                    border-width: 1px;
+                                    border-color: #38bdf866;
+
+                                    Text {
+                                        text: root.progress_preview_label;
+                                        color: #f8fafc;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    }
+                                }
+
+                                touch := TouchArea {
+                                    moved => {
+                                        root.progress_preview_requested(self.mouse-x / progress_rail.width);
+                                    }
+                                    clicked => {
+                                        root.progress_commit_requested(self.mouse-x / progress_rail.width);
+                                    }
+                                }
                             }
+
+                            IconButton {
+                                icon: root.muted ? "M" : "V";
+                                selected: root.muted;
+                                clicked => { root.toggle_mute_requested(); }
+                            }
+                            Slider {
+                                width: 110px;
+                                minimum: 0;
+                                maximum: 100;
+                                value: volume_value;
+                                changed(value) => { root.volume_changed(value); }
+                            }
+                            IconButton { icon: "[]"; clicked => { root.toggle_fullscreen_requested(); } }
                         }
                     }
                 }
 
-                Rectangle {
-                    width: root.sidebar_visible ? root.sidebar_expanded_width_px * 1px : 42px;
-                    border-radius: 22px;
-                    background: #080d14cc;
+                if root.sidebar_visible: Rectangle {
+                    width: root.sidebar_expanded_width_px * 1px;
+                    background: #060a11;
                     border-width: 1px;
-                    border-color: #1f2c3a;
+                    border-color: #151d29;
 
-                    if root.sidebar_visible: VerticalBox {
-                        padding: 12px;
+                    VerticalBox {
+                        padding: 10px;
                         spacing: 10px;
 
                         HorizontalBox {
                             spacing: 8px;
                             DeckButton {
-                                text: "Playlist";
+                                text: root.ui_language_code == "zh" ? "播放列表" : "Playlist";
                                 selected: root.sidebar_tab_index == 0;
                                 clicked => { root.show_playlist_tab_requested(); }
                             }
                             DeckButton {
-                                text: "History";
+                                text: root.ui_language_code == "zh" ? "历史" : "History";
                                 selected: root.sidebar_tab_index == 1;
                                 clicked => { root.show_history_tab_requested(); }
                             }
-                            DeckButton { text: "Close"; clicked => { root.toggle_sidebar_requested(); } }
+                            IconButton { icon: "x"; clicked => { root.toggle_sidebar_requested(); } }
                         }
 
                         ScrollView {
@@ -860,7 +915,7 @@ export component MainWindow inherits Window {
 
                                 for row[idx] in root.playlist_rows: Rectangle {
                                     min-height: 48px;
-                                    border-radius: 14px;
+                                    border-radius: 8px;
                                     background: row.is_current ? #132638 : #0b111a;
                                     border-width: 1px;
                                     border-color: row.is_current ? #38bdf8 : #1f2c3a;
@@ -884,7 +939,7 @@ export component MainWindow inherits Window {
 
                                 for row[idx] in root.history_rows: Rectangle {
                                     min-height: 58px;
-                                    border-radius: 14px;
+                                    border-radius: 8px;
                                     background: #0b111a;
                                     border-width: 1px;
                                     border-color: #1f2c3a;
@@ -900,23 +955,6 @@ export component MainWindow inherits Window {
                                     }
                                 }
                             }
-                        }
-                    }
-
-                    if !root.sidebar_visible: Rectangle {
-                        background: transparent;
-
-                        TouchArea {
-                            clicked => { root.toggle_sidebar_requested(); }
-                        }
-
-                        Text {
-                            text: "List";
-                            color: #94a3b8;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            font-size: 12px;
-                            font-weight: 800;
                         }
                     }
                 }

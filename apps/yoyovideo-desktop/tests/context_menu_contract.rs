@@ -70,6 +70,7 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
 fn main_window_context_menu_daily_actions_compile() {
     let window = MainWindow::new().unwrap();
 
+    assert_eq!(window.get_ui_language_code().as_str(), "zh");
     window.on_open_file_requested(|| {});
     window.on_open_folder_requested(|| {});
     window.on_screenshot_requested(|| {});
