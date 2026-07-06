@@ -1,3 +1,5 @@
+use crate::UiLanguage;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum OsdKind {
     Muted(bool),
@@ -32,17 +34,38 @@ fn fmt_clock(seconds: f64) -> String {
 }
 
 pub fn format_osd_message(kind: OsdKind) -> String {
-    match kind {
-        OsdKind::Muted(true) => "Muted".into(),
-        OsdKind::Muted(false) => "Sound On".into(),
-        OsdKind::JumpedTo(seconds) => format!("Jumped to {}", fmt_clock(seconds)),
-        OsdKind::SeekedTo(seconds) => format!("Seek {}", fmt_clock(seconds)),
-        OsdKind::Volume(volume) => format!("Volume {volume}%"),
-        OsdKind::Speed(speed) => format!("{speed:.2}x"),
-        OsdKind::MarkerAdded => "Marker added".into(),
-        OsdKind::MarkerRemoved => "Marker removed".into(),
-        OsdKind::Chapter(title) => title,
-        OsdKind::Screenshot(path) => format!("Screenshot saved: {path}"),
-        OsdKind::Message(message) => message,
+    format_osd_message_for_language(kind, UiLanguage::Chinese)
+}
+
+pub fn format_osd_message_for_language(kind: OsdKind, language: UiLanguage) -> String {
+    match (language, kind) {
+        (UiLanguage::Chinese, OsdKind::Muted(true)) => "已静音".into(),
+        (UiLanguage::Chinese, OsdKind::Muted(false)) => "声音开启".into(),
+        (UiLanguage::Chinese, OsdKind::JumpedTo(seconds)) => {
+            format!("跳转到 {}", fmt_clock(seconds))
+        }
+        (UiLanguage::Chinese, OsdKind::SeekedTo(seconds)) => format!("定位 {}", fmt_clock(seconds)),
+        (UiLanguage::Chinese, OsdKind::Volume(volume)) => format!("音量 {volume}%"),
+        (UiLanguage::Chinese, OsdKind::Speed(speed)) => format!("{speed:.2}x"),
+        (UiLanguage::Chinese, OsdKind::MarkerAdded) => "已添加标记".into(),
+        (UiLanguage::Chinese, OsdKind::MarkerRemoved) => "已移除标记".into(),
+        (UiLanguage::Chinese, OsdKind::Chapter(title)) => title,
+        (UiLanguage::Chinese, OsdKind::Screenshot(path)) => format!("截图已保存: {path}"),
+        (UiLanguage::Chinese, OsdKind::Message(message)) => message,
+        (UiLanguage::English, OsdKind::Muted(true)) => "Muted".into(),
+        (UiLanguage::English, OsdKind::Muted(false)) => "Sound On".into(),
+        (UiLanguage::English, OsdKind::JumpedTo(seconds)) => {
+            format!("Jumped to {}", fmt_clock(seconds))
+        }
+        (UiLanguage::English, OsdKind::SeekedTo(seconds)) => {
+            format!("Seek {}", fmt_clock(seconds))
+        }
+        (UiLanguage::English, OsdKind::Volume(volume)) => format!("Volume {volume}%"),
+        (UiLanguage::English, OsdKind::Speed(speed)) => format!("{speed:.2}x"),
+        (UiLanguage::English, OsdKind::MarkerAdded) => "Marker added".into(),
+        (UiLanguage::English, OsdKind::MarkerRemoved) => "Marker removed".into(),
+        (UiLanguage::English, OsdKind::Chapter(title)) => title,
+        (UiLanguage::English, OsdKind::Screenshot(path)) => format!("Screenshot saved: {path}"),
+        (UiLanguage::English, OsdKind::Message(message)) => message,
     }
 }

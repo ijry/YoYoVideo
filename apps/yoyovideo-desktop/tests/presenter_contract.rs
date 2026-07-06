@@ -2,16 +2,27 @@ use yoyo_core::{
     AudioChannelMode, LoopState, PlayerState, Rotation, VideoAdjustmentKind, VideoFilterPreset,
 };
 use yoyovideo_desktop::{
-    format_audio_channel_label, format_loop_label, format_rotation_label, format_speed_label,
-    format_time_label, format_transport_label, format_video_adjustment_label,
-    format_video_filter_preset_label, format_volume_label, format_zoom_label, progress_ratio,
+    UiLanguage, format_audio_channel_label, format_audio_channel_label_for_language,
+    format_loop_label, format_osd_message, format_osd_message_for_language,
+    format_rotation_label, format_speed_label, format_time_label, format_transport_label,
+    format_transport_label_for_language, format_video_adjustment_label,
+    format_video_adjustment_label_for_language, format_video_filter_preset_label,
+    format_video_filter_preset_label_for_language, format_volume_label,
+    format_volume_label_for_language, format_zoom_label, format_zoom_label_for_language,
+    progress_ratio,
 };
 
 #[test]
-fn transport_label_shows_pause_when_playing() {
-    let state = PlayerState { paused: false, ..PlayerState::default() };
+fn transport_label_defaults_to_chinese_and_supports_english() {
+    let playing = PlayerState { paused: false, ..PlayerState::default() };
+    let paused = PlayerState { paused: true, ..PlayerState::default() };
 
-    assert_eq!(format_transport_label(&state), "Pause");
+    assert_eq!(format_transport_label(&playing), "暂停");
+    assert_eq!(format_transport_label(&paused), "播放");
+    assert_eq!(
+        format_transport_label_for_language(&playing, UiLanguage::English),
+        "Pause"
+    );
 }
 
 #[test]
@@ -42,11 +53,23 @@ fn presenter_formats_volume_rotation_audio_zoom_and_loop() {
     state.zoom_step = 2;
     state.loop_state = LoopState { point_a: Some(12.4), point_b: Some(45.9) };
 
-    assert_eq!(format_volume_label(&state), "Vol 73%");
-    assert_eq!(format_rotation_label(&state), "90 deg");
-    assert_eq!(format_audio_channel_label(&state), "Mono L");
-    assert_eq!(format_zoom_label(&state), "Zoom +2");
+    assert_eq!(format_volume_label(&state), "音量 73%");
+    assert_eq!(format_rotation_label(&state), "90°");
+    assert_eq!(format_audio_channel_label(&state), "左声道");
+    assert_eq!(format_zoom_label(&state), "缩放 +2");
     assert_eq!(format_loop_label(&state), "A 00:12 / B 00:45");
+    assert_eq!(
+        format_volume_label_for_language(&state, UiLanguage::English),
+        "Vol 73%"
+    );
+    assert_eq!(
+        format_audio_channel_label_for_language(&state, UiLanguage::English),
+        "Mono L"
+    );
+    assert_eq!(
+        format_zoom_label_for_language(&state, UiLanguage::English),
+        "Zoom +2"
+    );
 }
 
 #[test]
@@ -66,12 +89,23 @@ fn progress_ratio_is_zero_without_duration_and_clamped_with_duration() {
 fn video_tool_presenter_formats_adjustments_and_presets() {
     assert_eq!(
         format_video_adjustment_label(VideoAdjustmentKind::Brightness, 12),
+        "亮度 +12"
+    );
+    assert_eq!(format_video_adjustment_label(VideoAdjustmentKind::Hue, -9), "色调 -9");
+    assert_eq!(format_video_filter_preset_label(VideoFilterPreset::None), "滤镜: 无");
+    assert_eq!(
+        format_video_adjustment_label_for_language(
+            VideoAdjustmentKind::Brightness,
+            12,
+            UiLanguage::English,
+        ),
         "Brightness +12"
     );
-    assert_eq!(format_video_adjustment_label(VideoAdjustmentKind::Hue, -9), "Hue -9");
-    assert_eq!(format_video_filter_preset_label(VideoFilterPreset::None), "Filter: None");
     assert_eq!(
-        format_video_filter_preset_label(VideoFilterPreset::LightDenoise),
+        format_video_filter_preset_label_for_language(
+            VideoFilterPreset::LightDenoise,
+            UiLanguage::English,
+        ),
         "Filter: Light Denoise"
     );
 }
@@ -109,11 +143,14 @@ fn progress_ticks_and_preview_labels_are_stable() {
 #[test]
 fn osd_message_formats_common_actions() {
     assert_eq!(
-        yoyovideo_desktop::format_osd_message(yoyovideo_desktop::OsdKind::Muted(true)),
-        "Muted"
+        format_osd_message(yoyovideo_desktop::OsdKind::Muted(true)),
+        "已静音"
     );
     assert_eq!(
-        yoyovideo_desktop::format_osd_message(yoyovideo_desktop::OsdKind::JumpedTo(75.0)),
+        format_osd_message_for_language(
+            yoyovideo_desktop::OsdKind::JumpedTo(75.0),
+            UiLanguage::English,
+        ),
         "Jumped to 01:15"
     );
 }

@@ -1,5 +1,6 @@
 mod app;
 mod history_runtime;
+mod i18n;
 mod keyboard;
 mod osd;
 pub mod platform;
@@ -23,15 +24,21 @@ pub use app::{
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
 };
+pub use i18n::UiLanguage;
 pub use keyboard::{
     DesktopKey, KeyboardInput, NamedDesktopKey, shortcut_allowed, shortcut_gesture,
 };
-pub use osd::{OsdKind, OsdState, format_osd_message};
+pub use osd::{OsdKind, OsdState, format_osd_message, format_osd_message_for_language};
 pub use platform::scan_media_folder;
 pub use presenter::{
-    format_audio_channel_label, format_loop_label, format_rotation_label, format_speed_label,
-    format_time_label, format_transport_label, format_video_adjustment_label,
-    format_video_filter_preset_label, format_volume_label, format_zoom_label, progress_ratio,
+    format_audio_channel_label, format_audio_channel_label_for_language, format_loop_label,
+    format_loop_label_for_language, format_rotation_label, format_rotation_label_for_language,
+    format_speed_label, format_time_label, format_transport_label,
+    format_transport_label_for_language, format_video_adjustment_label,
+    format_video_adjustment_label_for_language, format_video_filter_preset_label,
+    format_video_filter_preset_label_for_language, format_volume_label,
+    format_volume_label_for_language, format_zoom_label, format_zoom_label_for_language,
+    progress_ratio,
 };
 pub use progress::{
     NavigationRow, ProgressTick, ProgressTickKind, build_navigation_rows, build_progress_ticks,
