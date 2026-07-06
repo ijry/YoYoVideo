@@ -183,6 +183,9 @@ impl<B: PlayerBackend> DesktopController<B> {
 pub enum ShortcutDispatch {
     Command(AppCommand),
     TakeScreenshot,
+    OpenJumpPanel,
+    OpenActionPanel,
+    AddMarker,
 }
 
 pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDispatch> {
@@ -225,6 +228,16 @@ pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDisp
         ShortcutAction::FrameStepForward => {
             Some(ShortcutDispatch::Command(AppCommand::StepFrame(FrameStepDirection::Next)))
         }
+        ShortcutAction::ToggleMute => Some(ShortcutDispatch::Command(AppCommand::ToggleMute)),
+        ShortcutAction::JumpToTime => Some(ShortcutDispatch::OpenJumpPanel),
+        ShortcutAction::AddMarker => Some(ShortcutDispatch::AddMarker),
+        ShortcutAction::OpenActionPanel => Some(ShortcutDispatch::OpenActionPanel),
+        ShortcutAction::NextChapterOrMarker => {
+            Some(ShortcutDispatch::Command(AppCommand::SeekToNextChapterOrMarker))
+        }
+        ShortcutAction::PreviousChapterOrMarker => {
+            Some(ShortcutDispatch::Command(AppCommand::SeekToPreviousChapterOrMarker))
+        }
         ShortcutAction::OpenFile | ShortcutAction::OpenUrl => None,
     }
 }
@@ -232,7 +245,11 @@ pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDisp
 pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand> {
     match resolve_shortcut(map, gesture)? {
         ShortcutDispatch::Command(command) => Some(command),
+        ShortcutDispatch::AddMarker => {
+            Some(AppCommand::AddMarkerAtCurrentPosition { created_at: "shortcut".into() })
+        }
         ShortcutDispatch::TakeScreenshot => None,
+        ShortcutDispatch::OpenJumpPanel | ShortcutDispatch::OpenActionPanel => None,
     }
 }
 
@@ -1800,6 +1817,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Some(ShortcutDispatch::TakeScreenshot) => {
                     dispatch_screenshot(&app_handle, &runtime, paths.clone());
                 }
+                Some(ShortcutDispatch::AddMarker) => {
+                    with_runtime_controller(&app_handle, &runtime, move |controller| {
+                        controller.dispatch(AppCommand::AddMarkerAtCurrentPosition {
+                            created_at: "shortcut".into(),
+                        })
+                    });
+                }
+                Some(ShortcutDispatch::OpenJumpPanel | ShortcutDispatch::OpenActionPanel) => {}
                 None => {}
             }
             slint::winit_030::EventResult::PreventDefault
