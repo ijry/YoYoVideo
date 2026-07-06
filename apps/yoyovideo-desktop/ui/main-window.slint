@@ -651,26 +651,124 @@ export component MainWindow inherits Window {
                     }
 
                     Rectangle {
-                        height: 112px;
-                        border-radius: 24px;
+                        height: 126px;
+                        border-radius: 26px;
                         background: #080d14e6;
                         border-width: 1px;
                         border-color: #263241;
 
-                        HorizontalBox {
+                        VerticalBox {
                             padding: 12px;
-                            spacing: 8px;
-                            DeckPrimaryButton { text: transport_label; clicked => { root.toggle_pause_requested(); } }
-                            DeckButton { text: "Open"; clicked => { root.open_file_requested(); } }
-                            DeckButton { text: "Folder"; clicked => { root.open_folder_requested(); } }
-                            url_input := LineEdit {
-                                placeholder-text: "Open URL";
-                                accepted => { root.open_url_requested(self.text); }
+                            spacing: 10px;
+
+                            HorizontalBox {
+                                spacing: 10px;
+
+                                DeckPrimaryButton { text: transport_label; clicked => { root.toggle_pause_requested(); } }
+                                DeckPill { text: time_label; }
+
+                                progress_rail := Rectangle {
+                                    height: 34px;
+                                    background: transparent;
+
+                                    Rectangle {
+                                        x: 0;
+                                        y: 14px;
+                                        width: parent.width;
+                                        height: 7px;
+                                        border-radius: 4px;
+                                        background: #111827;
+                                        border-width: 1px;
+                                        border-color: #1f2c3a;
+                                    }
+
+                                    Rectangle {
+                                        x: 0;
+                                        y: 14px;
+                                        width: root.progress_value * parent.width;
+                                        height: 7px;
+                                        border-radius: 4px;
+                                        background: #38bdf8;
+                                    }
+
+                                    for tick in root.progress_tick_rows: Rectangle {
+                                        x: tick.percent * parent.width - 1px;
+                                        y: tick.is_marker ? 8px : 10px;
+                                        width: tick.is_marker ? 4px : 2px;
+                                        height: tick.is_marker ? 20px : 16px;
+                                        border-radius: 2px;
+                                        background: tick.is_marker ? #f59e0b : #7dd3fc;
+                                    }
+
+                                    if root.progress_preview_visible: Rectangle {
+                                        x: root.progress_preview_value * parent.width - 44px;
+                                        y: -20px;
+                                        width: 88px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #020817ee;
+                                        border-width: 1px;
+                                        border-color: #38bdf866;
+
+                                        Text {
+                                            text: root.progress_preview_label;
+                                            color: #f8fafc;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                        }
+                                    }
+
+                                    touch := TouchArea {
+                                        moved => {
+                                            root.progress_preview_requested(self.mouse-x / progress_rail.width);
+                                        }
+                                        clicked => {
+                                            root.progress_commit_requested(self.mouse-x / progress_rail.width);
+                                        }
+                                    }
+                                }
+
+                                DeckButton { text: root.mute_label; selected: root.muted; clicked => { root.toggle_mute_requested(); } }
+                                DeckPill { text: volume_label; }
+                                Slider {
+                                    minimum: 0;
+                                    maximum: 100;
+                                    value: volume_value;
+                                    changed(value) => { root.volume_changed(value); }
+                                }
+                                DeckButton { text: "Full"; clicked => { root.toggle_fullscreen_requested(); } }
                             }
-                            DeckButton { text: root.mute_label; selected: root.muted; clicked => { root.toggle_mute_requested(); } }
-                            DeckPill { text: time_label; }
-                            DeckPill { text: speed_label; }
-                            DeckPill { text: volume_label; }
+
+                            HorizontalBox {
+                                spacing: 8px;
+
+                                DeckButton { text: "Open"; clicked => { root.open_file_requested(); } }
+                                DeckButton { text: "Folder"; clicked => { root.open_folder_requested(); } }
+                                url_input := LineEdit {
+                                    placeholder-text: "Open URL";
+                                    accepted => { root.open_url_requested(self.text); }
+                                }
+                                DeckButton { text: "Jump"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                                DeckButton { text: "Actions"; clicked => { action_panel.show(); root.action_panel_requested(); } }
+                                DeckButton { text: "Tracks"; clicked => { tracks_popup.show(); } }
+                                DeckButton { text: "Picture"; clicked => { video_tools_popup.show(); } }
+                                DeckButton { text: "Mark"; clicked => { root.add_marker_requested(); } }
+                                DeckButton { text: "Prev"; clicked => { root.previous_chapter_marker_requested(); } }
+                                DeckButton { text: "Next"; clicked => { root.next_chapter_marker_requested(); } }
+                                DeckPill { text: speed_label; }
+                                DeckButton { text: "-"; clicked => { root.speed_down_requested(); } }
+                                DeckButton { text: "+"; clicked => { root.speed_up_requested(); } }
+                                DeckButton { text: "1x"; clicked => { root.reset_speed_requested(); } }
+                                DeckPill { text: zoom_label; }
+                                DeckButton { text: "Zoom -"; clicked => { root.zoom_out_requested(); } }
+                                DeckButton { text: "Zoom +"; clicked => { root.zoom_in_requested(); } }
+                                DeckButton { text: "Rot"; clicked => { root.rotate_requested(); } }
+                                DeckPill { text: rotation_label; }
+                                DeckButton { text: "Audio"; clicked => { root.cycle_audio_requested(); } }
+                                DeckPill { text: audio_channel_label; }
+                            }
                         }
                     }
                 }
