@@ -8,6 +8,8 @@ use crate::{
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendCommand {
     SetPaused(bool),
+    /// Stops playback and unloads the file, leaving the backend idle.
+    Stop,
     SeekRelative(f64),
     SeekAbsolute(f64),
     SetSpeed(f32),

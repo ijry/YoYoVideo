@@ -184,3 +184,11 @@ fn mute_translates_to_mpv_mute_property() {
         vec![MpvAction::SetFlag { name: "mute".into(), value: true }]
     );
 }
+
+#[test]
+fn stop_translates_to_the_mpv_stop_command() {
+    let actions = translate_command(&BackendCommand::Stop);
+
+    // `stop` both halts playback and unloads the file; `pause` would only halt it.
+    assert_eq!(actions, vec![MpvAction::Command(vec!["stop".into()])]);
+}

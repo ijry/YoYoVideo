@@ -39,6 +39,16 @@ impl HistoryStore {
         self.items.insert(0, HistoryEntry { locator, title, last_position_seconds });
     }
 
+    /// Drops every remembered entry. Returns whether anything was actually removed, so
+    /// callers can skip a needless disk write.
+    pub fn clear(&mut self) -> bool {
+        if self.items.is_empty() {
+            return false;
+        }
+        self.items.clear();
+        true
+    }
+
     pub fn load(path: &Path) -> Result<Self, StorageError> {
         if !path.exists() {
             return Ok(Self::default());

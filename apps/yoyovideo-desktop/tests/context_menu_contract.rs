@@ -64,6 +64,10 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.on_video_double_clicked(|| {});
     window.on_video_dragged(|_, _| {});
     window.on_reset_video_pan_requested(|| {});
+    window.on_popup_overlay_changed(|_| {});
+    // Guards the `any_popup_open` binding: popups cannot be shown headlessly, so only
+    // the closed state is assertable. It must not be constant-folded away.
+    assert!(!window.get_any_popup_open(), "no popup is open on a fresh window");
 }
 
 fn assert_video_host_bounds_in_window_coordinates(window: &MainWindow) {

@@ -285,3 +285,96 @@ fn seek_to_next_and_previous_chapter_or_marker_uses_sorted_points() {
         vec![BackendCommand::SeekAbsolute(30.0), BackendCommand::SeekAbsolute(10.0)]
     );
 }
+
+#[test]
+fn stop_unloads_the_file_and_clears_per_media_state() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+    session.handle_command(AppCommand::SetVolume(70)).unwrap();
+    session.handle_command(AppCommand::SetABLoopPointA).unwrap();
+    assert!(session.state().current.is_some());
+
+    session.handle_command(AppCommand::Stop).unwrap();
+
+    let state = session.state();
+    assert_eq!(state.current, None, "the file is closed");
+    assert!(state.paused, "playback stops");
+    assert_eq!(state.position_seconds, 0.0);
+    assert_eq!(state.duration_seconds, None);
+    assert_eq!(state.loop_state, yoyo_core::LoopState::default(), "AB loop is cleared");
+    assert!(state.audio_tracks.is_empty());
+    assert!(state.subtitle_tracks.is_empty());
+    assert!(state.chapters.is_empty());
+
+    // Preferences that outlive a file must survive.
+    assert_eq!(state.volume_percent, 70, "volume is a user preference, not media state");
+}
+
+#[test]
+fn stop_tells_the_backend_to_stop() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+
+    session.handle_command(AppCommand::Stop).unwrap();
+
+    assert!(
+        session.backend().commands.contains(&BackendCommand::Stop),
+        "the backend has to unload the file, not just pause"
+    );
+}
+
+#[test]
+fn stop_empties_the_playlist_selection() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+
+    session.handle_command(AppCommand::Stop).unwrap();
+
+    // Nothing is loaded, so there is no current playlist position to resume from.
+    assert_eq!(session.playlist_snapshot().current_index, None);
+}
+
+#[test]
+fn events_queued_before_stop_do_not_resurrect_the_old_time() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+    session.backend_mut().events.push(BackendEvent::DurationChanged(Some(6.0)));
+    session.backend_mut().events.push(BackendEvent::PositionChanged(5.0));
+    session.poll_backend().unwrap();
+    assert_eq!(session.state().position_seconds, 5.0);
+
+    session.handle_command(AppCommand::Stop).unwrap();
+
+    // mpv keeps delivering whatever was in flight when it went idle. Applying it would
+    // put a stale time and a full progress bar back in the deck.
+    session.backend_mut().events.push(BackendEvent::PositionChanged(5.5));
+    session.backend_mut().events.push(BackendEvent::DurationChanged(Some(6.0)));
+    session.poll_backend().unwrap();
+
+    assert_eq!(session.state().position_seconds, 0.0, "position stays cleared after stop");
+    assert_eq!(session.state().duration_seconds, None, "duration stays cleared after stop");
+}
+
+#[test]
+fn position_events_still_apply_while_a_file_is_loaded() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+
+    session.backend_mut().events.push(BackendEvent::PositionChanged(3.5));
+    session.poll_backend().unwrap();
+
+    assert_eq!(session.state().position_seconds, 3.5, "the guard must not block normal playback");
+}
+
+#[test]
+fn adjust_volume_saturates_at_the_ends() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+
+    session.handle_command(AppCommand::SetVolume(98)).unwrap();
+    session.handle_command(AppCommand::AdjustVolume(5)).unwrap();
+    assert_eq!(session.state().volume_percent, 100, "wheel past the top clamps to 100");
+
+    session.handle_command(AppCommand::SetVolume(3)).unwrap();
+    session.handle_command(AppCommand::AdjustVolume(-5)).unwrap();
+    assert_eq!(session.state().volume_percent, 0, "wheel past the bottom clamps to 0");
+}

@@ -149,28 +149,112 @@ component DeckDivider inherits Rectangle {
 }
 
 component IconButton inherits Rectangle {
-    in property <string> icon;
+    in property <image> icon;
     in property <bool> selected: false;
-    in property <color> accent: #d5dde8;
+    in property <bool> enabled: true;
     callback clicked();
-    width: 34px;
-    height: 34px;
-    border-radius: 6px;
-    background: selected ? #172434 : (touch.has-hover ? #121923 : transparent);
-    border-width: selected ? 1px : 0px;
-    border-color: selected ? #38bdf8 : transparent;
+    width: 36px;
+    height: 36px;
+    border-radius: 13px;
+    property <bool> active: root.enabled && touch.has-hover;
+    background: root.enabled && touch.pressed
+        ? #23384c
+        : (root.selected ? #172434 : (root.active ? #121923 : transparent));
+    border-width: root.selected || root.active ? 1px : 0px;
+    border-color: root.enabled && touch.pressed
+        ? #4d7ca0
+        : (root.selected ? #38bdf8 : #314b63);
 
-    Text {
-        text: root.icon;
-        color: root.selected ? #f8fafc : root.accent;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        font-size: 15px;
-        font-weight: 800;
+    Image {
+        source: root.icon;
+        width: 18px;
+        height: 18px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        image-fit: contain;
+        // Disabled reads as dimmed rather than hidden, so the control stays discoverable.
+        opacity: !root.enabled ? 0.3 : (root.selected || touch.has-hover ? 1 : 0.86);
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        mouse-cursor: root.enabled ? MouseCursor.default : MouseCursor.not-allowed;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+    }
+}
+
+component VolumeSlider inherits Rectangle {
+    in-out property <int> value: 100;
+    in property <bool> muted: false;
+    callback changed(int);
+    /// Wheel notches: positive scrolls up, i.e. louder.
+    callback scrolled(int);
+    height: 36px;
+    border-radius: 12px;
+    background: touch.has-hover ? #0d1b2a : transparent;
+    border-width: touch.has-hover ? 1px : 0px;
+    border-color: #263c52;
+
+    property <float> normalized: clamp(root.value / 100.0, 0.0, 1.0);
+    // Muted keeps the level readable but drains the colour, so the deck shows at a
+    // glance that nothing is audible.
+    property <color> fill_color: root.muted ? #475569 : #38bdf8;
+
+    Rectangle {
+        x: 12px;
+        y: parent.height / 2 - 2px;
+        width: parent.width - 24px;
+        height: 4px;
+        border-radius: 2px;
+        background: #243346;
+    }
+
+    Rectangle {
+        x: 12px;
+        y: parent.height / 2 - 2px;
+        width: root.normalized * (parent.width - 24px);
+        height: 4px;
+        border-radius: 2px;
+        background: root.fill_color;
+    }
+
+    Rectangle {
+        width: touch.has-hover ? 14px : 10px;
+        height: self.width;
+        x: 12px + root.normalized * (parent.width - 24px) - self.width / 2;
+        y: parent.height / 2 - self.height / 2;
+        border-radius: self.width / 2;
+        background: root.muted ? #cbd5e1 : #f8fafc;
+        border-width: 2px;
+        border-color: root.fill_color;
+    }
+
+    function set_from_position(mouse_x: length) {
+        root.value = 100.0 * clamp((mouse_x - 12px) / (root.width - 24px), 0.0, 1.0);
+        root.changed(root.value);
+    }
+
+    touch := TouchArea {
+        clicked => { root.set_from_position(self.mouse-x); }
+        moved => {
+            if self.pressed {
+                root.set_from_position(self.mouse-x);
+            }
+        }
+        scroll-event(event) => {
+            if event.delta-y > 0 {
+                root.scrolled(1);
+                return EventResult.accept;
+            }
+            if event.delta-y < 0 {
+                root.scrolled(-1);
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
     }
 }
 
@@ -193,6 +277,52 @@ component MenuRow inherits Rectangle {
 
     touch := TouchArea {
         clicked => { root.clicked(); }
+    }
+}
+
+/// A top-level menu entry that reveals its submenu on hover.
+component MenuCategory inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    callback hovered();
+    height: 34px;
+    border-radius: 6px;
+    background: root.selected ? #17263a : (touch.has-hover ? #121923 : transparent);
+
+    Text {
+        x: 12px;
+        width: parent.width - 34px;
+        text: root.text;
+        color: root.selected || touch.has-hover ? #f8fafc : #d5dde8;
+        vertical-alignment: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    // Chevron drawn from geometry, so it needs no icon asset.
+    Path {
+        x: parent.width - 18px;
+        y: parent.height / 2 - 5px;
+        width: 6px;
+        height: 10px;
+        stroke: root.selected || touch.has-hover ? #94a3b8 : #4b5b6e;
+        stroke-width: 1.6px;
+        viewbox-width: 6;
+        viewbox-height: 10;
+        MoveTo { x: 1; y: 1; }
+        LineTo { x: 5; y: 5; }
+        LineTo { x: 1; y: 9; }
+    }
+
+    touch := TouchArea {
+        // Hover is the primary way in; clicking also selects so the menu stays usable
+        // without hover (touch screens).
+        changed has-hover => {
+            if self.has-hover {
+                root.hovered();
+            }
+        }
+        clicked => { root.hovered(); }
     }
 }
 
@@ -245,6 +375,8 @@ export component MainWindow inherits Window {
     in-out property <string> hue_label: "色调 +0";
     in-out property <string> video_filter_label: "滤镜: 无";
     in-out property <bool> muted: false;
+    /// Whether a file is loaded; gates actions that only make sense with media.
+    in-out property <bool> has_media: false;
     in-out property <string> mute_label: "声音";
     in-out property <bool> osd_visible: false;
     in-out property <string> osd_message: "";
@@ -264,10 +396,35 @@ export component MainWindow inherits Window {
     out property <length> video_area_width: video_area.width;
     out property <length> video_area_height: video_area.height;
 
+    // The native mpv video surface is a child window that the OS composites above
+    // the Slint canvas, so a PopupWindow overlapping the video area is occluded.
+    // Rust reads this to hide the video host while a popup is open.
+    out property <bool> any_popup_open: menu_popup.is-open || tracks_popup.is-open
+        || video_tools_popup.is-open || action_panel.is-open || jump_panel.is-open;
+
+    // Real fullscreen hides both bars so the video fills the screen. The bars occupy
+    // layout space rather than overlaying the video, because the native video surface
+    // would composite above any overlay (see any_popup_open).
+    in-out property <bool> fullscreen: false;
+    in-out property <bool> controls_visible: true;
+    in-out property <bool> chrome_hovered: false;
+    out property <bool> chrome_visible: !root.fullscreen || root.controls_visible;
+    /// Which top-level menu category's submenu is showing (hover-driven).
+    in-out property <int> menu_section: 0;
+
+    // Slint 1.17 generates invalid Rust for a popup's `is-open` setter when the
+    // popup is shown from inside another popup's frame, so every nested show()
+    // goes through these root-scope wrappers.
+    function open_menu_popup() { menu_popup.show(); }
+    function open_tracks_popup() { tracks_popup.show(); }    function open_video_tools_popup() { video_tools_popup.show(); }
+    function open_action_panel() { action_panel.show(); }
+    function open_jump_panel() { jump_panel.show(); }
+
     callback open_file_requested();
     callback open_folder_requested();
     callback open_url_requested(string);
     callback toggle_pause_requested();
+    callback stop_requested();
     callback speed_down_requested();
     callback speed_up_requested();
     callback reset_speed_requested();
@@ -278,6 +435,8 @@ export component MainWindow inherits Window {
     callback clear_ab_loop_requested();
     callback seek_percent_requested(float);
     callback volume_changed(int);
+    /// Mouse-wheel notches over the volume control or the picture; +1 is louder.
+    callback volume_scrolled(int);
     callback zoom_in_requested();
     callback zoom_out_requested();
     callback toggle_fullscreen_requested();
@@ -287,6 +446,7 @@ export component MainWindow inherits Window {
     callback show_history_tab_requested();
     callback playlist_item_requested(int);
     callback history_item_requested(int);
+    callback clear_history_requested();
     callback recent_open_item_requested(int);
     callback audio_track_requested(int);
     callback subtitle_track_requested(int);
@@ -332,11 +492,17 @@ export component MainWindow inherits Window {
     callback video_double_clicked();
     callback video_dragged(float, float);
     callback reset_video_pan_requested();
+    callback popup_overlay_changed(bool);
+    // Any pointer motion over Slint's own chrome; Rust restarts the fullscreen
+    // idle timer from this. Motion over the video area arrives natively instead.
+    callback pointer_activity();
+
+    changed any_popup_open => { root.popup_overlay_changed(self.any_popup_open); }
 
     menu_popup := PopupWindow {
         close-policy: close-on-click-outside;
-        width: 320px;
-        height: 620px;
+        width: 580px;
+        height: 470px;
 
         Rectangle {
             width: parent.width;
@@ -346,67 +512,161 @@ export component MainWindow inherits Window {
             border-color: #263241;
         }
 
-        ScrollView {
-            VerticalBox {
-                padding: 12px;
-                spacing: 6px;
+        HorizontalLayout {
+            padding: 10px;
+            spacing: 8px;
 
-                DeckSectionTitle { text: root.ui_language_code == "zh" ? "文件" : "File"; }
-                MenuRow { text: root.ui_language_code == "zh" ? "打开文件" : "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "打开文件夹" : "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
-                url_input := LineEdit {
-                    placeholder-text: root.ui_language_code == "zh" ? "输入链接并回车" : "Enter URL and press Enter";
-                    changed has-focus => { root.url_focused = self.has-focus; }
-                    accepted => { root.open_url_requested(self.text); menu_popup.close(); }
+            // Left: top-level categories. Hovering one swaps the panel on the right.
+            Rectangle {
+                width: 176px;
+                background: transparent;
+
+                VerticalLayout {
+                    spacing: 3px;
+                    alignment: start;
+
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "文件" : "File";
+                        selected: root.menu_section == 0;
+                        hovered => { root.menu_section = 0; }
+                    }
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "播放" : "Playback";
+                        selected: root.menu_section == 1;
+                        hovered => { root.menu_section = 1; }
+                    }
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "音轨/字幕" : "Tracks";
+                        selected: root.menu_section == 2;
+                        hovered => { root.menu_section = 2; }
+                    }
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "画面" : "Picture";
+                        selected: root.menu_section == 3;
+                        hovered => { root.menu_section = 3; }
+                    }
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "历史记录" : "History";
+                        selected: root.menu_section == 4;
+                        hovered => { root.menu_section = 4; }
+                    }
+                    MenuCategory {
+                        text: root.ui_language_code == "zh" ? "视图/设置" : "View / Settings";
+                        selected: root.menu_section == 5;
+                        hovered => { root.menu_section = 5; }
+                    }
                 }
-                MenuRow { text: root.ui_language_code == "zh" ? "打开链接" : "Open URL"; clicked => { root.open_url_requested(url_input.text); menu_popup.close(); } }
-                if root.recent_open_rows.length == 0: Text {
-                    text: root.ui_language_code == "zh" ? "暂无最近项目" : "No Recent Items";
-                    color: #64748b;
-                    font-size: 12px;
+            }
+
+            Rectangle { width: 1px; background: #1f2c3a; }
+
+            // Right: the hovered category's submenu.
+            Rectangle {
+                background: transparent;
+
+                ScrollView {
+                    width: parent.width;
+                    height: parent.height;
+
+                    VerticalLayout {
+                        spacing: 4px;
+                        alignment: start;
+
+                        if root.menu_section == 0: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "打开文件" : "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "打开文件夹" : "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+                            url_input := LineEdit {
+                                placeholder-text: root.ui_language_code == "zh" ? "输入链接并回车" : "Enter URL and press Enter";
+                                changed has-focus => { root.url_focused = self.has-focus; }
+                                accepted => { root.open_url_requested(self.text); menu_popup.close(); }
+                            }
+                            MenuRow { text: root.ui_language_code == "zh" ? "打开链接" : "Open URL"; clicked => { root.open_url_requested(url_input.text); menu_popup.close(); } }
+                            Text {
+                                text: root.ui_language_code == "zh" ? "最近打开" : "Recent";
+                                color: #64748b;
+                                font-size: 11px;
+                                font-weight: 700;
+                            }
+                            if root.recent_open_rows.length == 0: Text {
+                                text: root.ui_language_code == "zh" ? "暂无最近项目" : "No Recent Items";
+                                color: #64748b;
+                                font-size: 12px;
+                            }
+                            for row[index] in root.recent_open_rows: MenuRow {
+                                text: row.title;
+                                clicked => { root.recent_open_item_requested(index); menu_popup.close(); }
+                            }
+                        }
+
+                        if root.menu_section == 1: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "播放/暂停" : "Play / Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "停止" : "Stop"; clicked => { root.stop_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { root.open_jump_panel(); root.jump_panel_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "上一章节/标记" : "Previous Chapter / Marker"; clicked => { root.previous_chapter_marker_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "下一章节/标记" : "Next Chapter / Marker"; clicked => { root.next_chapter_marker_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "速度降低" : "Speed Down"; clicked => { root.speed_down_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "速度提高" : "Speed Up"; clicked => { root.speed_up_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "恢复 1x" : "Reset 1x"; clicked => { root.reset_speed_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "设置 A 点" : "Set A"; clicked => { root.set_ab_point_a_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "设置 B 点" : "Set B"; clicked => { root.set_ab_point_b_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "清除 AB 重复" : "Clear AB Loop"; clicked => { root.clear_ab_loop_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "章节/标记列表" : "Chapters / Markers"; clicked => { root.open_action_panel(); root.action_panel_requested(); menu_popup.close(); } }
+                        }
+
+                        if root.menu_section == 2: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "音轨和字幕" : "Audio and Subtitles"; clicked => { root.open_tracks_popup(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "切换声道" : "Cycle Audio Channel"; clicked => { root.cycle_audio_requested(); } }
+                        }
+
+                        if root.menu_section == 3: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "上一帧" : "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "缩小" : "Zoom Out"; clicked => { root.zoom_out_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "放大" : "Zoom In"; clicked => { root.zoom_in_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "旋转" : "Rotate"; clicked => { root.rotate_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "重置画面位置" : "Reset Picture Position"; clicked => { root.reset_video_pan_requested(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "画面参数/滤镜" : "Adjustments / Filters"; clicked => { root.open_video_tools_popup(); menu_popup.close(); } }
+                        }
+
+                        if root.menu_section == 4: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "在侧栏中打开" : "Open In Sidebar"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
+                            Text {
+                                text: root.ui_language_code == "zh" ? "最近播放" : "Recently Played";
+                                color: #64748b;
+                                font-size: 11px;
+                                font-weight: 700;
+                            }
+                            if root.history_rows.length == 0: Text {
+                                text: root.ui_language_code == "zh" ? "暂无历史记录" : "No History";
+                                color: #64748b;
+                                font-size: 12px;
+                            }
+                            for row[index] in root.history_rows: MenuRow {
+                                text: row.title;
+                                clicked => { root.history_item_requested(index); menu_popup.close(); }
+                            }
+                            if root.history_rows.length > 0: Rectangle { height: 1px; background: #1f2c3a; }
+                            if root.history_rows.length > 0: MenuRow {
+                                text: root.ui_language_code == "zh" ? "清除历史记录" : "Clear History";
+                                clicked => { root.clear_history_requested(); }
+                            }
+                        }
+
+                        if root.menu_section == 5: VerticalLayout {
+                            spacing: 4px;
+                            MenuRow { text: root.ui_language_code == "zh" ? "播放列表" : "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "全屏" : "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "设置" : "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "English" : "中文"; clicked => { root.language_changed(root.ui_language_code == "zh" ? "en" : "zh"); } }
+                        }
+                    }
                 }
-                for row[index] in root.recent_open_rows: MenuRow {
-                    text: row.title;
-                    clicked => { root.recent_open_item_requested(index); menu_popup.close(); }
-                }
-
-                DeckDivider { }
-                DeckSectionTitle { text: root.ui_language_code == "zh" ? "播放" : "Playback"; }
-                MenuRow { text: root.ui_language_code == "zh" ? "播放/暂停" : "Play / Pause"; clicked => { root.toggle_pause_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "上一章节/标记" : "Previous Chapter / Marker"; clicked => { root.previous_chapter_marker_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "下一章节/标记" : "Next Chapter / Marker"; clicked => { root.next_chapter_marker_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "速度降低" : "Speed Down"; clicked => { root.speed_down_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "速度提高" : "Speed Up"; clicked => { root.speed_up_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "恢复 1x" : "Reset 1x"; clicked => { root.reset_speed_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "设置 A 点" : "Set A"; clicked => { root.set_ab_point_a_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "设置 B 点" : "Set B"; clicked => { root.set_ab_point_b_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "清除 AB 重复" : "Clear AB Loop"; clicked => { root.clear_ab_loop_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "章节/标记列表" : "Chapters / Markers"; clicked => { action_panel.show(); root.action_panel_requested(); menu_popup.close(); } }
-
-                DeckDivider { }
-                DeckSectionTitle { text: root.ui_language_code == "zh" ? "音轨/字幕" : "Tracks"; }
-                MenuRow { text: root.ui_language_code == "zh" ? "音轨和字幕" : "Audio and Subtitles"; clicked => { tracks_popup.show(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "切换声道" : "Cycle Audio Channel"; clicked => { root.cycle_audio_requested(); } }
-
-                DeckDivider { }
-                DeckSectionTitle { text: root.ui_language_code == "zh" ? "画面" : "Picture"; }
-                MenuRow { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "上一帧" : "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "缩小" : "Zoom Out"; clicked => { root.zoom_out_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "放大" : "Zoom In"; clicked => { root.zoom_in_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "旋转" : "Rotate"; clicked => { root.rotate_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "重置画面位置" : "Reset Picture Position"; clicked => { root.reset_video_pan_requested(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "画面参数/滤镜" : "Adjustments / Filters"; clicked => { video_tools_popup.show(); menu_popup.close(); } }
-
-                DeckDivider { }
-                DeckSectionTitle { text: root.ui_language_code == "zh" ? "视图/设置" : "View / Settings"; }
-                MenuRow { text: root.ui_language_code == "zh" ? "播放列表" : "Playlist"; clicked => { root.show_playlist_tab_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "历史记录" : "History"; clicked => { root.show_history_tab_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "全屏" : "Fullscreen"; clicked => { root.toggle_fullscreen_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "设置" : "Settings"; clicked => { root.settings_requested(); menu_popup.close(); } }
-                MenuRow { text: root.ui_language_code == "zh" ? "English" : "中文"; clicked => { root.language_changed(root.ui_language_code == "zh" ? "en" : "zh"); } }
             }
         }
     }
@@ -606,7 +866,7 @@ export component MainWindow inherits Window {
                 DeckButton { text: root.ui_language_code == "zh" ? "截图" : "Screenshot"; clicked => { root.screenshot_requested(); } }
                 DeckButton { text: root.ui_language_code == "zh" ? "上一帧" : "Previous Frame"; clicked => { root.frame_step_previous_requested(); } }
                 DeckButton { text: root.ui_language_code == "zh" ? "下一帧" : "Next Frame"; clicked => { root.frame_step_next_requested(); } }
-                DeckButton { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { jump_panel.show(); root.jump_panel_requested(); } }
+                DeckButton { text: root.ui_language_code == "zh" ? "跳转到时间" : "Jump To Time"; clicked => { root.open_jump_panel(); root.jump_panel_requested(); } }
                 DeckButton { text: root.ui_language_code == "zh" ? "添加标记" : "Add Marker"; clicked => { root.add_marker_requested(); } }
                 DeckButton { text: root.ui_language_code == "zh" ? "关闭" : "Close"; clicked => { root.action_panel_close_requested(); action_panel.close(); } }
                 DeckDivider { }
@@ -667,7 +927,8 @@ export component MainWindow inherits Window {
             spacing: 0px;
 
             Rectangle {
-                height: 38px;
+                height: root.chrome_visible ? 38px : 0px;
+                clip: true;
                 background: #030405;
 
                 HorizontalBox {
@@ -675,7 +936,7 @@ export component MainWindow inherits Window {
                     padding-right: 8px;
                     spacing: 8px;
 
-                    IconButton { icon: "="; clicked => { menu_popup.show(); } }
+                    IconButton { icon: @image-url("icons/menu.svg"); clicked => { root.open_menu_popup(); } }
 
                     Text {
                         text: "YoYoVideo";
@@ -695,6 +956,7 @@ export component MainWindow inherits Window {
                     drag_space := Rectangle {
                         TouchArea {
                             moved => {
+                                root.pointer_activity();
                                 if self.pressed {
                                     root.window_drag_requested();
                                 }
@@ -703,9 +965,9 @@ export component MainWindow inherits Window {
                         }
                     }
 
-                    IconButton { icon: "_"; clicked => { root.window_minimize_requested(); } }
-                    IconButton { icon: "[]"; clicked => { root.window_maximize_restore_requested(); } }
-                    IconButton { icon: "x"; accent: #fda4af; clicked => { root.window_close_requested(); } }
+                    IconButton { icon: @image-url("icons/minimize.svg"); clicked => { root.window_minimize_requested(); } }
+                    IconButton { icon: @image-url("icons/maximize.svg"); clicked => { root.window_maximize_restore_requested(); } }
+                    IconButton { icon: @image-url("icons/close.svg"); clicked => { root.window_close_requested(); } }
                 }
             }
 
@@ -767,6 +1029,7 @@ export component MainWindow inherits Window {
                             height: parent.height;
                             double-clicked => { root.video_double_clicked(); }
                             moved => {
+                                root.pointer_activity();
                                 if self.pressed {
                                     root.video_dragged(
                                         (self.mouse-x - self.pressed-x) / 1px,
@@ -774,27 +1037,58 @@ export component MainWindow inherits Window {
                                     );
                                 }
                             }
+                            // Reached only while the native video surface is hidden; once
+                            // it is up, wheel events go there and Rust forwards them.
+                            scroll-event(event) => {
+                                if event.delta-y > 0 {
+                                    root.volume_scrolled(1);
+                                    return EventResult.accept;
+                                }
+                                if event.delta-y < 0 {
+                                    root.volume_scrolled(-1);
+                                    return EventResult.accept;
+                                }
+                                return EventResult.reject;
+                            }
                         }
                     }
 
                     Rectangle {
-                        height: 66px;
+                        height: root.chrome_visible ? 66px : 0px;
+                        clip: true;
                         background: #030405ee;
                         border-width: 1px;
                         border-color: #151d29;
+
+                        // Sits behind the controls purely to keep the deck alive while the
+                        // pointer rests on it; the buttons' own TouchAreas take the clicks.
+                        deck_pointer := TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            moved => { root.pointer_activity(); }
+                            changed has-hover => { root.chrome_hovered = self.has-hover; }
+                        }
 
                         HorizontalBox {
                             padding-left: 10px;
                             padding-right: 10px;
                             spacing: 8px;
 
-                            IconButton { icon: "|<"; clicked => { root.previous_chapter_marker_requested(); } }
+                            IconButton { icon: @image-url("icons/previous.svg"); clicked => { root.previous_chapter_marker_requested(); } }
                             IconButton {
-                                icon: root.transport_label == "播放" || root.transport_label == "Play" ? ">" : "||";
+                                icon: root.transport_label == "播放" || root.transport_label == "Play" ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
                                 selected: true;
                                 clicked => { root.toggle_pause_requested(); }
                             }
-                            IconButton { icon: ">|"; clicked => { root.next_chapter_marker_requested(); } }
+                            IconButton { icon: @image-url("icons/next.svg"); clicked => { root.next_chapter_marker_requested(); } }
+                            // Stop closes the file, so it sits after the transport
+                            // cluster rather than next to play/pause, where a misclick
+                            // would be costly.
+                            IconButton {
+                                icon: @image-url("icons/stop.svg");
+                                enabled: root.has_media;
+                                clicked => { root.stop_requested(); }
+                            }
 
                             Text {
                                 text: root.time_label;
@@ -805,31 +1099,33 @@ export component MainWindow inherits Window {
                             }
 
                             progress_rail := Rectangle {
-                                height: 34px;
+                                height: 38px;
+                                // No hover frame: the rail is flush with the deck so the
+                                // scrub time above it stays inside the deck.
                                 background: transparent;
 
                                 Rectangle {
-                                    x: 0;
-                                    y: 14px;
-                                    width: parent.width;
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    x: 8px;
+                                    y: 16px;
+                                    width: parent.width - 16px;
+                                    height: touch.has-hover ? 8px : 6px;
+                                    border-radius: self.height / 2;
                                     background: #101722;
                                     border-width: 1px;
                                     border-color: #1f2c3a;
                                 }
 
                                 Rectangle {
-                                    x: 0;
-                                    y: 14px;
-                                    width: root.progress_value * parent.width;
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    x: 8px;
+                                    y: 16px;
+                                    width: root.progress_value * (parent.width - 16px);
+                                    height: touch.has-hover ? 8px : 6px;
+                                    border-radius: self.height / 2;
                                     background: #38bdf8;
                                 }
 
                                 for tick in root.progress_tick_rows: Rectangle {
-                                    x: tick.percent * parent.width - 1px;
+                                    x: 8px + tick.percent * (parent.width - 16px) - 1px;
                                     y: tick.is_marker ? 8px : 10px;
                                     width: tick.is_marker ? 4px : 2px;
                                     height: tick.is_marker ? 20px : 16px;
@@ -837,12 +1133,19 @@ export component MainWindow inherits Window {
                                     background: tick.is_marker ? #f59e0b : #7dd3fc;
                                 }
 
+                                // Kept inside the rail, above the groove. Anything drawn
+                                // above the deck would land in the video area, where the
+                                // native video surface composites over the Slint canvas.
                                 if root.progress_preview_visible: Rectangle {
-                                    x: root.progress_preview_value * parent.width - 44px;
-                                    y: -20px;
-                                    width: 88px;
-                                    height: 24px;
-                                    border-radius: 12px;
+                                    x: clamp(
+                                        8px + root.progress_preview_value * (parent.width - 16px) - 38px,
+                                        0px,
+                                        max(parent.width - 76px, 0px)
+                                    );
+                                    y: 0px;
+                                    width: 76px;
+                                    height: 15px;
+                                    border-radius: 7px;
                                     background: #020817ee;
                                     border-width: 1px;
                                     border-color: #38bdf866;
@@ -852,34 +1155,59 @@ export component MainWindow inherits Window {
                                         color: #f8fafc;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
-                                        font-size: 11px;
+                                        font-size: 10px;
                                         font-weight: 700;
                                     }
                                 }
 
+                                if touch.has-hover: Rectangle {
+                                    x: 8px + root.progress_value * (parent.width - 16px) - self.width / 2;
+                                    y: 12px;
+                                    width: 14px;
+                                    height: 14px;
+                                    border-radius: 7px;
+                                    background: #f8fafc;
+                                    border-width: 2px;
+                                    border-color: #38bdf8;
+                                }
+
                                 touch := TouchArea {
                                     moved => {
-                                        root.progress_preview_requested(self.mouse-x / progress_rail.width);
+                                        root.progress_preview_requested(clamp((self.mouse-x - 8px) / (progress_rail.width - 16px), 0, 1));
                                     }
                                     clicked => {
-                                        root.progress_commit_requested(self.mouse-x / progress_rail.width);
+                                        root.progress_commit_requested(clamp((self.mouse-x - 8px) / (progress_rail.width - 16px), 0, 1));
+                                    }
+                                    // `moved` only fires while pressed, so the scrub time
+                                    // appears during a drag. Without these it would then
+                                    // stay on screen for good.
+                                    changed pressed => {
+                                        if !self.pressed {
+                                            root.progress_preview_cleared();
+                                        }
+                                    }
+                                    changed has-hover => {
+                                        if !self.has-hover {
+                                            root.progress_preview_cleared();
+                                        }
                                     }
                                 }
                             }
 
                             IconButton {
-                                icon: root.muted ? "M" : "V";
+                                icon: root.muted ? @image-url("icons/mute.svg") : @image-url("icons/volume.svg");
                                 selected: root.muted;
                                 clicked => { root.toggle_mute_requested(); }
                             }
-                            Slider {
-                                width: 110px;
-                                minimum: 0;
-                                maximum: 100;
+                            VolumeSlider {
+                                width: 118px;
                                 value: volume_value;
+                                muted: root.muted;
                                 changed(value) => { root.volume_changed(value); }
+                                scrolled(notches) => { root.volume_scrolled(notches); }
                             }
-                            IconButton { icon: "[]"; clicked => { root.toggle_fullscreen_requested(); } }
+                            IconButton { icon: @image-url("icons/rotate.svg"); clicked => { root.rotate_requested(); } }
+                            IconButton { icon: @image-url("icons/fullscreen.svg"); clicked => { root.toggle_fullscreen_requested(); } }
                         }
                     }
                 }
@@ -906,7 +1234,7 @@ export component MainWindow inherits Window {
                                 selected: root.sidebar_tab_index == 1;
                                 clicked => { root.show_history_tab_requested(); }
                             }
-                            IconButton { icon: "x"; clicked => { root.toggle_sidebar_requested(); } }
+                            IconButton { icon: @image-url("icons/panel-close.svg"); clicked => { root.toggle_sidebar_requested(); } }
                         }
 
                         ScrollView {
@@ -916,15 +1244,15 @@ export component MainWindow inherits Window {
                                 for row[idx] in root.playlist_rows: Rectangle {
                                     min-height: 48px;
                                     border-radius: 8px;
-                                    background: row.is_current ? #132638 : #0b111a;
+                                    background: row.is_current ? #132638 : (playlist_row_touch.has-hover ? #121b29 : #0b111a);
                                     border-width: 1px;
-                                    border-color: row.is_current ? #38bdf8 : #1f2c3a;
+                                    border-color: row.is_current ? #38bdf8 : (playlist_row_touch.has-hover ? #33475d : #1f2c3a);
 
-                                    TouchArea { clicked => { root.playlist_item_requested(idx); } }
+                                    playlist_row_touch := TouchArea { clicked => { root.playlist_item_requested(idx); } }
 
                                     Text {
                                         text: row.title;
-                                        color: row.is_current ? #f8fafc : #cbd5e1;
+                                        color: row.is_current || playlist_row_touch.has-hover ? #f8fafc : #cbd5e1;
                                         vertical-alignment: center;
                                         x: 12px;
                                         y: 14px;
@@ -940,18 +1268,18 @@ export component MainWindow inherits Window {
                                 for row[idx] in root.history_rows: Rectangle {
                                     min-height: 58px;
                                     border-radius: 8px;
-                                    background: #0b111a;
+                                    background: history_row_touch.has-hover ? #121b29 : #0b111a;
                                     border-width: 1px;
-                                    border-color: #1f2c3a;
+                                    border-color: history_row_touch.has-hover ? #33475d : #1f2c3a;
 
-                                    TouchArea { clicked => { root.history_item_requested(idx); } }
+                                    history_row_touch := TouchArea { clicked => { root.history_item_requested(idx); } }
 
                                     VerticalBox {
                                         padding-left: 12px;
                                         padding-top: 8px;
                                         spacing: 3px;
                                         Text { text: row.title; color: #f8fafc; font-size: 12px; font-weight: 700; }
-                                        Text { text: row.subtitle; color: #64748b; font-size: 11px; }
+                                        Text { text: row.subtitle; color: history_row_touch.has-hover ? #94a3b8 : #64748b; font-size: 11px; }
                                     }
                                 }
                             }

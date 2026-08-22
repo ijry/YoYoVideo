@@ -103,8 +103,23 @@ impl HistoryRuntime {
         self.dirty |= !unchanged;
     }
 
-    pub fn activation_for(
-        &self,
+    /// Forgets every remembered entry and persists the purge immediately.
+    ///
+    /// Writes through rather than marking the store dirty, because `flush_if_needed`
+    /// is a no-op while recording is disabled and a purge must still reach the disk.
+    /// Returns whether anything was removed.
+    pub fn clear(&mut self) -> Result<bool, StorageError> {
+        if !self.store.clear() {
+            return Ok(false);
+        }
+        if let Some(path) = &self.path {
+            self.store.save(path)?;
+        }
+        self.dirty = false;
+        Ok(true)
+    }
+
+    pub fn activation_for(        &self,
         index: usize,
     ) -> Result<Option<HistoryActivation>, HistoryActivationError> {
         let Some(entry) = self.store.entry(index) else {

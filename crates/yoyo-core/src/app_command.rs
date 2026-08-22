@@ -8,6 +8,8 @@ pub enum AppCommand {
     OpenFolder(PathBuf),
     OpenUrl(String),
     TogglePause,
+    /// Stops playback and unloads the current file.
+    Stop,
     SeekRelative(f64),
     SeekAbsolute(f64),
     SetSpeed(f32),

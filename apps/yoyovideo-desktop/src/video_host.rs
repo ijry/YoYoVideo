@@ -57,6 +57,41 @@ pub trait VideoHost {
     fn is_available(&self) -> bool;
 }
 
+/// Whether the native video surface is currently hidden to keep it from occluding a
+/// Slint popup, and what the caller should do about a requested change.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VideoHostSuppression {
+    suppressed: bool,
+}
+
+/// What [`VideoHostSuppression::request`] wants the caller to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuppressionAction {
+    /// Hide the surface: a popup is opening.
+    Hide,
+    /// Show the surface and resync its bounds: the last popup closed.
+    Reveal,
+}
+
+impl VideoHostSuppression {
+    /// True while the surface must stay hidden. Bounds syncing runs on a repeating
+    /// timer and always shows the surface, so it has to consult this first.
+    pub fn is_suppressed(&self) -> bool {
+        self.suppressed
+    }
+
+    /// Applies a requested suppression state, returning the action to perform. Repeating
+    /// the current state yields `None`, so switching directly between two popups does
+    /// not flash the video surface back on.
+    pub fn request(&mut self, suppressed: bool) -> Option<SuppressionAction> {
+        if self.suppressed == suppressed {
+            return None;
+        }
+        self.suppressed = suppressed;
+        Some(if suppressed { SuppressionAction::Hide } else { SuppressionAction::Reveal })
+    }
+}
+
 pub struct UnsupportedVideoHost {
     message: String,
 }

@@ -1,4 +1,5 @@
 mod app;
+mod chrome_autohide;
 mod history_runtime;
 mod i18n;
 mod keyboard;
@@ -10,6 +11,7 @@ mod settings_controller;
 mod sidebar;
 mod subtitle_prefs;
 mod track_popup;
+mod video_area_input;
 mod video_host;
 #[cfg(feature = "mpv-runtime")]
 mod video_host_winit;
@@ -20,6 +22,9 @@ pub use app::{
     ShortcutDispatch, TrackPopupRowData, build_desktop_backend,
     build_desktop_backend_with_video_window, dispatch_shortcut, dropped_media_status,
     format_runtime_startup_error, recent_item_status, refresh_window, resolve_shortcut, run,
+};
+pub use chrome_autohide::{
+    CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide,
 };
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
@@ -57,7 +62,8 @@ pub use track_popup::{
     TrackPopupRow, build_audio_track_rows, build_subtitle_track_rows, build_video_track_rows,
     format_subtitle_delay_label, format_subtitle_scale_label, format_track_label,
 };
+pub use video_area_input::{VideoAreaGesture, VideoAreaPointer};
 pub use video_host::{
-    LogicalVideoRect, NativeVideoWindowId, UnsupportedVideoHost, VideoHost, VideoHostBounds,
-    VideoHostError,
+    LogicalVideoRect, NativeVideoWindowId, SuppressionAction, UnsupportedVideoHost, VideoHost,
+    VideoHostBounds, VideoHostError, VideoHostSuppression,
 };

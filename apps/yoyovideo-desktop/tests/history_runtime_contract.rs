@@ -70,3 +70,49 @@ fn activation_rejects_missing_files_and_resume_seek_clamps_to_duration() {
     assert_eq!(pending.try_resolve(Some(120.0)), Some(120.0));
     assert_eq!(pending.try_resolve(None), None);
 }
+
+fn stored_entry(title: &str) -> HistoryEntry {
+    HistoryEntry {
+        locator: MediaLocator::Url(format!("https://example.com/{title}.mp4")),
+        title: title.into(),
+        last_position_seconds: Some(12.0),
+    }
+}
+
+#[test]
+fn clearing_history_writes_the_purge_to_disk() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("history.json");
+    let store = HistoryStore { items: vec![stored_entry("a"), stored_entry("b")] };
+    let mut runtime = HistoryRuntime::new(Some(path.clone()), store, true);
+
+    assert!(runtime.clear().unwrap());
+    assert!(runtime.store().items().is_empty());
+
+    // The purge must survive a restart, so it has to be on disk already.
+    let reloaded = HistoryStore::load(&path).unwrap();
+    assert!(reloaded.items().is_empty());
+}
+
+#[test]
+fn clearing_history_persists_even_when_recording_is_disabled() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("history.json");
+    let store = HistoryStore { items: vec![stored_entry("a")] };
+    // flush_if_needed() is a no-op while disabled, so clear() must write through.
+    let mut runtime = HistoryRuntime::new(Some(path.clone()), store, false);
+
+    assert!(runtime.clear().unwrap());
+    assert!(HistoryStore::load(&path).unwrap().items().is_empty());
+}
+
+#[test]
+fn clearing_empty_history_is_a_no_op() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("history.json");
+    let mut runtime = HistoryRuntime::new(Some(path.clone()), HistoryStore::default(), true);
+
+    assert!(!runtime.clear().unwrap());
+    // Nothing to purge, so no file should have been created.
+    assert!(!path.exists());
+}

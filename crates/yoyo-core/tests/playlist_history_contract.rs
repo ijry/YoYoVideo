@@ -112,3 +112,22 @@ fn history_entry_lookup_is_bounds_checked() {
     assert!(store.entry(0).is_some());
     assert!(store.entry(5).is_none());
 }
+
+#[test]
+fn clearing_history_drops_every_entry() {
+    let mut store = HistoryStore::default();
+    store.remember(MediaLocator::Url("https://example.com/a.mp4".into()), "A".into(), Some(10.0));
+    store.remember(MediaLocator::Url("https://example.com/b.mp4".into()), "B".into(), None);
+    assert_eq!(store.items().len(), 2);
+
+    assert!(store.clear(), "reports that entries were removed");
+    assert!(store.items().is_empty());
+}
+
+#[test]
+fn clearing_empty_history_reports_no_change() {
+    let mut store = HistoryStore::default();
+
+    // Lets callers skip a needless disk write.
+    assert!(!store.clear());
+}

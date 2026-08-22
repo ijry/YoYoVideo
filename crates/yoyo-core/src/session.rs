@@ -1,5 +1,5 @@
 use crate::{
-    AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent,
+    AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, LoopState,
     MARKER_DEDUPE_TOLERANCE_SECONDS, MediaLocator, MediaMarker, MediaTrack, PlaybackEndBehavior,
     PlayerBackend, PlayerState, Playlist, PlaylistEntry, PlaylistSnapshot, Rotation,
     SubtitlePlaybackState,
@@ -13,6 +13,9 @@ pub struct AppSession<B: PlayerBackend> {
     backend: B,
     state: PlayerState,
     playlist: Playlist,
+    /// Set by Stop so position/duration events still in flight are ignored until
+    /// something is opened again.
+    stopped: bool,
 }
 
 impl<B: PlayerBackend> AppSession<B> {
@@ -20,7 +23,7 @@ impl<B: PlayerBackend> AppSession<B> {
         let mut state = PlayerState::default();
         state.volume_percent = config.playback.default_volume_percent;
         state.speed = config.playback.default_speed;
-        Self { config, backend, state, playlist: Playlist::default() }
+        Self { config, backend, state, playlist: Playlist::default(), stopped: false }
     }
 
     pub fn state(&self) -> &PlayerState {
@@ -134,6 +137,7 @@ impl<B: PlayerBackend> AppSession<B> {
         if let Some(entry) = self.playlist.current().cloned() {
             self.reset_track_state_for_new_media();
             self.reset_navigation_state_for_new_media();
+            self.stopped = false;
             self.backend.open(&entry.locator).map_err(AppError::Message)?;
             self.state.current = Some(entry.locator.clone());
             self.state.paused = false;
@@ -148,6 +152,7 @@ impl<B: PlayerBackend> AppSession<B> {
 
         self.reset_track_state_for_new_media();
         self.reset_navigation_state_for_new_media();
+        self.stopped = false;
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(entry.locator.clone());
         self.state.paused = false;
@@ -159,9 +164,30 @@ impl<B: PlayerBackend> AppSession<B> {
         self.playlist.replace(vec![entry.clone()], 0);
         self.reset_track_state_for_new_media();
         self.reset_navigation_state_for_new_media();
+        self.stopped = false;
         self.backend.open(&entry.locator).map_err(AppError::Message)?;
         self.state.current = Some(locator);
         self.state.paused = false;
+        Ok(())
+    }
+
+    /// Stops playback, unloads the file, and clears the per-media state.
+    ///
+    /// Deliberately keeps user-level preferences that outlive a file (volume, mute,
+    /// speed, fullscreen, picture adjustments); only what describes "the thing that was
+    /// playing" is reset, so the UI falls back to its empty state.
+    fn stop_playback(&mut self) -> Result<(), AppError> {
+        self.backend.send(BackendCommand::Stop).map_err(AppError::Message)?;
+
+        self.playlist.replace(Vec::new(), 0);
+        self.reset_track_state_for_new_media();
+        self.reset_navigation_state_for_new_media();
+        self.state.current = None;
+        self.state.paused = true;
+        self.state.position_seconds = 0.0;
+        self.state.duration_seconds = None;
+        self.state.loop_state = LoopState::default();
+        self.stopped = true;
         Ok(())
     }
 
@@ -236,6 +262,9 @@ impl<B: PlayerBackend> AppSession<B> {
             AppCommand::OpenUrl(url) => {
                 let locator = MediaLocator::from_url(&url)?;
                 self.open_single_locator(locator)?;
+            }
+            AppCommand::Stop => {
+                self.stop_playback()?;
             }
             AppCommand::TogglePause => {
                 self.state.paused = !self.state.paused;
@@ -510,8 +539,19 @@ impl<B: PlayerBackend> AppSession<B> {
         for event in self.backend.drain_events() {
             match event {
                 BackendEvent::PauseChanged(paused) => self.state.paused = paused,
-                BackendEvent::PositionChanged(position) => self.state.position_seconds = position,
-                BackendEvent::DurationChanged(duration) => self.state.duration_seconds = duration,
+                // After Stop the backend can still deliver position/duration events that
+                // were queued before it went idle; applying those would put a stale time
+                // and a full progress bar back on screen.
+                BackendEvent::PositionChanged(position) => {
+                    if !self.stopped {
+                        self.state.position_seconds = position;
+                    }
+                }
+                BackendEvent::DurationChanged(duration) => {
+                    if !self.stopped {
+                        self.state.duration_seconds = duration;
+                    }
+                }
                 BackendEvent::SpeedChanged(speed) => self.state.speed = speed,
                 BackendEvent::VolumeChanged(volume) => self.state.volume_percent = volume,
                 BackendEvent::MutedChanged(muted) => self.state.muted = muted,

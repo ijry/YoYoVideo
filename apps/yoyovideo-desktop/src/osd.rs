@@ -7,6 +7,7 @@ pub enum OsdKind {
     SeekedTo(f64),
     Volume(u8),
     Speed(f32),
+    Stopped,
     MarkerAdded,
     MarkerRemoved,
     Chapter(String),
@@ -47,6 +48,7 @@ pub fn format_osd_message_for_language(kind: OsdKind, language: UiLanguage) -> S
         (UiLanguage::Chinese, OsdKind::SeekedTo(seconds)) => format!("定位 {}", fmt_clock(seconds)),
         (UiLanguage::Chinese, OsdKind::Volume(volume)) => format!("音量 {volume}%"),
         (UiLanguage::Chinese, OsdKind::Speed(speed)) => format!("{speed:.2}x"),
+        (UiLanguage::Chinese, OsdKind::Stopped) => "已停止".into(),
         (UiLanguage::Chinese, OsdKind::MarkerAdded) => "已添加标记".into(),
         (UiLanguage::Chinese, OsdKind::MarkerRemoved) => "已移除标记".into(),
         (UiLanguage::Chinese, OsdKind::Chapter(title)) => title,
@@ -62,6 +64,7 @@ pub fn format_osd_message_for_language(kind: OsdKind, language: UiLanguage) -> S
         }
         (UiLanguage::English, OsdKind::Volume(volume)) => format!("Volume {volume}%"),
         (UiLanguage::English, OsdKind::Speed(speed)) => format!("{speed:.2}x"),
+        (UiLanguage::English, OsdKind::Stopped) => "Stopped".into(),
         (UiLanguage::English, OsdKind::MarkerAdded) => "Marker added".into(),
         (UiLanguage::English, OsdKind::MarkerRemoved) => "Marker removed".into(),
         (UiLanguage::English, OsdKind::Chapter(title)) => title,

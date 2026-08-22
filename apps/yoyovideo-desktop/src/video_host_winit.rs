@@ -4,13 +4,14 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event_loop::ActiveEventLoop,
-    window::{Window, WindowAttributes},
+    window::{Window, WindowAttributes, WindowId},
 };
 
 use crate::{NativeVideoWindowId, VideoHost, VideoHostBounds, VideoHostError};
 
 pub struct WinitVideoHost {
     window: Arc<Window>,
+    window_id: WindowId,
 }
 
 impl WinitVideoHost {
@@ -34,7 +35,20 @@ impl WinitVideoHost {
         let window = event_loop
             .create_window(attributes)
             .map_err(|error| VideoHostError::new(format!("create video host window: {error}")))?;
-        Ok(Self { window: Arc::new(window) })
+        let window_id = window.id();
+        Ok(Self { window: Arc::new(window), window_id })
+    }
+
+    /// Identifies this window in the winit event loop. Slint does not own it, so its
+    /// events only reach the custom application handler.
+    pub fn window_id(&self) -> WindowId {
+        self.window_id
+    }
+
+    /// Physical inner size, clamped to at least 1x1 so callers can divide by it.
+    pub fn physical_size(&self) -> (u32, u32) {
+        let size = self.window.inner_size();
+        (size.width.max(1), size.height.max(1))
     }
 
     fn raw_window_id(&self) -> Result<NativeVideoWindowId, VideoHostError> {

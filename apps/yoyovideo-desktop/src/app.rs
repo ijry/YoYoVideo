@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -52,6 +52,7 @@ fn refresh_window_with_language(
     window.set_time_label(crate::format_time_label(state).into());
     window.set_volume_label(crate::format_volume_label_for_language(state, language).into());
     window.set_muted(state.muted);
+    window.set_has_media(state.current.is_some());
     window.set_mute_label(
         match (language, state.muted) {
             (crate::UiLanguage::Chinese, true) => "静音",
@@ -370,6 +371,13 @@ struct DesktopRuntime {
     window_state_path: Option<PathBuf>,
     #[cfg(feature = "mpv-runtime")]
     video_host: Option<WinitVideoHost>,
+    /// The native video surface is hidden while a popup is open, otherwise it would
+    /// occlude the popup. Authoritative: bounds sync must not re-show it.
+    #[cfg(feature = "mpv-runtime")]
+    video_host_suppression: crate::VideoHostSuppression,
+    /// Hides the fullscreen chrome once the pointer stops moving. Shared so both the
+    /// Slint callbacks and the native video-surface handler can re-arm it.
+    chrome_idle: ChromeIdle,
 }
 
 impl DesktopRuntime {
@@ -407,6 +415,9 @@ impl DesktopRuntime {
             window_state_path,
             #[cfg(feature = "mpv-runtime")]
             video_host: None,
+            #[cfg(feature = "mpv-runtime")]
+            video_host_suppression: crate::VideoHostSuppression::default(),
+            chrome_idle: ChromeIdle::default(),
         }
     }
 
@@ -965,6 +976,7 @@ where
                 refresh_sidebar(&app, &runtime);
                 refresh_tracks_popup(&app, &runtime);
                 apply_fullscreen_state(&app, &state);
+                sync_fullscreen_chrome(&app, &runtime.chrome_idle.clone(), state.fullscreen);
             }
             true
         }
@@ -1344,7 +1356,54 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_reset_video_pan_requested(command_callback(&app, &runtime, AppCommand::ResetVideoPan));
 
+    #[cfg(feature = "mpv-runtime")]
+    app.on_popup_overlay_changed({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |open| {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            apply_video_host_suppression(&app, &mut runtime.borrow_mut(), open);
+        }
+    });
+
+    app.on_pointer_activity({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let idle = runtime.borrow().chrome_idle.clone();
+            note_chrome_pointer_activity(&app, &idle);
+        }
+    });
+
     app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
+    app.on_stop_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            // Flush the resume position before the file is unloaded, otherwise stopping
+            // would discard where the user got to.
+            if let Some(app) = app_handle.upgrade() {
+                let mut runtime_ref = runtime.borrow_mut();
+                let now = history_now(&runtime_ref);
+                let _ = runtime_ref.history.flush_if_needed(now, crate::FlushReason::Pause);
+                drop(runtime_ref);
+                let _ = app;
+            }
+
+            if with_runtime_controller(&app_handle, &runtime, |controller| {
+                controller.dispatch(AppCommand::Stop)
+            }) && let Some(app) = app_handle.upgrade()
+            {
+                let mut runtime = runtime.borrow_mut();
+                set_osd(&app, &mut runtime, crate::OsdKind::Stopped);
+            }
+        }
+    });
     app.on_toggle_mute_requested({
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
@@ -1439,6 +1498,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             with_runtime_controller(&app_handle, &runtime, move |controller| {
                 controller.dispatch(AppCommand::SetVolume(volume.clamp(0, 100) as u8))
             });
+        }
+    });
+    app.on_volume_scrolled({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move |notches| {
+            adjust_volume_by_notches(&app_handle, &runtime, notches);
         }
     });
     app.on_jump_panel_requested({
@@ -1713,6 +1779,34 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             with_runtime_controller(&app_handle, &runtime, move |controller| {
                 controller.open_playlist_index(index as usize)
             });
+        }
+    });
+
+    app.on_clear_history_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            let Some(app) = app_handle.upgrade() else {
+                return;
+            };
+            let mut runtime = runtime.borrow_mut();
+            match runtime.history.clear() {
+                Ok(cleared) => {
+                    if cleared {
+                        let message = match runtime.ui_language {
+                            crate::UiLanguage::Chinese => "已清除历史记录",
+                            crate::UiLanguage::English => "History cleared",
+                        };
+                        app.set_status_label(message.into());
+                    }
+                }
+                Err(error) => {
+                    let message = format!("Clear history failed: {error}");
+                    runtime.record_diagnostic("ERROR", &message);
+                    app.set_status_label(message.into());
+                }
+            }
+            refresh_sidebar(&app, &runtime);
         }
     });
 
@@ -2336,6 +2430,38 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Volume change per mouse-wheel notch, in percent.
+const VOLUME_SCROLL_STEP: i8 = 5;
+
+/// Applies wheel notches to the volume and shows the level on the OSD.
+///
+/// Shared by the Slint controls and the native video surface, which receives its own
+/// wheel events because it is a child window Slint never sees.
+fn adjust_volume_by_notches(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    notches: i32,
+) {
+    if notches == 0 {
+        return;
+    }
+    let delta = (notches.clamp(-8, 8) as i8).saturating_mul(VOLUME_SCROLL_STEP);
+    if !with_runtime_controller(app_handle, runtime, move |controller| {
+        controller.dispatch(AppCommand::AdjustVolume(delta))
+    }) {
+        return;
+    }
+    let Some(app) = app_handle.upgrade() else {
+        return;
+    };
+    let mut runtime = runtime.borrow_mut();
+    let volume = runtime
+        .controller()
+        .map(|controller| controller.session().state().volume_percent)
+        .unwrap_or(100);
+    set_osd(&app, &mut runtime, crate::OsdKind::Volume(volume));
+}
+
 fn command_callback(
     app: &MainWindow,
     runtime: &Rc<RefCell<DesktopRuntime>>,
@@ -2362,6 +2488,85 @@ fn apply_fullscreen_state(app: &MainWindow, state: &PlayerState) {
     });
 }
 
+/// Timer plus policy state for the fullscreen chrome, shared between the Slint
+/// callbacks and the native video-surface handler.
+#[derive(Clone, Default)]
+struct ChromeIdle {
+    timer: Rc<slint::Timer>,
+    policy: Rc<Cell<crate::ChromeAutoHide>>,
+}
+
+/// Applies a chrome decision: writes `controls_visible` and re-arms or cancels the
+/// idle timer. Keeping this in one place stops the timer and the property drifting.
+///
+/// Takes the idle state directly rather than the runtime cell, because callers such as
+/// `with_runtime_controller` already hold a `borrow_mut()` while calling this.
+fn apply_chrome_action(app: &MainWindow, idle: &ChromeIdle, action: crate::ChromeAction) {
+    if action.changes_visibility() {
+        // Opens the settle window before the layout changes, so the synthetic pointer
+        // events that resizing produces are already being ignored when they arrive.
+        let mut policy = idle.policy.get();
+        policy.note_visibility_changed(Instant::now());
+        idle.policy.set(policy);
+    }
+
+    match action {
+        crate::ChromeAction::Nothing => {}
+        crate::ChromeAction::Hide => {
+            app.set_controls_visible(false);
+            idle.timer.stop();
+        }
+        crate::ChromeAction::ShowAndDisarm => {
+            app.set_controls_visible(true);
+            app.set_chrome_hovered(false);
+            idle.timer.stop();
+        }
+        crate::ChromeAction::ShowAndArm => {
+            app.set_controls_visible(true);
+            let app_handle = app.as_weak();
+            let idle_handle = idle.clone();
+            idle.timer.start(
+                slint::TimerMode::SingleShot,
+                crate::CHROME_IDLE_HIDE_DELAY,
+                move || {
+                    let Some(app) = app_handle.upgrade() else {
+                        return;
+                    };
+                    let next = idle_handle
+                        .policy
+                        .get()
+                        .on_idle_elapsed(app.get_fullscreen(), app.get_chrome_hovered());
+                    // Re-arm when the pointer is resting on the deck, so the controls
+                    // are never pulled out from under the cursor.
+                    let next = match next {
+                        crate::ChromeAction::Nothing if app.get_fullscreen() => {
+                            crate::ChromeAction::ShowAndArm
+                        }
+                        other => other,
+                    };
+                    apply_chrome_action(&app, &idle_handle, next);
+                },
+            );
+        }
+    }
+}
+
+/// Shows the chrome on real pointer movement and restarts the idle countdown.
+fn note_chrome_pointer_activity(app: &MainWindow, idle: &ChromeIdle) {
+    let action = idle.policy.get().on_pointer_activity(Instant::now(), app.get_fullscreen());
+    apply_chrome_action(app, idle, action);
+}
+
+/// Syncs the Slint `fullscreen` flag and resets the chrome when fullscreen changes.
+fn sync_fullscreen_chrome(app: &MainWindow, idle: &ChromeIdle, fullscreen: bool) {
+    if app.get_fullscreen() == fullscreen {
+        return;
+    }
+    app.set_fullscreen(fullscreen);
+    let action = idle.policy.get().on_fullscreen_changed(fullscreen);
+    apply_chrome_action(app, idle, action);
+}
+
 #[cfg(feature = "mpv-runtime")]
 fn current_video_rect(window: &MainWindow) -> crate::LogicalVideoRect {
     crate::LogicalVideoRect {
@@ -2385,7 +2590,9 @@ fn sync_video_host_bounds<H: crate::VideoHost>(
 
 #[cfg(feature = "mpv-runtime")]
 fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
-    if runtime.video_host.is_none() {
+    // While suppressed the host must stay hidden: this runs on a repeating timer and
+    // `sync_video_host_bounds` always shows the host.
+    if runtime.video_host.is_none() || runtime.video_host_suppression.is_suppressed() {
         return;
     }
     let Some(scale_factor) =
@@ -2405,6 +2612,28 @@ fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
         }
         runtime.mark_error(error.clone());
         window.set_status_label(error.into());
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+fn apply_video_host_suppression(
+    window: &MainWindow,
+    runtime: &mut DesktopRuntime,
+    suppressed: bool,
+) {
+    let Some(action) = runtime.video_host_suppression.request(suppressed) else {
+        return;
+    };
+
+    if action == crate::SuppressionAction::Reveal {
+        sync_runtime_video_host(window, runtime);
+        return;
+    }
+
+    // Bind the error first so the `video_host` borrow ends before `record_diagnostic`.
+    let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
+    if let Some(error) = error {
+        runtime.record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
     }
 }
 
@@ -2430,12 +2659,13 @@ fn configure_backend(
 #[cfg(feature = "mpv-runtime")]
 struct DesktopWinitHandler {
     runtime: Rc<RefCell<DesktopRuntime>>,
+    video_pointer: crate::VideoAreaPointer,
 }
 
 #[cfg(feature = "mpv-runtime")]
 impl DesktopWinitHandler {
     fn new(runtime: Rc<RefCell<DesktopRuntime>>) -> Self {
-        Self { runtime }
+        Self { runtime, video_pointer: crate::VideoAreaPointer::default() }
     }
 
     fn initialize_runtime(
@@ -2500,6 +2730,127 @@ impl DesktopWinitHandler {
             }
         }
     }
+
+    fn video_host_window_id(&self) -> Option<slint::winit_030::winit::window::WindowId> {
+        self.runtime.borrow().video_host.as_ref().map(WinitVideoHost::window_id)
+    }
+
+    /// Current zoom step plus the host's physical size, or `None` before playback starts.
+    fn video_host_context(&self) -> Option<(i8, f64, f64)> {
+        let runtime = self.runtime.borrow();
+        let zoom_step = runtime.controller()?.session().state().zoom_step;
+        let (width, height) = runtime.video_host.as_ref()?.physical_size();
+        Some((zoom_step, f64::from(width), f64::from(height)))
+    }
+
+    fn app_handle(&self) -> Option<slint::Weak<MainWindow>> {
+        self.runtime.borrow().app_handle.clone()
+    }
+
+    /// Handles pointer events on the native video surface. Slint never sees them, so
+    /// window dragging, picture panning, and double-click fullscreen live here.
+    fn handle_video_host_event(
+        &mut self,
+        window_id: slint::winit_030::winit::window::WindowId,
+        event: &slint::winit_030::winit::event::WindowEvent,
+    ) {
+        use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
+
+        if self.video_host_window_id() != Some(window_id) {
+            return;
+        }
+
+        let gesture = match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                // Motion here never reaches Slint, so it has to feed the idle timer
+                // directly or the fullscreen chrome would stay hidden. Resizing the
+                // surface re-delivers this event at an unchanged position, which would
+                // otherwise re-show the chrome the instant it hides.
+                if self.video_pointer.is_new_position(position.x, position.y) {
+                    self.note_pointer_activity();
+                }
+                let Some((zoom_step, width, height)) = self.video_host_context() else {
+                    return;
+                };
+                self.video_pointer.cursor_moved(position.x, position.y, zoom_step, width, height)
+            }
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => match state {
+                ElementState::Pressed => self.video_pointer.pressed(Instant::now()),
+                ElementState::Released => self.video_pointer.released(Instant::now()),
+            },
+            WindowEvent::CursorLeft { .. } => {
+                self.video_pointer.cancel();
+                None
+            }
+            // Wheel over the picture controls volume. Slint never sees these because
+            // the video surface is a native child window.
+            WindowEvent::MouseWheel { delta, .. } => {
+                use slint::winit_030::winit::event::MouseScrollDelta;
+                let notches = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => *y as f64,
+                    MouseScrollDelta::PixelDelta(position) => position.y / 120.0,
+                };
+                if notches != 0.0 {
+                    let steps = if notches > 0.0 {
+                        notches.ceil() as i32
+                    } else {
+                        notches.floor() as i32
+                    };
+                    if let Some(app_handle) = self.app_handle() {
+                        adjust_volume_by_notches(&app_handle, &self.runtime, steps);
+                    }
+                }
+                None
+            }
+            _ => return,
+        };
+
+        match gesture {
+            Some(crate::VideoAreaGesture::DragWindow) => {
+                // The OS move loop swallows the release, so forget the press now.
+                self.video_pointer.cancel();
+                self.drag_parent_window();
+            }
+            Some(crate::VideoAreaGesture::PanPicture { delta_x, delta_y }) => {
+                self.dispatch_video_command(AppCommand::AdjustVideoPan { delta_x, delta_y });
+            }
+            Some(crate::VideoAreaGesture::ToggleFullscreen) => {
+                self.dispatch_video_command(AppCommand::ToggleFullscreen);
+            }
+            None => {}
+        }
+    }
+
+    /// Keeps the fullscreen chrome alive while the pointer moves over the video surface.
+    fn note_pointer_activity(&mut self) {
+        let Some(app) = self.app_handle().and_then(|handle| handle.upgrade()) else {
+            return;
+        };
+        let idle = self.runtime.borrow().chrome_idle.clone();
+        note_chrome_pointer_activity(&app, &idle);
+    }
+
+    fn drag_parent_window(&mut self) {
+        let app_handle = self.app_handle();
+        let Some(app) = app_handle.and_then(|handle| handle.upgrade()) else {
+            return;
+        };
+        let result = app.window().with_winit_window(|window| window.drag_window());
+        if let Some(Err(error)) = result {
+            self.runtime
+                .borrow_mut()
+                .record_diagnostic("WARN", format!("Video area window drag failed: {error}"));
+        }
+    }
+
+    fn dispatch_video_command(&mut self, command: AppCommand) {
+        let Some(app_handle) = self.app_handle() else {
+            return;
+        };
+        with_runtime_controller(&app_handle, &self.runtime, move |controller| {
+            controller.dispatch(command.clone())
+        });
+    }
 }
 
 #[cfg(feature = "mpv-runtime")]
@@ -2507,12 +2858,17 @@ impl CustomApplicationHandler for DesktopWinitHandler {
     fn window_event(
         &mut self,
         event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
-        _window_id: slint::winit_030::winit::window::WindowId,
+        window_id: slint::winit_030::winit::window::WindowId,
         winit_window: Option<&slint::winit_030::winit::window::Window>,
         _slint_window: Option<&slint::Window>,
-        _event: &slint::winit_030::winit::event::WindowEvent,
+        event: &slint::winit_030::winit::event::WindowEvent,
     ) -> EventResult {
         self.initialize_runtime(event_loop, winit_window);
+        // `winit_window` is None for windows Slint does not own, i.e. the video host.
+        // `initialize_runtime` returns immediately in that case, so no borrow is live.
+        if winit_window.is_none() {
+            self.handle_video_host_event(window_id, event);
+        }
         EventResult::Propagate
     }
 }

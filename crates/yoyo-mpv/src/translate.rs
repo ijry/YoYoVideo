@@ -56,6 +56,10 @@ fn filter_preset_action(preset: VideoFilterPreset) -> MpvAction {
 
 pub fn translate_command(command: &BackendCommand) -> Vec<MpvAction> {
     match command {
+        BackendCommand::Stop => {
+            // mpv's `stop` halts playback and unloads the file, leaving the player idle.
+            vec![MpvAction::Command(vec!["stop".into()])]
+        }
         BackendCommand::SetPaused(paused) => {
             vec![MpvAction::SetFlag { name: "pause".into(), value: *paused }]
         }
