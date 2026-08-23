@@ -1,6 +1,7 @@
 # libmpv runtime checklist
 
 - Default `cargo test` keeps playback tests in dry-run mode and does not require libmpv.
+- Run the app with real playback via `pwsh -NoProfile -File scripts/dev-run.ps1 [media...]`; it uses its own target dir so a plain `cargo test` cannot silently replace the binary with a build that has playback disabled.
 - Build the real playback alpha with `cargo run -p yoyovideo-desktop --features mpv-runtime`.
 - The desktop `mpv-runtime` feature enables `yoyo-mpv/mpv-runtime` and switches startup to the real backend.
 - Without the feature, desktop backend construction fails with a clear runtime-disabled error instead of silently pretending playback works.
