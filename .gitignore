@@ -9,3 +9,6 @@ third_party/mpv/**/bin/*
 third_party/mpv/**/lib/*
 !third_party/mpv/**/bin/.gitkeep
 !third_party/mpv/**/lib/.gitkeep
+
+# Generated test clips for manual verification.
+.test-media/

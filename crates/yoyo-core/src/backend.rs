@@ -42,6 +42,10 @@ pub enum BackendEvent {
     PauseChanged(bool),
     PositionChanged(f64),
     DurationChanged(Option<f64>),
+    /// Decoded picture width, or `None` while mpv has not reported one yet.
+    VideoWidthChanged(Option<u32>),
+    /// Decoded picture height, or `None` while mpv has not reported one yet.
+    VideoHeightChanged(Option<u32>),
     SpeedChanged(f32),
     VolumeChanged(u8),
     MutedChanged(bool),

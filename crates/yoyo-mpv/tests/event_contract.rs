@@ -72,3 +72,23 @@ fn chapter_event_maps_to_backend_chapters_changed() {
         Some(BackendEvent::ChaptersChanged(chapters))
     );
 }
+
+#[test]
+fn video_dimensions_map_to_backend_events() {
+    // Needed for the grid layout: tiles are arranged by each video's aspect ratio.
+    assert_eq!(
+        map_event(MpvEvent::VideoWidth(1920)),
+        Some(BackendEvent::VideoWidthChanged(Some(1920)))
+    );
+    assert_eq!(
+        map_event(MpvEvent::VideoHeight(1080)),
+        Some(BackendEvent::VideoHeightChanged(Some(1080)))
+    );
+}
+
+#[test]
+fn non_positive_video_dimensions_clear_the_known_size() {
+    // mpv reports 0 while nothing is decoded yet; that is "unknown", not a 0-wide video.
+    assert_eq!(map_event(MpvEvent::VideoWidth(0)), Some(BackendEvent::VideoWidthChanged(None)));
+    assert_eq!(map_event(MpvEvent::VideoHeight(-1)), Some(BackendEvent::VideoHeightChanged(None)));
+}

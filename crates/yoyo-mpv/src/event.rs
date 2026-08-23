@@ -5,6 +5,9 @@ pub enum MpvEvent {
     Pause(bool),
     Position(f64),
     Duration(Option<f64>),
+    /// Raw `dwidth` / `dheight` from mpv. Non-positive means "not decoded yet".
+    VideoWidth(i64),
+    VideoHeight(i64),
     Speed(f32),
     Volume(u8),
     Muted(bool),
@@ -20,11 +23,23 @@ pub enum MpvEvent {
     EndFile,
 }
 
+/// mpv reports 0 for `dwidth`/`dheight` before anything is decoded, which means
+/// "unknown" rather than a zero-sized picture.
+fn positive_dimension(value: i64) -> Option<u32> {
+    (value > 0).then(|| value.min(u32::MAX as i64) as u32)
+}
+
 pub fn map_event(event: MpvEvent) -> Option<BackendEvent> {
     match event {
         MpvEvent::Pause(value) => Some(BackendEvent::PauseChanged(value)),
         MpvEvent::Position(value) => Some(BackendEvent::PositionChanged(value)),
         MpvEvent::Duration(value) => Some(BackendEvent::DurationChanged(value)),
+        MpvEvent::VideoWidth(value) => {
+            Some(BackendEvent::VideoWidthChanged(positive_dimension(value)))
+        }
+        MpvEvent::VideoHeight(value) => {
+            Some(BackendEvent::VideoHeightChanged(positive_dimension(value)))
+        }
         MpvEvent::Speed(value) => Some(BackendEvent::SpeedChanged(value)),
         MpvEvent::Volume(value) => Some(BackendEvent::VolumeChanged(value)),
         MpvEvent::Muted(value) => Some(BackendEvent::MutedChanged(value)),

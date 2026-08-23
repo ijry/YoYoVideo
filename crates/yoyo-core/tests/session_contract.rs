@@ -378,3 +378,35 @@ fn adjust_volume_saturates_at_the_ends() {
     session.handle_command(AppCommand::AdjustVolume(-5)).unwrap();
     assert_eq!(session.state().volume_percent, 0, "wheel past the bottom clamps to 0");
 }
+
+#[test]
+fn video_dimension_events_update_player_state() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+
+    session.backend_mut().events.push(BackendEvent::VideoWidthChanged(Some(1920)));
+    session.backend_mut().events.push(BackendEvent::VideoHeightChanged(Some(1080)));
+    session.poll_backend().unwrap();
+
+    assert_eq!(session.state().video_width, Some(1920));
+    assert_eq!(session.state().video_height, Some(1080));
+}
+
+#[test]
+fn stop_clears_the_video_dimensions() {
+    let mut session = AppSession::new(AppConfig::default(), MockBackend::default());
+    session.handle_command(AppCommand::OpenFile(PathBuf::from("/tmp/movie.mkv"))).unwrap();
+    session.backend_mut().events.push(BackendEvent::VideoWidthChanged(Some(1920)));
+    session.backend_mut().events.push(BackendEvent::VideoHeightChanged(Some(1080)));
+    session.poll_backend().unwrap();
+
+    session.handle_command(AppCommand::Stop).unwrap();
+    assert_eq!(session.state().video_width, None);
+    assert_eq!(session.state().video_height, None);
+
+    // In-flight events from before mpv went idle must not resurrect the old size,
+    // otherwise a closed tile would keep its aspect ratio.
+    session.backend_mut().events.push(BackendEvent::VideoWidthChanged(Some(1920)));
+    session.poll_backend().unwrap();
+    assert_eq!(session.state().video_width, None);
+}

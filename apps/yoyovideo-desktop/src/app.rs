@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "mpv-runtime")]
 use i_slint_backend_winit::{Backend as WinitBackend, CustomApplicationHandler, EventResult};
+#[cfg(feature = "mpv-runtime")]
+use slint::Model;
 use slint::winit_030::WinitWindowAccessor;
 use yoyo_core::{
     AppCommand, AppConfig, AppSession, FrameStepDirection, HistoryStore, MediaLocator,
@@ -361,6 +363,8 @@ struct DesktopRuntime {
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
     settings_controller: Option<crate::SettingsController>,
+    /// Media named on the command line, opened once the runtime exists.
+    pending_startup_open: Option<MediaLocator>,
     pending_resume: Option<crate::PendingResumeSeek>,
     last_seen_locator: Option<MediaLocator>,
     last_seen_subtitle_locator: Option<MediaLocator>,
@@ -375,6 +379,17 @@ struct DesktopRuntime {
     /// occlude the popup. Authoritative: bounds sync must not re-show it.
     #[cfg(feature = "mpv-runtime")]
     video_host_suppression: crate::VideoHostSuppression,
+    /// Batch playback. Independent of `controller`/`video_host`, which keep serving
+    /// single-video mode; the two modes are mutually exclusive.
+    #[cfg(feature = "mpv-runtime")]
+    grid: crate::GridRuntime,
+    /// Backing model for the tile strips.
+    ///
+    /// Reused rather than rebuilt: replacing the model destroys and recreates every
+    /// tile's elements, and since this refreshes on the 250ms timer, that ate the
+    /// press/release pairs on the strip buttons.
+    #[cfg(feature = "mpv-runtime")]
+    grid_model: Rc<slint::VecModel<GridTileRowData>>,
     /// Hides the fullscreen chrome once the pointer stops moving. Shared so both the
     /// Slint callbacks and the native video-surface handler can re-arm it.
     chrome_idle: ChromeIdle,
@@ -405,6 +420,7 @@ impl DesktopRuntime {
             sidebar,
             settings_window: None,
             settings_controller: None,
+            pending_startup_open: None,
             pending_resume: None,
             last_seen_locator: None,
             last_seen_subtitle_locator: None,
@@ -417,6 +433,10 @@ impl DesktopRuntime {
             video_host: None,
             #[cfg(feature = "mpv-runtime")]
             video_host_suppression: crate::VideoHostSuppression::default(),
+            #[cfg(feature = "mpv-runtime")]
+            grid: crate::GridRuntime::default(),
+            #[cfg(feature = "mpv-runtime")]
+            grid_model: Rc::new(slint::VecModel::default()),
             chrome_idle: ChromeIdle::default(),
         }
     }
@@ -1379,6 +1399,144 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             note_chrome_pointer_activity(&app, &idle);
         }
     });
+
+    #[cfg(feature = "mpv-runtime")]
+    {
+        // Batch playback. Queues locators; the windows and mpv instances are created on
+        // the next winit event tick, where `ActiveEventLoop` is available.
+        let open_grid = {
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            let dialogs = Rc::clone(&dialogs);
+            move |replace: bool| {
+                let Some(paths) = dialogs.pick_files() else {
+                    return;
+                };
+                if paths.is_empty() {
+                    return;
+                }
+                let Some(app) = app_handle.upgrade() else {
+                    return;
+                };
+                let mut runtime = runtime.borrow_mut();
+                if replace {
+                    runtime.grid.clear();
+                }
+                let locators: Vec<MediaLocator> =
+                    paths.into_iter().map(MediaLocator::File).collect();
+                runtime.grid.queue_open(locators);
+
+                // Single-video playback would keep its own surface over the grid.
+                if replace {
+                    if let Some(controller) = runtime.controller.as_mut() {
+                        let _ = controller.dispatch(AppCommand::Stop);
+                    }
+                    let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
+                    if let Some(error) = error {
+                        runtime
+                            .record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
+                    }
+                }
+                // Flip the UI over immediately; tiles appear once their windows exist.
+                app.set_grid_mode(true);
+            }
+        };
+
+        app.on_grid_open_requested({
+            let open_grid = open_grid.clone();
+            move || open_grid(true)
+        });
+        app.on_grid_add_requested({
+            let open_grid = open_grid.clone();
+            move || open_grid(false)
+        });
+
+        app.on_grid_exit_requested({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                if let Some(app) = app_handle.upgrade() {
+                    exit_grid_mode(&app, &mut runtime.borrow_mut());
+                }
+            }
+        });
+
+        app.on_grid_toggle_all_requested({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                let Some(app) = app_handle.upgrade() else {
+                    return;
+                };
+                let mut runtime = runtime.borrow_mut();
+                // One shared decision, so a mixed grid converges instead of inverting.
+                let pause = runtime.grid.any_playing();
+                runtime.grid.set_all_paused(pause);
+                sync_grid(&app, &mut runtime);
+            }
+        });
+
+        app.on_grid_tile_selected({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index| {
+                let Some(app) = app_handle.upgrade() else {
+                    return;
+                };
+                let Ok(index) = usize::try_from(index) else {
+                    return;
+                };
+                let mut runtime = runtime.borrow_mut();
+                runtime.grid.set_active(index);
+                sync_grid(&app, &mut runtime);
+            }
+        });
+
+        app.on_grid_tile_toggle_pause({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index| {
+                grid_tile_command(&app_handle, &runtime, index, AppCommand::TogglePause);
+            }
+        });
+
+        app.on_grid_tile_toggle_mute({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index| {
+                grid_tile_command(&app_handle, &runtime, index, AppCommand::ToggleMute);
+            }
+        });
+
+        app.on_grid_tile_volume_changed({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index, volume| {
+                let command = AppCommand::SetVolume(volume.clamp(0, 100) as u8);
+                grid_tile_command(&app_handle, &runtime, index, command);
+            }
+        });
+
+        app.on_grid_tile_close({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index| {
+                let Some(app) = app_handle.upgrade() else {
+                    return;
+                };
+                let Ok(index) = usize::try_from(index) else {
+                    return;
+                };
+                let mut runtime = runtime.borrow_mut();
+                runtime.grid.close(index);
+                if runtime.grid.is_active() {
+                    sync_grid(&app, &mut runtime);
+                } else {
+                    exit_grid_mode(&app, &mut runtime);
+                }
+            }
+        });
+    }
 
     app.on_toggle_pause_requested(command_callback(&app, &runtime, AppCommand::TogglePause));
     app.on_stop_requested({
@@ -2352,6 +2510,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut runtime = runtime.borrow_mut();
+
+            // Grid tiles have their own sessions and surfaces; poll them and re-lay them
+            // out here so window resizes and newly reported video sizes are picked up.
+            #[cfg(feature = "mpv-runtime")]
+            if runtime.grid.is_active() {
+                runtime.grid.poll_all();
+                sync_grid(&app, &mut runtime);
+            }
+
             let pending_before = runtime.pending_resume.take();
             let Some(mut controller) = runtime.controller.take() else {
                 runtime.pending_resume = pending_before;
@@ -2408,6 +2575,28 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+
+    // Media named on the command line, so "Open with" from the shell works. Several
+    // files open as a grid, which is what batch playback is for.
+    match crate::plan_startup_open(std::env::args_os().skip(1).map(PathBuf::from).collect()) {
+        crate::StartupOpen::Nothing => {}
+        crate::StartupOpen::Single(locator) => {
+            runtime.borrow_mut().pending_startup_open = Some(locator);
+        }
+        #[cfg(feature = "mpv-runtime")]
+        crate::StartupOpen::Grid(locators) => {
+            let mut runtime = runtime.borrow_mut();
+            runtime.grid.queue_open(locators);
+            app.set_grid_mode(true);
+        }
+        #[cfg(not(feature = "mpv-runtime"))]
+        crate::StartupOpen::Grid(mut locators) => {
+            // Without the playback runtime there is nothing to tile; fall back to one.
+            if !locators.is_empty() {
+                runtime.borrow_mut().pending_startup_open = Some(locators.remove(0));
+            }
+        }
+    }
 
     app.run()?;
 
@@ -2567,6 +2756,141 @@ fn sync_fullscreen_chrome(app: &MainWindow, idle: &ChromeIdle, fullscreen: bool)
     apply_chrome_action(app, idle, action);
 }
 
+/// A short label for a tile: the file name, or the URL itself.
+#[cfg(feature = "mpv-runtime")]
+fn grid_tile_title(locator: &MediaLocator) -> String {
+    match locator {
+        MediaLocator::File(path) => path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string()),
+        MediaLocator::Url(url) => url.clone(),
+    }
+}
+
+/// Builds one tile: its own native child window, its own mpv instance, its own session.
+#[cfg(feature = "mpv-runtime")]
+fn build_grid_tile(
+    event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+    parent_window: &slint::winit_030::winit::window::Window,
+    config: AppConfig,
+    locator: &MediaLocator,
+) -> Result<(AppSession<MpvBackend>, WinitVideoHost, String), String> {
+    let host = WinitVideoHost::new_child(event_loop, parent_window).map_err(|e| e.to_string())?;
+    let window_id = host.mpv_window_id().map_err(|e| e.to_string())?;
+    let backend = build_desktop_backend_with_video_window(window_id).map_err(|e| e.to_string())?;
+    let mut session = AppSession::new(config, backend);
+
+    let command = match locator {
+        MediaLocator::File(path) => AppCommand::OpenFile(path.clone()),
+        MediaLocator::Url(url) => AppCommand::OpenUrl(url.clone()),
+    };
+    session.handle_command(command).map_err(|error| error.to_string())?;
+
+    Ok((session, host, grid_tile_title(locator)))
+}
+
+/// Sends one command to one grid tile and refreshes the strips.
+#[cfg(feature = "mpv-runtime")]
+fn grid_tile_command(
+    app_handle: &slint::Weak<MainWindow>,
+    runtime: &Rc<RefCell<DesktopRuntime>>,
+    index: i32,
+    command: AppCommand,
+) {
+    let Some(app) = app_handle.upgrade() else {
+        return;
+    };
+    let Ok(index) = usize::try_from(index) else {
+        return;
+    };
+    let mut runtime = runtime.borrow_mut();
+    runtime.grid.set_active(index);
+    if let Err(error) = runtime.grid.dispatch(index, command) {
+        runtime.record_diagnostic("WARN", format!("Grid tile command failed: {error}"));
+    }
+    sync_grid(&app, &mut runtime);
+}
+
+/// Gap between grid tiles, in logical pixels.
+#[cfg(feature = "mpv-runtime")]
+const GRID_GUTTER: f32 = 8.0;
+
+/// Re-lays the grid out, moves each tile's native window, and pushes the strips to Slint.
+///
+/// Called from the poll timer, so it also picks up window resizes and newly reported
+/// video sizes (which change a tile's aspect ratio and therefore the whole layout).
+#[cfg(feature = "mpv-runtime")]
+fn sync_grid(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    if !runtime.grid.is_active() {
+        if window.get_grid_mode() {
+            window.set_grid_mode(false);
+            runtime.grid_model.set_vec(Vec::new());
+            window.set_grid_any_playing(false);
+        }
+        return;
+    }
+
+    window.set_grid_mode(true);
+    window.set_grid_any_playing(runtime.grid.any_playing());
+
+    // Whatever entry point started the grid, the single surface must be down.
+    let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
+    if let Some(error) = error {
+        runtime.record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
+    }
+
+    let Some(scale_factor) =
+        window.window().with_winit_window(|winit_window| winit_window.scale_factor())
+    else {
+        return;
+    };
+
+    let container = current_video_rect(window);
+    let strips =
+        runtime.grid.sync_layout(container, crate::STRIP_HEIGHT, GRID_GUTTER, scale_factor);
+    let rows: Vec<GridTileRowData> = runtime
+        .grid
+        .views()
+        .into_iter()
+        .zip(strips)
+        .map(|(view, strip)| GridTileRowData {
+            strip_x: strip.x,
+            strip_y: strip.y,
+            strip_width: strip.width,
+            strip_height: strip.height,
+            title: view.title.into(),
+            paused: view.paused,
+            muted: view.muted,
+            volume: view.volume,
+            selected: view.selected,
+        })
+        .collect();
+
+    // Update in place; only re-seat the model when the tile count changes. Replacing it
+    // every tick would rebuild the strips and swallow their clicks.
+    let model = Rc::clone(&runtime.grid_model);
+    if model.row_count() != rows.len() {
+        model.set_vec(rows);
+        window.set_grid_tiles(slint::ModelRc::from(model));
+    } else {
+        for (index, row) in rows.into_iter().enumerate() {
+            if model.row_data(index).as_ref() != Some(&row) {
+                model.set_row_data(index, row);
+            }
+        }
+    }
+}
+
+/// Leaves batch mode: drops every tile and restores the single-video surface.
+#[cfg(feature = "mpv-runtime")]
+fn exit_grid_mode(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    runtime.grid.clear();
+    sync_grid(window, runtime);
+    // The single-video surface was hidden on the way in.
+    sync_runtime_video_host(window, runtime);
+}
+
 #[cfg(feature = "mpv-runtime")]
 fn current_video_rect(window: &MainWindow) -> crate::LogicalVideoRect {
     crate::LogicalVideoRect {
@@ -2590,6 +2914,15 @@ fn sync_video_host_bounds<H: crate::VideoHost>(
 
 #[cfg(feature = "mpv-runtime")]
 fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    // Grid mode owns the video area. Leaving the single surface up would occlude every
+    // tile strip, since native child windows composite above the Slint canvas.
+    if runtime.grid.is_active() {
+        let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
+        if let Some(error) = error {
+            runtime.record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
+        }
+        return;
+    }
     // While suppressed the host must stay hidden: this runs on a repeating timer and
     // `sync_video_host_bounds` always shows the host.
     if runtime.video_host.is_none() || runtime.video_host_suppression.is_suppressed() {
@@ -2621,6 +2954,12 @@ fn apply_video_host_suppression(
     runtime: &mut DesktopRuntime,
     suppressed: bool,
 ) {
+    // Grid tiles are native surfaces too, so a popup has to hide all of them.
+    runtime.grid.set_suppressed(suppressed);
+    if !suppressed && runtime.grid.is_active() {
+        sync_grid(window, runtime);
+    }
+
     let Some(action) = runtime.video_host_suppression.request(suppressed) else {
         return;
     };
@@ -2668,12 +3007,69 @@ impl DesktopWinitHandler {
         Self { runtime, video_pointer: crate::VideoAreaPointer::default() }
     }
 
-    fn initialize_runtime(
+    /// Creates native windows and mpv instances for media queued into the grid.
+    ///
+    /// Separate from `initialize_runtime` on purpose: that function latches on
+    /// `controller.is_some()` and would refuse to run again, whereas tiles are spawned
+    /// repeatedly. `ActiveEventLoop` is only available here, which is why opening files
+    /// queues locators instead of building the windows directly.
+    fn spawn_pending_grid_tiles(
         &mut self,
         event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
         winit_window: Option<&slint::winit_030::winit::window::Window>,
     ) {
         let Some(parent_window) = winit_window else {
+            return;
+        };
+
+        // Take the queue and read the config without holding the borrow across window
+        // creation, which re-enters the event loop.
+        let (pending, config) = {
+            let mut runtime = self.runtime.borrow_mut();
+            if !runtime.grid.has_pending() {
+                return;
+            }
+            (runtime.grid.take_pending(), runtime.config.clone())
+        };
+        let mut failure = None;
+        for locator in pending {
+            match build_grid_tile(event_loop, parent_window, config.clone(), &locator) {
+                Ok((session, host, title)) => {
+                    self.runtime.borrow_mut().grid.push_tile(session, host, title);
+                }
+                Err(error) => {
+                    failure = Some(error);
+                }
+            }
+        }
+
+        let Some(app) = self.app_handle().and_then(|handle| handle.upgrade()) else {
+            return;
+        };
+        let mut runtime = self.runtime.borrow_mut();
+        let dropped = runtime.grid.take_dropped();
+        if let Some(error) = failure {
+            runtime.record_diagnostic("ERROR", format!("Grid tile failed: {error}"));
+            app.set_status_label(error.into());
+        } else if dropped > 0 {
+            let message = match runtime.ui_language {
+                crate::UiLanguage::Chinese => {
+                    format!("最多同时播放 {} 个，已忽略 {dropped} 个", crate::MAX_GRID_TILES)
+                }
+                crate::UiLanguage::English => {
+                    format!("At most {} at once; {dropped} ignored", crate::MAX_GRID_TILES)
+                }
+            };
+            app.set_status_label(message.into());
+        }
+        sync_grid(&app, &mut runtime);
+    }
+
+    fn initialize_runtime(
+        &mut self,
+        event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+        winit_window: Option<&slint::winit_030::winit::window::Window>,
+    ) {        let Some(parent_window) = winit_window else {
             return;
         };
 
@@ -2697,6 +3093,19 @@ impl DesktopWinitHandler {
         match result {
             Ok((controller, video_host)) => {
                 runtime.set_runtime(controller, video_host);
+                // Anything named on the command line can only be opened now that the
+                // controller exists.
+                if let Some(locator) = runtime.pending_startup_open.take() {
+                    let command = match locator {
+                        MediaLocator::File(path) => AppCommand::OpenFile(path),
+                        MediaLocator::Url(url) => AppCommand::OpenUrl(url),
+                    };
+                    if let Some(controller) = runtime.controller_mut() {
+                        if let Err(error) = controller.dispatch(command) {
+                            runtime.record_diagnostic("ERROR", error.to_string());
+                        }
+                    }
+                }
                 let app_handle = runtime.app_handle.clone();
                 let (state, history_snapshot) = {
                     let controller = runtime.controller().expect("runtime just initialized");
@@ -2830,6 +3239,62 @@ impl DesktopWinitHandler {
         note_chrome_pointer_activity(&app, &idle);
     }
 
+    /// Handles pointer events on a grid tile's native surface.
+    ///
+    /// Each tile is its own child window, so the window id identifies the tile. Clicking
+    /// selects it, the wheel changes only that tile's volume, and a drag moves the app
+    /// window (there is no per-tile pan in grid mode).
+    fn handle_grid_tile_event(
+        &mut self,
+        window_id: slint::winit_030::winit::window::WindowId,
+        event: &slint::winit_030::winit::event::WindowEvent,
+    ) {
+        use slint::winit_030::winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+
+        let Some(index) = self.runtime.borrow().grid.tile_index_for_window(window_id) else {
+            return;
+        };
+
+        match event {
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                let Some(app) = self.app_handle().and_then(|handle| handle.upgrade()) else {
+                    return;
+                };
+                let mut runtime = self.runtime.borrow_mut();
+                runtime.grid.set_active(index);
+                sync_grid(&app, &mut runtime);
+                drop(runtime);
+                // Dragging a tile moves the window, matching the single-video surface.
+                self.drag_parent_window();
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let notches = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => *y as f64,
+                    MouseScrollDelta::PixelDelta(position) => position.y / 120.0,
+                };
+                if notches == 0.0 {
+                    return;
+                }
+                let steps =
+                    if notches > 0.0 { notches.ceil() as i32 } else { notches.floor() as i32 };
+                self.adjust_grid_tile_volume(index, steps);
+            }
+            _ => {}
+        }
+    }
+
+    /// Applies wheel notches to one tile's volume.
+    fn adjust_grid_tile_volume(&mut self, index: usize, notches: i32) {
+        let Some(app) = self.app_handle().and_then(|handle| handle.upgrade()) else {
+            return;
+        };
+        let delta = (notches.clamp(-8, 8) as i8).saturating_mul(VOLUME_SCROLL_STEP);
+        let mut runtime = self.runtime.borrow_mut();
+        runtime.grid.set_active(index);
+        let _ = runtime.grid.dispatch(index, AppCommand::AdjustVolume(delta));
+        sync_grid(&app, &mut runtime);
+    }
+
     fn drag_parent_window(&mut self) {
         let app_handle = self.app_handle();
         let Some(app) = app_handle.and_then(|handle| handle.upgrade()) else {
@@ -2864,10 +3329,12 @@ impl CustomApplicationHandler for DesktopWinitHandler {
         event: &slint::winit_030::winit::event::WindowEvent,
     ) -> EventResult {
         self.initialize_runtime(event_loop, winit_window);
+        self.spawn_pending_grid_tiles(event_loop, winit_window);
         // `winit_window` is None for windows Slint does not own, i.e. the video host.
         // `initialize_runtime` returns immediately in that case, so no borrow is live.
         if winit_window.is_none() {
             self.handle_video_host_event(window_id, event);
+            self.handle_grid_tile_event(window_id, event);
         }
         EventResult::Propagate
     }

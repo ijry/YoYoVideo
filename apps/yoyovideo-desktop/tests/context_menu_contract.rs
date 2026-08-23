@@ -65,6 +65,20 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.on_video_dragged(|_, _| {});
     window.on_reset_video_pan_requested(|| {});
     window.on_popup_overlay_changed(|_| {});
+    // Batch playback surface.
+    window.on_grid_open_requested(|| {});
+    window.on_grid_add_requested(|| {});
+    window.on_grid_exit_requested(|| {});
+    window.on_grid_toggle_all_requested(|| {});
+    window.on_grid_tile_selected(|_| {});
+    window.on_grid_tile_toggle_pause(|_| {});
+    window.on_grid_tile_toggle_mute(|_| {});
+    window.on_grid_tile_volume_changed(|_, _| {});
+    window.on_grid_tile_close(|_| {});
+    // Grid mode is opt-in: a fresh window shows the single-video deck.
+    assert!(!window.get_grid_mode(), "grid mode is off on a fresh window");
+    assert_eq!(window.get_grid_tiles().row_count(), 0, "no tiles before any are opened");
+    assert!(!window.get_grid_any_playing());
     // Guards the `any_popup_open` binding: popups cannot be shown headlessly, so only
     // the closed state is assertable. It must not be constant-folded away.
     assert!(!window.get_any_popup_open(), "no popup is open on a fresh window");

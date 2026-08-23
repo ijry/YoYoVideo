@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 pub trait DialogService {
     fn pick_file(&self) -> Option<PathBuf>;
+    /// Multi-select, for opening several videos into the grid at once.
+    fn pick_files(&self) -> Option<Vec<PathBuf>>;
     fn pick_folder(&self) -> Option<PathBuf>;
     fn pick_subtitle_file(&self) -> Option<PathBuf>;
     fn prompt_url(&self) -> Option<String>;
@@ -13,6 +15,10 @@ pub struct RfdDialogService;
 impl DialogService for RfdDialogService {
     fn pick_file(&self) -> Option<PathBuf> {
         rfd::FileDialog::new().pick_file()
+    }
+
+    fn pick_files(&self) -> Option<Vec<PathBuf>> {
+        rfd::FileDialog::new().pick_files()
     }
 
     fn pick_folder(&self) -> Option<PathBuf> {

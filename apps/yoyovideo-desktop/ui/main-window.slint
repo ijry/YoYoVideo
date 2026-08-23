@@ -33,6 +33,22 @@ export struct NavigationRowData {
     is_marker: bool,
 }
 
+// Batch playback. Rust owns the layout and pushes these rectangles, because the picture
+// itself is a native child window that Rust has to position anyway. Slint draws only the
+// control strip: anything drawn over the picture would be composited away.
+// Lengths travel as `float` and are multiplied by 1px, matching sidebar_expanded_width_px.
+export struct GridTileRowData {
+    strip_x: float,
+    strip_y: float,
+    strip_width: float,
+    strip_height: float,
+    title: string,
+    paused: bool,
+    muted: bool,
+    volume: int,
+    selected: bool,
+}
+
 component DeckButton inherits Rectangle {
     in property <string> text;
     in property <bool> selected: false;
@@ -152,10 +168,12 @@ component IconButton inherits Rectangle {
     in property <image> icon;
     in property <bool> selected: false;
     in property <bool> enabled: true;
+    /// Tile control strips are much shorter than the deck, so the button scales.
+    in property <length> size: 36px;
     callback clicked();
-    width: 36px;
-    height: 36px;
-    border-radius: 13px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.36;
     property <bool> active: root.enabled && touch.has-hover;
     background: root.enabled && touch.pressed
         ? #23384c
@@ -167,8 +185,8 @@ component IconButton inherits Rectangle {
 
     Image {
         source: root.icon;
-        width: 18px;
-        height: 18px;
+        width: root.size / 2;
+        height: root.size / 2;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         image-fit: contain;
@@ -412,6 +430,12 @@ export component MainWindow inherits Window {
     /// Which top-level menu category's submenu is showing (hover-driven).
     in-out property <int> menu_section: 0;
 
+    /// Batch playback. While active the deck is replaced by a slim grid toolbar, because
+    /// each tile carries its own controls.
+    in-out property <bool> grid_mode: false;
+    in-out property <[GridTileRowData]> grid_tiles: [];
+    in-out property <bool> grid_any_playing: false;
+
     // Slint 1.17 generates invalid Rust for a popup's `is-open` setter when the
     // popup is shown from inside another popup's frame, so every nested show()
     // goes through these root-scope wrappers.
@@ -447,6 +471,17 @@ export component MainWindow inherits Window {
     callback playlist_item_requested(int);
     callback history_item_requested(int);
     callback clear_history_requested();
+
+    // Batch playback. Every tile callback carries the tile index.
+    callback grid_open_requested();
+    callback grid_add_requested();
+    callback grid_exit_requested();
+    callback grid_toggle_all_requested();
+    callback grid_tile_selected(int);
+    callback grid_tile_toggle_pause(int);
+    callback grid_tile_toggle_mute(int);
+    callback grid_tile_volume_changed(int, int);
+    callback grid_tile_close(int);
     callback recent_open_item_requested(int);
     callback audio_track_requested(int);
     callback subtitle_track_requested(int);
@@ -576,6 +611,7 @@ export component MainWindow inherits Window {
                             spacing: 4px;
                             MenuRow { text: root.ui_language_code == "zh" ? "打开文件" : "Open File"; clicked => { root.open_file_requested(); menu_popup.close(); } }
                             MenuRow { text: root.ui_language_code == "zh" ? "打开文件夹" : "Open Folder"; clicked => { root.open_folder_requested(); menu_popup.close(); } }
+                            MenuRow { text: root.ui_language_code == "zh" ? "批量播放模式…" : "Batch Playback…"; clicked => { root.grid_open_requested(); menu_popup.close(); } }
                             url_input := LineEdit {
                                 placeholder-text: root.ui_language_code == "zh" ? "输入链接并回车" : "Enter URL and press Enter";
                                 changed has-focus => { root.url_focused = self.has-focus; }
@@ -980,8 +1016,77 @@ export component MainWindow inherits Window {
                     video_area := Rectangle {
                         background: #000000;
                         min-height: 360px;
+                        // Its own minimum, so the reported rect never collapses to zero
+                        // when the sibling deck is a not-yet-instantiated conditional.
+                        // The window itself is at least 860px wide.
+                        min-width: 480px;
 
-                        VerticalBox {
+                        // Batch playback: Rust positions each picture's native window and
+                        // hands back where the matching control strip goes. Only the strip
+                        // is drawn here; the picture area is deliberately left blank.
+                        if root.grid_mode: Rectangle {
+                            width: parent.width;
+                            height: parent.height;
+                            background: transparent;
+
+                            for tile[tile_index] in root.grid_tiles: Rectangle {
+                                x: tile.strip_x * 1px;
+                                y: tile.strip_y * 1px;
+                                width: tile.strip_width * 1px;
+                                height: tile.strip_height * 1px;
+                                background: tile.selected ? #0d1b2ae6 : #05070be6;
+                                border-width: 1px;
+                                border-color: tile.selected ? #38bdf8 : #1f2c3a;
+                                border-radius: 6px;
+
+                                HorizontalLayout {
+                                    padding-left: 4px;
+                                    padding-right: 4px;
+                                    spacing: 4px;
+                                    alignment: start;
+
+                                    IconButton {
+                                        size: 26px;
+                                        icon: tile.paused
+                                            ? @image-url("icons/play.svg")
+                                            : @image-url("icons/pause.svg");
+                                        clicked => { root.grid_tile_toggle_pause(tile_index); }
+                                    }
+                                    IconButton {
+                                        size: 26px;
+                                        icon: tile.muted
+                                            ? @image-url("icons/mute.svg")
+                                            : @image-url("icons/volume.svg");
+                                        selected: tile.muted;
+                                        clicked => { root.grid_tile_toggle_mute(tile_index); }
+                                    }
+                                    VolumeSlider {
+                                        width: 74px;
+                                        height: 26px;
+                                        value: tile.volume;
+                                        muted: tile.muted;
+                                        changed(value) => {
+                                            root.grid_tile_volume_changed(tile_index, value);
+                                        }
+                                        scrolled(notches) => {
+                                            root.grid_tile_volume_changed(
+                                                tile_index,
+                                                clamp(tile.volume + notches * 5, 0, 100)
+                                            );
+                                        }
+                                    }
+                                    Text {
+                                        text: tile.title;
+                                        color: tile.selected ? #f8fafc : #94a3b8;
+                                        vertical-alignment: center;
+                                        font-size: 10px;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+
+                        if !root.grid_mode: VerticalBox {
                             x: (parent.width - 360px) / 2;
                             y: (parent.height - 116px) / 2;
                             width: 360px;
@@ -1024,7 +1129,9 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        TouchArea {
+                        // Single-video gestures only. Declared last, so it would otherwise
+                        // cover the whole video area and swallow the grid strips' clicks.
+                        if !root.grid_mode: TouchArea {
                             width: parent.width;
                             height: parent.height;
                             double-clicked => { root.video_double_clicked(); }
@@ -1069,7 +1176,39 @@ export component MainWindow inherits Window {
                             changed has-hover => { root.chrome_hovered = self.has-hover; }
                         }
 
-                        HorizontalBox {
+                        // Batch playback replaces the transport deck: each tile has its
+                        // own controls, so a shared transport would be ambiguous.
+                        if root.grid_mode: HorizontalBox {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            alignment: start;
+
+                            DeckButton {
+                                text: root.ui_language_code == "zh" ? "添加视频" : "Add Video";
+                                clicked => { root.grid_add_requested(); }
+                            }
+                            DeckButton {
+                                text: root.grid_any_playing
+                                    ? (root.ui_language_code == "zh" ? "全部暂停" : "Pause All")
+                                    : (root.ui_language_code == "zh" ? "全部播放" : "Play All");
+                                clicked => { root.grid_toggle_all_requested(); }
+                            }
+                            DeckButton {
+                                text: root.ui_language_code == "zh" ? "退出批量模式" : "Exit Grid";
+                                clicked => { root.grid_exit_requested(); }
+                            }
+                            Rectangle { background: transparent; }
+                            Text {
+                                text: root.status_label;
+                                color: #64748b;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+
+                        if !root.grid_mode: HorizontalBox {
                             padding-left: 10px;
                             padding-right: 10px;
                             spacing: 8px;

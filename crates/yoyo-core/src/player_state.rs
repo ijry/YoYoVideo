@@ -157,6 +157,11 @@ pub struct PlayerState {
     pub paused: bool,
     pub position_seconds: f64,
     pub duration_seconds: Option<f64>,
+    /// Decoded picture size, used to lay tiles out by aspect ratio in grid mode.
+    #[serde(default)]
+    pub video_width: Option<u32>,
+    #[serde(default)]
+    pub video_height: Option<u32>,
     pub volume_percent: u8,
     pub muted: bool,
     pub speed: f32,
@@ -203,6 +208,8 @@ impl Default for PlayerState {
             paused: true,
             position_seconds: 0.0,
             duration_seconds: None,
+            video_width: None,
+            video_height: None,
             volume_percent: 100,
             muted: false,
             speed: 1.0,

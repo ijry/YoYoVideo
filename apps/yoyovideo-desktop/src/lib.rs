@@ -1,5 +1,9 @@
 mod app;
 mod chrome_autohide;
+mod grid_layout;
+#[cfg(feature = "mpv-runtime")]
+mod grid_runtime;
+mod grid_state;
 mod history_runtime;
 mod i18n;
 mod keyboard;
@@ -26,6 +30,14 @@ pub use app::{
 pub use chrome_autohide::{
     CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide,
 };
+pub use grid_layout::{
+    DEFAULT_ASPECT, GridCell, MAX_GRID_TILES, STRIP_HEIGHT, TileRect, plan_grid,
+};
+pub use grid_state::{
+    StartupOpen, accepted_tile_count, active_after_removal, aspect_from_size, plan_startup_open,
+};
+#[cfg(feature = "mpv-runtime")]
+pub use grid_runtime::{GridRuntime, GridTileView};
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
 };

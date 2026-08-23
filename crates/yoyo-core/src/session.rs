@@ -186,6 +186,8 @@ impl<B: PlayerBackend> AppSession<B> {
         self.state.paused = true;
         self.state.position_seconds = 0.0;
         self.state.duration_seconds = None;
+        self.state.video_width = None;
+        self.state.video_height = None;
         self.state.loop_state = LoopState::default();
         self.stopped = true;
         Ok(())
@@ -550,6 +552,16 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::DurationChanged(duration) => {
                     if !self.stopped {
                         self.state.duration_seconds = duration;
+                    }
+                }
+                BackendEvent::VideoWidthChanged(width) => {
+                    if !self.stopped {
+                        self.state.video_width = width;
+                    }
+                }
+                BackendEvent::VideoHeightChanged(height) => {
+                    if !self.stopped {
+                        self.state.video_height = height;
                     }
                 }
                 BackendEvent::SpeedChanged(speed) => self.state.speed = speed,

@@ -200,6 +200,10 @@ impl MpvClient {
         self.observe_property(11, "sub-pos", libmpv_sys::mpv_format_MPV_FORMAT_INT64)?;
         self.observe_property(12, "mute", libmpv_sys::mpv_format_MPV_FORMAT_FLAG)?;
         self.observe_property(13, "chapter-list", libmpv_sys::mpv_format_MPV_FORMAT_NODE)?;
+        // Display size, i.e. after aspect/rotation correction. Grid mode lays tiles out
+        // by aspect ratio, so it needs the size the picture is actually presented at.
+        self.observe_property(14, "dwidth", libmpv_sys::mpv_format_MPV_FORMAT_INT64)?;
+        self.observe_property(15, "dheight", libmpv_sys::mpv_format_MPV_FORMAT_INT64)?;
         Ok(())
     }
 
@@ -495,6 +499,14 @@ fn decode_property_event(property: &libmpv_sys::mpv_event_property) -> Option<Mp
         ("video-rotate", libmpv_sys::mpv_format_MPV_FORMAT_INT64) => {
             let value = unsafe { *(property.data as *const i64) };
             Some(MpvEvent::Rotation(value))
+        }
+        ("dwidth", libmpv_sys::mpv_format_MPV_FORMAT_INT64) => {
+            let value = unsafe { *(property.data as *const i64) };
+            Some(MpvEvent::VideoWidth(value))
+        }
+        ("dheight", libmpv_sys::mpv_format_MPV_FORMAT_INT64) => {
+            let value = unsafe { *(property.data as *const i64) };
+            Some(MpvEvent::VideoHeight(value))
         }
         ("track-list", libmpv_sys::mpv_format_MPV_FORMAT_NODE) => {
             crate::track_list::decode_track_list_property(property)
