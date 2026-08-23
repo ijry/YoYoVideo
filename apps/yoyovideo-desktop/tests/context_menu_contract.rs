@@ -75,6 +75,8 @@ fn exercise_cinema_deck_surface(window: &MainWindow) {
     window.on_grid_tile_toggle_mute(|_| {});
     window.on_grid_tile_volume_changed(|_, _| {});
     window.on_grid_tile_close(|_| {});
+    window.on_grid_tile_resize_started(|_| {});
+    window.on_grid_tile_resized(|_, _| {});
     // Grid mode is opt-in: a fresh window shows the single-video deck.
     assert!(!window.get_grid_mode(), "grid mode is off on a fresh window");
     assert_eq!(window.get_grid_tiles().row_count(), 0, "no tiles before any are opened");

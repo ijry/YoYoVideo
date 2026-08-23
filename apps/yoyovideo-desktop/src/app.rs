@@ -1517,6 +1517,31 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
+        app.on_grid_tile_resize_started({
+            let runtime = Rc::clone(&runtime);
+            move |index| {
+                if let Ok(index) = usize::try_from(index) {
+                    runtime.borrow_mut().grid.begin_resize(index);
+                }
+            }
+        });
+
+        app.on_grid_tile_resized({
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move |index, fraction| {
+                let Some(app) = app_handle.upgrade() else {
+                    return;
+                };
+                let Ok(index) = usize::try_from(index) else {
+                    return;
+                };
+                let mut runtime = runtime.borrow_mut();
+                runtime.grid.resize_by(index, fraction);
+                sync_grid(&app, &mut runtime);
+            }
+        });
+
         app.on_grid_tile_close({
             let app_handle = app.as_weak();
             let runtime = Rc::clone(&runtime);

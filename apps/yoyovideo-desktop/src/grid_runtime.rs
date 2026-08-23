@@ -25,6 +25,10 @@ pub struct GridTile {
     /// Per-tile gesture tracking; the picture is a native window Slint never sees.
     pointer: VideoAreaPointer,
     title: String,
+    /// User-chosen size within its grid cell.
+    scale: f32,
+    /// Scale when the current resize drag started, so the drag is absolute.
+    scale_at_drag_start: f32,
 }
 
 impl GridTile {
@@ -128,6 +132,8 @@ impl GridRuntime {
             host,
             pointer: VideoAreaPointer::default(),
             title,
+            scale: crate::MAX_TILE_SCALE,
+            scale_at_drag_start: crate::MAX_TILE_SCALE,
         });
         if self.active.is_none() {
             self.active = Some(0);
@@ -163,6 +169,26 @@ impl GridRuntime {
     /// True when at least one tile is playing, used to label the play-all button.
     pub fn any_playing(&self) -> bool {
         self.tiles.iter().any(|tile| !tile.state().paused)
+    }
+
+    /// Remembers the current size so a resize drag can be applied absolutely from where
+    /// it started, instead of accumulating every intermediate move.
+    pub fn begin_resize(&mut self, index: usize) {
+        if let Some(tile) = self.tiles.get_mut(index) {
+            tile.scale_at_drag_start = tile.scale;
+        }
+    }
+
+    /// Applies a resize drag. `fraction` is the drag distance as a fraction of the cell,
+    /// measured from where the drag began.
+    pub fn resize_by(&mut self, index: usize, fraction: f32) {
+        if let Some(tile) = self.tiles.get_mut(index) {
+            tile.scale = crate::clamp_tile_scale(tile.scale_at_drag_start + fraction);
+        }
+    }
+
+    pub fn scale(&self, index: usize) -> Option<f32> {
+        self.tiles.get(index).map(|tile| tile.scale)
     }
 
     /// Drains every tile's mpv event queue.
@@ -224,7 +250,8 @@ impl GridRuntime {
             .iter()
             .map(|tile| aspect_from_size(tile.state().video_width, tile.state().video_height))
             .collect();
-        let cells = plan_grid(container, &aspects, strip_height, gutter);
+        let scales: Vec<f32> = self.tiles.iter().map(|tile| tile.scale).collect();
+        let cells = plan_grid(container, &aspects, &scales, strip_height, gutter);
 
         if !self.suppressed {
             for (tile, cell) in self.tiles.iter_mut().zip(&cells) {

@@ -482,6 +482,11 @@ export component MainWindow inherits Window {
     callback grid_tile_toggle_mute(int);
     callback grid_tile_volume_changed(int, int);
     callback grid_tile_close(int);
+    // Resize lives on the strip: a handle over the picture would be unreachable, since
+    // the native video surface takes those events.
+    callback grid_tile_resize_started(int);
+    /// Drag distance as a fraction of the tile's cell; positive grows.
+    callback grid_tile_resized(int, float);
     callback recent_open_item_requested(int);
     callback audio_track_requested(int);
     callback subtitle_track_requested(int);
@@ -1041,7 +1046,8 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     padding-left: 4px;
-                                    padding-right: 4px;
+                                    // Leaves room for the resize grip on the right.
+                                    padding-right: 26px;
                                     spacing: 4px;
                                     alignment: start;
 
@@ -1081,6 +1087,48 @@ export component MainWindow inherits Window {
                                         vertical-alignment: center;
                                         font-size: 10px;
                                         overflow: elide;
+                                    }
+                                }
+
+                                // Resize grip, pinned to the strip's right edge. Drag left
+                                // to shrink the tile, right to grow it back.
+                                Rectangle {
+                                    x: parent.width - 22px;
+                                    y: (parent.height - 18px) / 2;
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 4px;
+                                    background: grip.pressed
+                                        ? #23384c
+                                        : (grip.has-hover ? #17263a : transparent);
+
+                                    // Three ticks, drawn from geometry.
+                                    for tick in [0, 1, 2]: Rectangle {
+                                        x: 4px + tick * 4px;
+                                        y: 4px;
+                                        width: 2px;
+                                        height: 10px;
+                                        border-radius: 1px;
+                                        background: grip.has-hover ? #94a3b8 : #4b5b6e;
+                                    }
+
+                                    grip := TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        mouse-cursor: MouseCursor.ew-resize;
+                                        changed pressed => {
+                                            if self.pressed {
+                                                root.grid_tile_resize_started(tile_index);
+                                            }
+                                        }
+                                        moved => {
+                                            // Fixed reference distance, so the gesture does
+                                            // not accelerate as the tile gets smaller.
+                                            root.grid_tile_resized(
+                                                tile_index,
+                                                (self.mouse-x - self.pressed-x) / 240px
+                                            );
+                                        }
                                     }
                                 }
                             }

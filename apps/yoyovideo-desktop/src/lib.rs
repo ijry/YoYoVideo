@@ -31,7 +31,8 @@ pub use chrome_autohide::{
     CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide,
 };
 pub use grid_layout::{
-    DEFAULT_ASPECT, GridCell, MAX_GRID_TILES, STRIP_HEIGHT, TileRect, plan_grid,
+    DEFAULT_ASPECT, GridCell, MAX_GRID_TILES, MAX_TILE_SCALE, MIN_TILE_SCALE, STRIP_HEIGHT,
+    TileRect, clamp_tile_scale, plan_grid,
 };
 pub use grid_state::{
     StartupOpen, accepted_tile_count, active_after_removal, aspect_from_size, plan_startup_open,

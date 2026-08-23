@@ -10,6 +10,16 @@ pub const STRIP_HEIGHT: f32 = 34.0;
 /// Largest grid edge. `MAX_GRID_TILES` is 9, so 3x3 covers every case.
 const MAX_EDGE: usize = 3;
 
+/// A tile may be shrunk to this fraction of its cell, but never grown past it: the grid
+/// stays the grid, so one tile cannot overlap its neighbours.
+pub const MIN_TILE_SCALE: f32 = 0.3;
+pub const MAX_TILE_SCALE: f32 = 1.0;
+
+/// Clamps a user-chosen tile scale into the usable range.
+pub fn clamp_tile_scale(scale: f32) -> f32 {
+    if scale.is_finite() { scale.clamp(MIN_TILE_SCALE, MAX_TILE_SCALE) } else { MAX_TILE_SCALE }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TileRect {
     pub x: f32,
@@ -37,12 +47,15 @@ pub struct GridCell {
 ///
 /// Each picture is scaled to fit its cell while keeping its own aspect ratio and is
 /// centred horizontally, so mixing portrait and landscape clips letterboxes instead of
-/// stretching. Tiles beyond the cap are dropped.
+/// stretching. `scales` shrinks individual tiles within their own cell (see
+/// [`clamp_tile_scale`]); the grid itself does not change, so tiles never overlap.
+/// Tiles beyond the cap are dropped.
 ///
 /// Returns one [`GridCell`] per tile, in input order.
 pub fn plan_grid(
     container: LogicalVideoRect,
     aspects: &[f32],
+    scales: &[f32],
     strip_height: f32,
     gutter: f32,
 ) -> Vec<GridCell> {
@@ -56,9 +69,9 @@ pub fn plan_grid(
     let strip_height = strip_height.max(0.0);
     let gutter = gutter.max(0.0);
 
+    // Shape is chosen from the unscaled tiles, so shrinking one does not reflow the grid.
     let (columns, rows) = best_shape(count, width, height, aspects, strip_height, gutter);
 
-    // Split the container evenly, then let each tile letterbox inside its own cell.
     let cell_width = ((width - gutter * (columns.saturating_sub(1)) as f32) / columns as f32).max(0.0);
     let cell_height = ((height - gutter * (rows.saturating_sub(1)) as f32) / rows as f32).max(0.0);
 
@@ -69,7 +82,8 @@ pub fn plan_grid(
             let cell_x = container.x + column as f32 * (cell_width + gutter);
             let cell_y = container.y + row as f32 * (cell_height + gutter);
             let aspect = sane_aspect(aspects[index]);
-            cell(cell_x, cell_y, cell_width, cell_height, aspect, strip_height)
+            let scale = clamp_tile_scale(scales.get(index).copied().unwrap_or(MAX_TILE_SCALE));
+            cell(cell_x, cell_y, cell_width, cell_height, aspect, strip_height, scale)
         })
         .collect()
 }
@@ -102,7 +116,7 @@ fn best_shape(
 
         let area: f32 = (0..count)
             .map(|index| {
-                let video = cell(0.0, 0.0, cell_width, cell_height, sane_aspect(aspects[index]), strip_height).video;
+                let video = cell(0.0, 0.0, cell_width, cell_height, sane_aspect(aspects[index]), strip_height, MAX_TILE_SCALE).video;
                 video.width * video.height
             })
             .sum();
@@ -125,6 +139,7 @@ fn cell(
     cell_height: f32,
     aspect: f32,
     strip_height: f32,
+    scale: f32,
 ) -> GridCell {
     // The strip is only worth reserving if something is left for the picture.
     let strip_height = if cell_height > strip_height { strip_height } else { 0.0 };
@@ -140,6 +155,10 @@ fn cell(
         video_height = picture_box;
         video_width = video_height * aspect;
     }
+
+    // The user's own size, applied inside the cell so the grid is unaffected.
+    video_width *= scale;
+    video_height *= scale;
 
     let video_x = cell_x + (cell_width - video_width) / 2.0;
     let video = TileRect { x: video_x, y: cell_y, width: video_width, height: video_height };
