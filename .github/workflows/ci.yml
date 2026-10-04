@@ -15,7 +15,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux font rendering libraries
+      - name: Install Linux build and test dependencies
         # Slint's Linux text backend resolves fontconfig through
         # yeslogic-fontconfig-sys, whose build script shells out to pkg-config.
         # Without the -dev package the build fails before any test runs. xvfb
@@ -25,6 +25,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libfontconfig1-dev libxkbcommon-dev xvfb
+          # winit's X11 backend dlopens these at runtime; the build succeeds without
+          # them and only the window-construction tests notice.
+          sudo apt-get install -y libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
 
       - name: Check formatting
         run: cargo fmt --check
