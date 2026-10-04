@@ -78,9 +78,7 @@ impl VideoAreaPointer {
         let (previous_x, previous_y) = (press.last_x, press.last_y);
         press.last_x = x;
         press.last_y = y;
-        press.max_travel = press
-            .max_travel
-            .max(distance(x, y, press.origin_x, press.origin_y));
+        press.max_travel = press.max_travel.max(distance(x, y, press.origin_x, press.origin_y));
 
         if press.max_travel < DRAG_THRESHOLD_PX {
             return None;

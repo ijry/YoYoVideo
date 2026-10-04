@@ -18,9 +18,14 @@ fn window_state_clamps_too_small_sizes() {
 fn window_state_drops_offscreen_minimized_position() {
     // Windows reports a minimized window at (-32000, -32000). Persisting that reopens
     // the window off-screen where the user cannot reach it.
-    let state =
-        WindowState { width: 1200, height: 760, x: Some(-32000), y: Some(-32000), maximized: false }
-            .clamped();
+    let state = WindowState {
+        width: 1200,
+        height: 760,
+        x: Some(-32000),
+        y: Some(-32000),
+        maximized: false,
+    }
+    .clamped();
 
     assert_eq!(state.x, None);
     assert_eq!(state.y, None);

@@ -134,7 +134,8 @@ fn each_picture_keeps_its_own_aspect_ratio() {
 
 #[test]
 fn more_than_the_maximum_is_truncated() {
-    let cells = plan_grid(WIDE, &aspects(MAX_GRID_TILES + 4), &full(MAX_GRID_TILES + 4), STRIP_HEIGHT, 8.0);
+    let cells =
+        plan_grid(WIDE, &aspects(MAX_GRID_TILES + 4), &full(MAX_GRID_TILES + 4), STRIP_HEIGHT, 8.0);
 
     assert_eq!(cells.len(), MAX_GRID_TILES);
 }
@@ -181,10 +182,7 @@ fn a_tile_scale_shrinks_only_that_tile() {
         scaled[1].video
     );
     for index in [0, 2, 3] {
-        assert_eq!(
-            scaled[index].video, full_size[index].video,
-            "tile {index} must be untouched"
-        );
+        assert_eq!(scaled[index].video, full_size[index].video, "tile {index} must be untouched");
     }
 }
 

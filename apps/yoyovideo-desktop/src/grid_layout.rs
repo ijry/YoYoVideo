@@ -72,7 +72,8 @@ pub fn plan_grid(
     // Shape is chosen from the unscaled tiles, so shrinking one does not reflow the grid.
     let (columns, rows) = best_shape(count, width, height, aspects, strip_height, gutter);
 
-    let cell_width = ((width - gutter * (columns.saturating_sub(1)) as f32) / columns as f32).max(0.0);
+    let cell_width =
+        ((width - gutter * (columns.saturating_sub(1)) as f32) / columns as f32).max(0.0);
     let cell_height = ((height - gutter * (rows.saturating_sub(1)) as f32) / rows as f32).max(0.0);
 
     (0..count)
@@ -116,7 +117,16 @@ fn best_shape(
 
         let area: f32 = (0..count)
             .map(|index| {
-                let video = cell(0.0, 0.0, cell_width, cell_height, sane_aspect(aspects[index]), strip_height, MAX_TILE_SCALE).video;
+                let video = cell(
+                    0.0,
+                    0.0,
+                    cell_width,
+                    cell_height,
+                    sane_aspect(aspects[index]),
+                    strip_height,
+                    MAX_TILE_SCALE,
+                )
+                .video;
                 video.width * video.height
             })
             .sum();
@@ -162,12 +172,8 @@ fn cell(
 
     let video_x = cell_x + (cell_width - video_width) / 2.0;
     let video = TileRect { x: video_x, y: cell_y, width: video_width, height: video_height };
-    let strip = TileRect {
-        x: video_x,
-        y: cell_y + video_height,
-        width: video_width,
-        height: strip_height,
-    };
+    let strip =
+        TileRect { x: video_x, y: cell_y + video_height, width: video_width, height: strip_height };
 
     GridCell { video, strip }
 }

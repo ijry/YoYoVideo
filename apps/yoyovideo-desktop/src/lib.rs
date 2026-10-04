@@ -27,18 +27,16 @@ pub use app::{
     build_desktop_backend_with_video_window, dispatch_shortcut, dropped_media_status,
     format_runtime_startup_error, recent_item_status, refresh_window, resolve_shortcut, run,
 };
-pub use chrome_autohide::{
-    CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide,
-};
+pub use chrome_autohide::{CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide};
 pub use grid_layout::{
     DEFAULT_ASPECT, GridCell, MAX_GRID_TILES, MAX_TILE_SCALE, MIN_TILE_SCALE, STRIP_HEIGHT,
     TileRect, clamp_tile_scale, plan_grid,
 };
+#[cfg(feature = "mpv-runtime")]
+pub use grid_runtime::{GridRuntime, GridTileView};
 pub use grid_state::{
     StartupOpen, accepted_tile_count, active_after_removal, aspect_from_size, plan_startup_open,
 };
-#[cfg(feature = "mpv-runtime")]
-pub use grid_runtime::{GridRuntime, GridTileView};
 pub use history_runtime::{
     FlushReason, HistoryActivation, HistoryActivationError, HistoryRuntime, PendingResumeSeek,
 };

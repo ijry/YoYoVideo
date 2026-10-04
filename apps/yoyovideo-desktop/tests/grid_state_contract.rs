@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use yoyo_core::MediaLocator;
 use yoyovideo_desktop::{
-    StartupOpen, plan_startup_open,
-    DEFAULT_ASPECT, MAX_GRID_TILES, accepted_tile_count, active_after_removal, aspect_from_size,
+    DEFAULT_ASPECT, MAX_GRID_TILES, StartupOpen, accepted_tile_count, active_after_removal,
+    aspect_from_size, plan_startup_open,
 };
 
 #[test]

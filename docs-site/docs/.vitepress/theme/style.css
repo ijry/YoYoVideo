@@ -1,0 +1,325 @@
+/* ---------------------------------------------------------------------------
+   Brand tokens — taken from the player chrome: sky #38bdf8 accent on a
+   near-black surface (#030405 title bar, #000000 video area).
+--------------------------------------------------------------------------- */
+
+:root {
+  --vp-c-brand-1: #0284c7;
+  --vp-c-brand-2: #0ea5e9;
+  --vp-c-brand-3: #38bdf8;
+  --vp-c-brand-soft: rgba(56, 189, 248, 0.14);
+
+  --vp-button-brand-bg: #0ea5e9;
+  --vp-button-brand-hover-bg: #0284c7;
+  --vp-button-brand-active-bg: #0369a1;
+  --vp-button-brand-border: transparent;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #38bdf8 20%, #a78bfa);
+
+  /* Home-page palette. Kept on a separate prefix so DefaultTheme upgrades
+     cannot silently repaint the custom sections. */
+  --yv-ink: #0b1220;
+  --yv-muted: #55637a;
+  --yv-line: rgba(11, 18, 32, 0.1);
+  --yv-panel: #ffffff;
+  --yv-bg: #f7f9fc;
+  --yv-bg-alt: #eef3f9;
+  --yv-sky: #38bdf8;
+  --yv-violet: #a78bfa;
+  --yv-dark-bg: #05070b;
+  --yv-dark-panel: #0d1420;
+  --yv-dark-ink: #f1f5f9;
+  --yv-dark-muted: #94a3b8;
+  --yv-dark-line: rgba(241, 245, 249, 0.12);
+}
+
+.dark {
+  --vp-c-brand-1: #7dd3fc;
+  --vp-c-brand-2: #38bdf8;
+  --vp-c-brand-3: #0ea5e9;
+  --vp-c-brand-soft: rgba(56, 189, 248, 0.2);
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #38bdf8 20%, #c4b5fd);
+
+  --yv-ink: #f1f5f9;
+  --yv-muted: #94a3b8;
+  --yv-line: rgba(241, 245, 249, 0.12);
+  --yv-panel: #0d1420;
+  --yv-bg: #05070b;
+  --yv-bg-alt: #0a0f18;
+}
+
+/* VPHome ships a 96px bottom margin (128px at >=768px), which opens a gap
+   between the full-bleed closing section and the footer. */
+.VPHome {
+  margin-bottom: 0 !important;
+}
+
+/* Chinese body copy reads better with slightly looser leading. */
+html[lang="zh-CN"] .vp-doc p,
+html[lang="zh-CN"] .vp-doc li {
+  line-height: 1.8;
+}
+
+/* The app's own screenshot is a wide dark window; give it room to breathe. */
+.yv-shot {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--yv-line);
+  box-shadow: 0 24px 60px -30px rgba(2, 8, 20, 0.55);
+}
+
+.yv-shot-wrap {
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 0 24px;
+}
+
+/* ------------------------------ feature grid ------------------------------ */
+
+.yv-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  padding: 0 24px;
+  margin: 0 auto;
+  max-width: 1120px;
+}
+
+.yv-card {
+  background: var(--yv-panel);
+  border: 1px solid var(--yv-line);
+  border-radius: 14px;
+  padding: 22px 22px 24px;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.yv-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--yv-sky);
+}
+
+.yv-card h3 {
+  margin: 12px 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--yv-ink);
+  border: 0;
+  padding: 0;
+}
+
+.yv-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--yv-muted);
+}
+
+.yv-card .yv-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--yv-sky), var(--yv-violet));
+  color: #05070b;
+  font-size: 19px;
+  line-height: 1;
+}
+
+/* -------------------------------- sections -------------------------------- */
+
+.yv-section {
+  padding: 72px 0;
+}
+
+.yv-section-alt {
+  background: var(--yv-bg-alt);
+}
+
+.yv-section-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.yv-section h2 {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--yv-ink);
+  border: 0;
+  padding: 0;
+}
+
+.yv-lede {
+  margin: 0 0 34px;
+  max-width: 62ch;
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--yv-muted);
+}
+
+/* ------------------------------ download CTA ------------------------------ */
+
+.yv-cta {
+  background:
+    radial-gradient(1200px 320px at 50% -40%, rgba(56, 189, 248, 0.28), transparent 70%),
+    var(--yv-dark-bg);
+  color: var(--yv-dark-ink);
+  text-align: center;
+}
+
+.yv-cta h2 {
+  color: var(--yv-dark-ink);
+}
+
+.yv-cta .yv-lede {
+  color: var(--yv-dark-muted);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.yv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.yv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.18s ease;
+}
+
+.yv-btn:hover {
+  transform: translateY(-2px);
+}
+
+.yv-btn-primary {
+  background: linear-gradient(120deg, #38bdf8, #818cf8);
+  color: #05070b;
+}
+
+.yv-btn-ghost {
+  border: 1px solid var(--yv-dark-line);
+  color: var(--yv-dark-ink);
+}
+
+/* --------------------------------- facts ---------------------------------- */
+
+.yv-facts {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  padding: 0 24px;
+  margin: 0 auto;
+  max-width: 1120px;
+}
+
+.yv-fact {
+  text-align: center;
+  padding: 18px 12px;
+  border: 1px solid var(--yv-line);
+  border-radius: 12px;
+  background: var(--yv-panel);
+}
+
+.yv-fact b {
+  display: block;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--yv-sky);
+}
+
+.yv-fact span {
+  font-size: 13px;
+  color: var(--yv-muted);
+}
+
+/* -------------------------------- roadmap --------------------------------- */
+
+.yv-roadmap {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 0 24px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.yv-step {
+  border-left: 3px solid var(--yv-sky);
+  padding: 4px 0 4px 16px;
+}
+
+.yv-step h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--yv-ink);
+  border: 0;
+  padding: 0;
+}
+
+.yv-step p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--yv-muted);
+}
+
+.yv-step[data-state="next"] {
+  border-left-color: var(--yv-line);
+}
+
+.yv-step[data-state="next"] h4 {
+  color: var(--yv-muted);
+}
+
+/* ------------------------------- status tags ------------------------------ */
+
+.yv-tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.16);
+  color: #0369a1;
+}
+
+.dark .yv-tag {
+  color: #7dd3fc;
+}
+
+.yv-tag[data-state="next"] {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--yv-muted);
+}
+
+/* ------------------------------ hero actions ------------------------------ */
+
+.VPHero .actions {
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .yv-section {
+    padding: 52px 0;
+  }
+}

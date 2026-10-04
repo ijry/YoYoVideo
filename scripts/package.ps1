@@ -123,7 +123,10 @@ function Write-ReleaseMetadata([string]$PackageDir, [string]$Platform, [string]$
 
 $($runtime.Notes)
 
-Public redistribution requires review of the exact libmpv, FFmpeg, codec, and dependency licenses for this runtime build.
+This runtime is distributed under GPL-2.0-or-later (mpv and FFmpeg). Redistributing this
+package requires providing the corresponding source: the YoYoVideo git tag it was built
+from, plus the upstream mpv, FFmpeg and runtime build projects named above.
+See LICENSES.md in the YoYoVideo source repository for the full details.
 "@
 }
 
@@ -200,7 +203,13 @@ Write-ReleaseMetadata $packageDir $Platform $ReleaseVersion
 
 if ($RequireRuntime) {
     Copy-DirectoryFiles $runtimeBinDir (Join-Path $packageDir "bin")
-    Copy-DirectoryFiles $runtimeLibDir (Join-Path $packageDir "bin")
+    # On macOS and Linux the lib/ directory holds the shared library itself, which
+    # the package must carry. On Windows lib/ holds only the MSVC import library
+    # used at link time; shipping it would put a build artifact in a release and
+    # tell users nothing about running the binary.
+    if ($Platform -ne "windows-x64") {
+        Copy-DirectoryFiles $runtimeLibDir (Join-Path $packageDir "bin")
+    }
 }
 
 $verifyArgs = @("-NoProfile", "-File", (Join-Path $repoRoot "scripts/verify-package.ps1"), "-Platform", $Platform, "-PackageDir", $packageDir)

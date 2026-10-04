@@ -12,7 +12,11 @@ pub enum MpvEvent {
     Volume(u8),
     Muted(bool),
     Rotation(i64),
-    Tracks { audio: Vec<MediaTrack>, subtitles: Vec<MediaTrack>, video: Vec<MediaTrack> },
+    Tracks {
+        audio: Vec<MediaTrack>,
+        subtitles: Vec<MediaTrack>,
+        video: Vec<MediaTrack>,
+    },
     Chapters(Vec<MediaChapter>),
     SubtitleVisible(bool),
     SubtitleDelay(f64),

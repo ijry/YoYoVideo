@@ -85,10 +85,7 @@ mod tests {
     #[test]
     fn windowed_pointer_activity_never_arms_the_timer() {
         let policy = ChromeAutoHide::default();
-        assert_eq!(
-            policy.on_pointer_activity(Instant::now(), false),
-            ChromeAction::ShowAndDisarm
-        );
+        assert_eq!(policy.on_pointer_activity(Instant::now(), false), ChromeAction::ShowAndDisarm);
     }
 
     #[test]

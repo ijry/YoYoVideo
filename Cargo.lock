@@ -5984,7 +5984,7 @@ dependencies = [
 
 [[package]]
 name = "yoyo-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -5996,7 +5996,7 @@ dependencies = [
 
 [[package]]
 name = "yoyo-mpv"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "libmpv-sys",
  "thiserror 2.0.18",
@@ -6006,7 +6006,7 @@ dependencies = [
 
 [[package]]
 name = "yoyovideo-desktop"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "chrono",
  "directories",

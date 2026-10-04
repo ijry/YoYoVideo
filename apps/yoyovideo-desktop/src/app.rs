@@ -1433,8 +1433,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
                     if let Some(error) = error {
-                        runtime
-                            .record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
+                        runtime.record_diagnostic(
+                            "WARN",
+                            format!("Hiding video host failed: {error}"),
+                        );
                     }
                 }
                 // Flip the UI over immediately; tiles appear once their windows exist.
@@ -3094,7 +3096,8 @@ impl DesktopWinitHandler {
         &mut self,
         event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
         winit_window: Option<&slint::winit_030::winit::window::Window>,
-    ) {        let Some(parent_window) = winit_window else {
+    ) {
+        let Some(parent_window) = winit_window else {
             return;
         };
 
@@ -3225,11 +3228,8 @@ impl DesktopWinitHandler {
                     MouseScrollDelta::PixelDelta(position) => position.y / 120.0,
                 };
                 if notches != 0.0 {
-                    let steps = if notches > 0.0 {
-                        notches.ceil() as i32
-                    } else {
-                        notches.floor() as i32
-                    };
+                    let steps =
+                        if notches > 0.0 { notches.ceil() as i32 } else { notches.floor() as i32 };
                     if let Some(app_handle) = self.app_handle() {
                         adjust_volume_by_notches(&app_handle, &self.runtime, steps);
                     }
@@ -3274,14 +3274,20 @@ impl DesktopWinitHandler {
         window_id: slint::winit_030::winit::window::WindowId,
         event: &slint::winit_030::winit::event::WindowEvent,
     ) {
-        use slint::winit_030::winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+        use slint::winit_030::winit::event::{
+            ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+        };
 
         let Some(index) = self.runtime.borrow().grid.tile_index_for_window(window_id) else {
             return;
         };
 
         match event {
-            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let Some(app) = self.app_handle().and_then(|handle| handle.upgrade()) else {
                     return;
                 };

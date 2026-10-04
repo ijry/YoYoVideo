@@ -13,3 +13,15 @@ third_party/mpv/**/lib/*
 
 # Generated test clips for manual verification.
 .test-media/
+
+# Docs site dependencies and VitePress build output.
+docs-site/node_modules/
+docs-site/docs/.vitepress/dist/
+docs-site/docs/.vitepress/cache/
+
+# Scratch builds used when verifying a runtime by hand.
+target-staged/
+target-mpv/
+target-mpv-dllatest/
+# Fallback log directory, used when the app cannot discover its data dir.
+logs/

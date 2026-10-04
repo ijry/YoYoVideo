@@ -23,7 +23,10 @@ pub enum AppCommand {
     RotateClockwise,
     ZoomIn,
     ZoomOut,
-    AdjustVideoPan { delta_x: f64, delta_y: f64 },
+    AdjustVideoPan {
+        delta_x: f64,
+        delta_y: f64,
+    },
     ResetVideoPan,
     SetABLoopPointA,
     SetABLoopPointB,
@@ -44,7 +47,9 @@ pub enum AppCommand {
     SetVideoAdjustment(VideoAdjustmentKind, i16),
     ResetVideoAdjustments,
     SetVideoFilterPreset(VideoFilterPreset),
-    AddMarkerAtCurrentPosition { created_at: String },
+    AddMarkerAtCurrentPosition {
+        created_at: String,
+    },
     RemoveMarker(String),
     SeekToChapter(usize),
     SeekToMarker(String),

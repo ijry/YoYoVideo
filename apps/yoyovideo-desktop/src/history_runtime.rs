@@ -119,7 +119,8 @@ impl HistoryRuntime {
         Ok(true)
     }
 
-    pub fn activation_for(        &self,
+    pub fn activation_for(
+        &self,
         index: usize,
     ) -> Result<Option<HistoryActivation>, HistoryActivationError> {
         let Some(entry) = self.store.entry(index) else {

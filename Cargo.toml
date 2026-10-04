@@ -5,3 +5,14 @@ members = [
     "apps/yoyovideo-desktop",
 ]
 resolver = "2"
+
+# Single source of truth for the release version. `.github/workflows/release.yml`
+# refuses to publish a tag that does not match this value, and the packaging
+# scripts stamp it into RELEASE-NOTES.md inside every artifact.
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/ijry/YoYoVideo"
+homepage = "https://ijry.github.io/YoYoVideo/"
+rust-version = "1.85"
