@@ -14,13 +14,10 @@ on:
       - "docs/assets/**"
       - ".github/workflows/docs.yml"
   # release.yml dispatches this by hand, because GitHub does not start workflow
-  # runs from events its own GITHUB_TOKEN created.
+  # runs from events its own GITHUB_TOKEN created. No inputs: the site is a static
+  # VitePress build whose download links all point at releases/latest, so there is
+  # nothing here that a release tag would need to change.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag whose download links should be highlighted"
-        required: false
-        type: string
 
 permissions:
   contents: read

@@ -243,7 +243,6 @@ jobs:
           set -euo pipefail
           if ! gh workflow run docs.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f tag="$TAG"; then
+            --ref main; then
             echo "::warning::Could not dispatch docs.yml for ${TAG}; run it by hand if the site is stale."
           fi
