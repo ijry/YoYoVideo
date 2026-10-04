@@ -48,9 +48,17 @@ jobs:
           fetch-depth: 0
 
       # Must precede setup-node so its pnpm cache resolution can find pnpm.
-      # Version comes from docs-site/package.json packageManager.
+      #
+      # package_json_file is required: `defaults.run.working-directory` applies
+      # only to `run:` steps, not to `uses:` steps, so the action would otherwise
+      # look for package.json in the repository root. This repository is a Rust
+      # workspace and deliberately has no root package.json — the pnpm version
+      # lives in docs-site/package.json, which is also where the docs:build
+      # scripts come from.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          package_json_file: docs-site/package.json
 
       - name: Setup Node
         uses: actions/setup-node@v4
