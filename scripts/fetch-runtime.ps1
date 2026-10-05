@@ -309,6 +309,21 @@ function Resolve-LinuxDependencyPackages([string]$LibraryPath) {
 
     while ($queue.Count -gt 0) {
         $current = $queue.Dequeue()
+
+        # Ask about $current itself, not only about its dependencies. Querying
+        # only the dependencies is what dropped libmpv2 from the declaration:
+        # the root library is never anybody's dependency, so it was never asked
+        # about, and the .deb came out claiming to need only libpulse0.
+        foreach ($line in (& dpkg -S $current 2>$null)) {
+            # "libmpv2:amd64: /lib/x86_64-linux-gnu/libmpv.so.2" is an owner.
+            # dpkg also prints "diversion by libc6 from ..." for diverted paths,
+            # which is a notice and not a package: matching it blindly produced a
+            # dependency literally named "diversion by libc6 from".
+            if ($line -match '^([a-z0-9][a-z0-9+.-]*):[a-z0-9][a-z0-9-]*:\s') {
+                [void]$packages.Add($matches[1])
+            }
+        }
+
         foreach ($line in (& ldd $current 2>$null)) {
             # "libfoo.so.1 => /path/libfoo.so.1 (0x..)" and "/lib64/ld-linux-x86-64.so.2 (0x..)"
             $resolved = $null
@@ -320,11 +335,6 @@ function Resolve-LinuxDependencyPackages([string]$LibraryPath) {
             if (-not $resolved) { continue }
             if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { continue }
             if (-not $seen.Add([System.IO.Path]::GetFileName($resolved))) { continue }
-
-            $owner = (& dpkg -S $resolved 2>$null | Select-Object -First 1)
-            if ($owner -match '^([^:]+):') {
-                [void]$packages.Add($matches[1])
-            }
             $queue.Enqueue($resolved)
         }
     }
@@ -387,6 +397,19 @@ function Copy-MacDependencyClosure([string]$LibraryPath, [string]$BrewRoot, [str
         $seen[$currentName] = $true
 
         & $installNameTool -id "@rpath/$currentName" $current | Out-Null
+
+        # LC_RPATH is not a load command, so -change never touches it. Homebrew
+        # dylibs embed an rpath into their own Cellar directory, which is exactly
+        # the kind of absolute build-host path that has to not survive.
+        $rpaths = @(& otool -l $current 2>$null |
+            Select-String -Pattern '^\s+path\s+(\S+)\s+\(offset' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value })
+        foreach ($rpath in $rpaths) {
+            if ($rpath -like "$BrewRoot/*") {
+                & $installNameTool -delete_rpath $rpath $current | Out-Null
+            }
+        }
+
         foreach ($line in (& otool -L $current 2>$null)) {
             # first line is the file itself; dependencies look like "\t/usr/lib/libx.dylib (compatibility ...)"
             if ($line -notmatch '^\s+(\S+)\s+\(compatibility') { continue }

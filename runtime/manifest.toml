@@ -64,4 +64,4 @@ strategy = "system-library"
 version = "debian-libmpv2"
 destination = "third_party/mpv/linux-x64"
 required_files = ["lib/libmpv.so"]
-notes = "libmpv from the distribution package (apt-get install libmpv-dev) plus the ldd dependency closure, staged under the same name the linker records. Bundling the closure is required: libmpv.so.2 pulls in FFmpeg and libplacebo, and a package that only ships libmpv itself will not start on a machine without them installed."
+notes = "libmpv from the distribution package (apt-get install libmpv-dev), staged under the name the linker records. The artifact is a .deb that declares the runtime as dependencies rather than bundling it: an ldd closure walk reaches 226 objects including ld-linux-x86-64.so.2, libc.so.6 and libstdc++.so.6, and shipping the dynamic loader and libc inside an application directory breaks binaries in ways that do not look like missing files. fetch-runtime.ps1 resolves the closure to distribution package names and package.ps1 writes them into the Depends field."
