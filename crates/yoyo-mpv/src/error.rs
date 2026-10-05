@@ -16,6 +16,8 @@ pub enum MpvError {
     VideoOutput(String),
     #[error("mpv string contained an interior null byte: {0}")]
     InvalidString(String),
+    #[error("mpv render api failed: {0}")]
+    Render(String),
     #[error("mpv api error: {0}")]
     Api(String),
 }

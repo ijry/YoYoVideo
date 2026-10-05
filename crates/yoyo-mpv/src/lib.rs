@@ -4,6 +4,8 @@ mod error;
 mod event;
 mod options;
 mod render;
+#[cfg(feature = "mpv-runtime")]
+mod render_gl;
 mod track_list;
 mod translate;
 
@@ -12,4 +14,6 @@ pub use error::MpvError;
 pub use event::{MpvEvent, map_event};
 pub use options::{MpvClientOptions, MpvVideoWindow};
 pub use render::{MpvRenderBridge, RenderTarget};
+#[cfg(feature = "mpv-runtime")]
+pub use render_gl::{GetProcAddress, MpvGlRenderContext, UpdateFlags};
 pub use translate::{MpvAction, translate_command, translate_open};
