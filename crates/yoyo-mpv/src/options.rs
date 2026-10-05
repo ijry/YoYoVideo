@@ -18,6 +18,12 @@ pub struct MpvClientOptions {
     pub video_window: Option<MpvVideoWindow>,
     pub force_window: bool,
     pub profile: Option<String>,
+    /// mpv `ao` setting. `None` lets mpv choose.
+    ///
+    /// libmpv is a library, not the `mpv` binary: it never reads `mpv.conf`, so
+    /// every option has to be passed in explicitly. That makes this the only way
+    /// to run against a machine with no audio output device.
+    pub audio_output: Option<String>,
 }
 
 impl MpvClientOptions {
@@ -31,6 +37,9 @@ impl MpvClientOptions {
         }
         if let Some(profile) = &self.profile {
             pairs.push(("profile", profile.clone()));
+        }
+        if let Some(audio_output) = &self.audio_output {
+            pairs.push(("ao", audio_output.clone()));
         }
         pairs
     }

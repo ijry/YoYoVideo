@@ -26,7 +26,18 @@ use crate::video_texture::VideoTexture;
 slint::include_modules!();
 
 pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
-    MpvBackend::new_runtime()
+    build_desktop_backend_with_options(yoyo_mpv::MpvClientOptions::default())
+}
+
+/// Builds a playback backend with explicit mpv options.
+///
+/// libmpv does not read `mpv.conf`, so anything that is not the default for a
+/// normal desktop session — an audio output that does not exist on this machine,
+/// most obviously — has to be passed in here.
+pub fn build_desktop_backend_with_options(
+    options: yoyo_mpv::MpvClientOptions,
+) -> Result<MpvBackend, MpvError> {
+    MpvBackend::new_runtime_with_options(options)
 }
 
 pub fn build_desktop_backend_with_video_window(
@@ -35,7 +46,7 @@ pub fn build_desktop_backend_with_video_window(
     MpvBackend::new_runtime_with_options(yoyo_mpv::MpvClientOptions {
         video_window: Some(yoyo_mpv::MpvVideoWindow::new(window_id.0)),
         force_window: true,
-        profile: None,
+        ..yoyo_mpv::MpvClientOptions::default()
     })
 }
 

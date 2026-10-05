@@ -45,6 +45,7 @@ edition = "2024"
 [dependencies]
 yoyovideo_desktop = { package = "yoyovideo-desktop", path = "$(($repoRoot.Path -replace '\\', '/') + '/apps/yoyovideo-desktop')", features = ["mpv-runtime"] }
 yoyo_core = { package = "yoyo-core", path = "$(($repoRoot.Path -replace '\\', '/') + '/crates/yoyo-core')" }
+yoyo_mpv = { package = "yoyo-mpv", path = "$(($repoRoot.Path -replace '\\', '/') + '/crates/yoyo-mpv')" }
 "@
 
 Set-Content -LiteralPath (Join-Path $probeRoot "src/main.rs") -Value @"
@@ -59,7 +60,18 @@ use yoyo_core::{BackendEvent, MediaLocator, PlayerBackend};
 fn main() {
     let media = std::env::temp_dir().join("yoyovideo-smoke.wav");
     write_wav(&media);
-    let mut backend = yoyovideo_desktop::build_desktop_backend().expect("backend init");
+    // ao=null is not a preference: libmpv never reads mpv.conf, so the only way to
+    // decode on a machine with no audio output device (a CI runner, a container,
+    // a headless server) is to pass the option in. mpv aborts the file before it
+    // reports a track list when it cannot open an output, which shows up here as
+    // EndOfFile instead of duration/position/track events.
+    let mut backend = yoyovideo_desktop::build_desktop_backend_with_options(
+        yoyo_mpv::MpvClientOptions {
+            audio_output: Some("null".to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("backend init");
     backend.open(&MediaLocator::File(media)).expect("open media");
     let start = Instant::now();
     let mut duration = false;
