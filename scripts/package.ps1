@@ -217,7 +217,10 @@ function New-LinuxDeb([string]$PackageDir, [string]$OutputPath, [string]$Release
         " a dependency rather than bundled. See docs/copyright for the runtime version"
         " this package was built against and where its source lives."
     )
-    Set-Content -LiteralPath (Join-Path $controlDir "control") -Value ($controlLines -join "`n") -Encoding utf8 -NoNewline
+    # dpkg requires the control file to end with a newline, and a UTF-8 BOM would
+    # land in the first field name. Both are easy to get wrong and neither is
+    # obvious from the error.
+    Set-Content -LiteralPath (Join-Path $controlDir "control") -Value (($controlLines -join "`n") + "`n") -Encoding utf8NoBOM
 
     & $dpkgDeb.Source --build --root-owner-group $tree $OutputPath | Out-Null
     if ($LASTEXITCODE -ne 0) {
