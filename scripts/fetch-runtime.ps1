@@ -291,18 +291,26 @@ function Resolve-LinuxLibmpv {
     Fail "libmpv.so.2 not found. Install it first: apt-get install -y libmpv-dev"
 }
 
-function Copy-LinuxDependencyClosure([string]$LibraryPath, [string]$LibDir) {
-    # libmpv.so.2 links against FFmpeg, libplacebo and friends. A package that
-    # ships only libmpv does not start on a machine that lacks them, so the whole
-    # closure has to travel with it.
-    $copied = @{}
+function Resolve-LinuxDependencyPackages([string]$LibraryPath) {
+    # Returns the distribution packages that libmpv needs, so the .deb can declare
+    # them instead of the archive carrying its own copy of the world.
+    #
+    # Bundling the closure here was the obvious move and the wrong one: an ldd walk
+    # from libmpv.so.2 reaches 226 objects, and among them are ld-linux-x86-64.so.2,
+    # libc.so.6, libstdc++.so.6 and libgcc_s.so.1. Shipping the dynamic loader and
+    # the C library inside an application directory is how a Linux binary breaks in
+    # confusing ways -- symbol versioning and loader disagreements rather than a
+    # clean "file not found". Linux distributes shared libraries by declaring
+    # dependencies, so that is what the package does.
+    $packages = [System.Collections.Generic.HashSet[string]]::new()
     $queue = [System.Collections.Generic.Queue[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
     $queue.Enqueue($LibraryPath)
 
     while ($queue.Count -gt 0) {
         $current = $queue.Dequeue()
         foreach ($line in (& ldd $current 2>$null)) {
-            # "libfoo.so.1 => /path/libfoo.so.1 (0x..)" and "/lib64/ld-linux.so.2 (0x..)"
+            # "libfoo.so.1 => /path/libfoo.so.1 (0x..)" and "/lib64/ld-linux-x86-64.so.2 (0x..)"
             $resolved = $null
             if ($line -match '=>\s*(\S+)') {
                 $resolved = $matches[1]
@@ -311,33 +319,50 @@ function Copy-LinuxDependencyClosure([string]$LibraryPath, [string]$LibDir) {
             }
             if (-not $resolved) { continue }
             if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { continue }
-            $key = [System.IO.Path]::GetFileName($resolved)
-            if ($copied.ContainsKey($key)) { continue }
-            $copied[$key] = $true
-            Copy-Item -LiteralPath $resolved -Destination (Join-Path $LibDir $key) -Force
+            if (-not $seen.Add([System.IO.Path]::GetFileName($resolved))) { continue }
+
+            $owner = (& dpkg -S $resolved 2>$null | Select-Object -First 1)
+            if ($owner -match '^([^:]+):') {
+                [void]$packages.Add($matches[1])
+            }
             $queue.Enqueue($resolved)
         }
     }
-    return $copied.Count
-}
 
+    if ($packages.Count -eq 0) {
+        Fail "Could not determine the packages providing $LibraryPath; dpkg -S found no owner."
+    }
+    return @($packages | Sort-Object)
+}
 function Resolve-MacLibmpv {
-    $prefix = (& brew --prefix mpv 2>$null)
-    if (-not $prefix) {
+    $mpvPrefix = (& brew --prefix mpv 2>$null)
+    if (-not $mpvPrefix) {
         Fail "brew could not resolve the mpv formula. Install it first: brew install mpv"
     }
-    $prefix = $prefix.Trim()
+    $mpvPrefix = $mpvPrefix.Trim()
+
+    # The bundling root has to be the Homebrew prefix itself (/opt/homebrew, or
+    # /usr/local on Intel), NOT the mpv formula's own prefix
+    # (/opt/homebrew/opt/mpv). libmpv's dependencies live in sibling formulae
+    # under /opt/homebrew/opt/<other>/lib, so filtering on the mpv prefix
+    # matches nothing and silently produces a package with no closure at all.
+    $brewRoot = (& brew --prefix 2>$null)
+    if (-not $brewRoot) {
+        Fail "brew could not resolve its own prefix"
+    }
+    $brewRoot = $brewRoot.Trim()
+
     foreach ($name in @("libmpv.dylib", "libmpv.2.dylib")) {
-        $candidate = Join-Path $prefix "lib/$name"
+        $candidate = Join-Path $mpvPrefix "lib/$name"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return [pscustomobject]@{ Path = $candidate; Prefix = $prefix }
+            return [pscustomobject]@{ Path = $candidate; Root = $brewRoot }
         }
     }
-    Fail "No libmpv dylib under $(Join-Path $prefix 'lib')"
+    Fail "No libmpv dylib under $(Join-Path $mpvPrefix 'lib')"
 }
 
-function Copy-MacDependencyClosure([string]$LibraryPath, [string]$Prefix, [string]$LibDir) {
-    # Everything Homebrew ships is linked against the absolute Homebrew prefix,
+function Copy-MacDependencyClosure([string]$LibraryPath, [string]$BrewRoot, [string]$LibDir) {
+    # Everything Homebrew ships is linked against the absolute Homebrew root,
     # so the copies only work once their install names point into @rpath.
     #
     # @rpath rather than @loader_path on purpose: @loader_path resolves against
@@ -367,7 +392,7 @@ function Copy-MacDependencyClosure([string]$LibraryPath, [string]$Prefix, [strin
             if ($line -notmatch '^\s+(\S+)\s+\(compatibility') { continue }
             $dependency = $matches[1]
             # Never rewrite or bundle the system libraries.
-            if ($dependency -notlike "$Prefix/*") { continue }
+            if ($dependency -notlike "$BrewRoot/*") { continue }
             if (-not (Test-Path -LiteralPath $dependency -PathType Leaf)) { continue }
 
             $dependencyName = [System.IO.Path]::GetFileName($dependency)
@@ -467,31 +492,34 @@ if ($strategy -eq "system-library") {
         $library = Resolve-LinuxLibmpv
         Write-Host "Library: $library"
         $soname = [System.IO.Path]::GetFileName($library)
+        # Staged for *linking* only. What ships is the declared dependency, not a
+        # copy of the closure -- see Resolve-LinuxDependencyPackages.
         Copy-Item -LiteralPath $library -Destination (Join-Path $libDir $soname) -Force
-        $count = Copy-LinuxDependencyClosure $library $libDir
-        Write-Host "Bundled $count shared object(s) from the dependency closure"
 
         # The linker needs -l mpv to resolve, and it only looks for libmpv.so.
         New-Item -ItemType SymbolicLink -Path (Join-Path $libDir "libmpv.so") -Target $soname -Force | Out-Null
 
+        $dependencies = Resolve-LinuxDependencyPackages $library
+        Write-Host "Resolved $($dependencies.Count) distribution package(s) providing the runtime"
+
         $version = (& dpkg-query -W -f='${Version}' libmpv2 2>$null)
-        $package = "libmpv2"
         Write-RuntimeSourceRecord $destination ([ordered]@{
-            strategy    = "system-library"
-            platform    = $Platform
-    library      = $soname
-        package     = $package
-        version     = if ($version) { $version.Trim() } else { "unknown" }
-     sha256      = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $libDir $soname)).Hash.ToLowerInvariant()
-        bundled     = $count
-        notes       = $entry.notes
-  })
+            strategy     = "system-library"
+            platform     = $Platform
+            library      = $soname
+            package      = "libmpv2"
+            version      = if ($version) { $version.Trim() } else { "unknown" }
+            sha256       = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $libDir $soname)).Hash.ToLowerInvariant()
+            depends      = $dependencies
+            link_method  = "declared as .deb dependencies rather than bundled"
+            notes        = $entry.notes
+        })
     } else {
         $resolved = Resolve-MacLibmpv
         Write-Host "Library: $($resolved.Path)"
         $sourceName = [System.IO.Path]::GetFileName($resolved.Path)
         Copy-Item -LiteralPath $resolved.Path -Destination (Join-Path $libDir $sourceName) -Force
-        $count = Copy-MacDependencyClosure (Join-Path $libDir $sourceName) $resolved.Prefix $libDir
+        $count = Copy-MacDependencyClosure (Join-Path $libDir $sourceName) $resolved.Root $libDir
         Write-Host "Bundled $count dylib(s) from the dependency closure"
 
         # -l mpv resolves against libmpv.dylib; the bottle ships it as a symlink.

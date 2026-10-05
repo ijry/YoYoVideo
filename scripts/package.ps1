@@ -159,6 +159,73 @@ from, plus the upstream mpv, FFmpeg and runtime build projects named above.
 See LICENSES.md in the YoYoVideo source repository for the full details.
 "@
 }
+function New-LinuxDeb([string]$PackageDir, [string]$OutputPath, [string]$ReleaseVersion) {
+    $dpkgDeb = Get-Command dpkg-deb -ErrorAction SilentlyContinue
+    if ($null -eq $dpkgDeb) {
+        Fail "dpkg-deb not found. The Linux artifact is a .deb and needs the dpkg tools."
+    }
+
+    $source = Join-Path $repoRoot "third_party/mpv/linux-x64/runtime-source.json"
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        Fail "Missing $source. Run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform linux-x64 -Force"
+    }
+    $runtime = Get-Content -Raw -LiteralPath $source | ConvertFrom-Json
+    $depends = @($runtime.depends)
+    if ($depends.Count -eq 0) {
+        Fail "The staged Linux runtime declared no dependencies; the .deb would not be installable."
+    }
+
+    # Debian rejects a version with a leading "v".
+    $version = $ReleaseVersion -replace '^v', ''
+    if ($version -notmatch '^[0-9][0-9A-Za-z.+~-]*$') {
+        Fail "Release version '$ReleaseVersion' is not usable as a Debian version."
+    }
+
+    $tree = Join-Path $distRoot "deb/YoYoVideo-linux-x64"
+    if (Test-Path -LiteralPath $tree) {
+        Remove-Item -LiteralPath $tree -Recurse -Force
+    }
+    $controlDir = Join-Path $tree "DEBIAN"
+    $binDir = Join-Path $tree "usr/bin"
+    $docDir = Join-Path $tree "usr/share/doc/yoyovideo"
+    New-Item -ItemType Directory -Force $controlDir, $binDir, $docDir | Out-Null
+
+    Copy-Item -LiteralPath (Join-Path $PackageDir "bin/yoyovideo-desktop") -Destination $binDir -Force
+    Copy-Item -LiteralPath (Join-Path $PackageDir "README.md") -Destination $docDir -Force
+    Copy-Item -LiteralPath (Join-Path $PackageDir "RELEASE-NOTES.md") -Destination $docDir -Force
+    Copy-Item -LiteralPath (Join-Path $PackageDir "LICENSES/runtime-provenance.md") -Destination (Join-Path $docDir "copyright") -Force
+    Copy-Item -LiteralPath (Join-Path $PackageDir "LICENSES/README.md") -Destination (Join-Path $docDir "LICENSES.md") -Force
+
+    $installedSize = [math]::Round((Get-ChildItem $tree -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1024)
+    # Built line by line rather than as a here-string: the control file has a
+    # strict format, and an interpolated here-string would quietly reformat it.
+    # Continuation lines must start with a space and a dot.
+    $controlLines = @(
+        "Package: yoyovideo"
+        "Version: $version"
+        "Section: video"
+        "Priority: optional"
+        "Architecture: amd64"
+        "Depends: $($depends -join ', ')"
+        "Installed-Size: $installedSize"
+        "Maintainer: YoYoVideo maintainers <https://github.com/ijry/YoYoVideo/issues>"
+        "Description: Full-format local video player"
+        " A cross-platform local video player built with Rust, Slint and libmpv, with"
+        " multi-tile batch playback, subtitle and track switching, and picture filters."
+        " ."
+        " The playback core comes from the distribution's libmpv package, declared as"
+        " a dependency rather than bundled. See docs/copyright for the runtime version"
+        " this package was built against and where its source lives."
+    )
+    Set-Content -LiteralPath (Join-Path $controlDir "control") -Value ($controlLines -join "`n") -Encoding utf8 -NoNewline
+
+    & $dpkgDeb.Source --build --root-owner-group $tree $OutputPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Fail "dpkg-deb failed to build $OutputPath"
+    }
+    Write-Host "Created Debian package: $OutputPath"
+    Write-Host "Declared dependencies: $($depends -join ', ')"
+}
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $distRoot = Join-Path $repoRoot "dist"
 $packageName = "YoYoVideo-$Platform"
@@ -246,11 +313,11 @@ Write-ReleaseMetadata $packageDir $Platform $ReleaseVersion
 
 if ($RequireRuntime) {
     Copy-DirectoryFiles $runtimeBinDir (Join-Path $packageDir "bin")
-    # On macOS and Linux the lib/ directory holds the shared library itself, which
-    # the package must carry. On Windows lib/ holds only the MSVC import library
-    # used at link time; shipping it would put a build artifact in a release and
-    # tell users nothing about running the binary.
-    if ($Platform -ne "windows-x64") {
+    # Windows lib/ holds only the MSVC import library used at link time, so there
+    # is nothing to ship. Linux declares its shared libraries as .deb dependencies
+    # instead of carrying copies -- see New-LinuxDeb. macOS is the one platform that
+    # genuinely bundles, because a .app is expected to be self-contained.
+    if ($Platform -in @("macos-aarch64", "macos-x86_64")) {
         Copy-DirectoryFiles $runtimeLibDir (Join-Path $packageDir "bin")
     }
 }
@@ -266,12 +333,21 @@ if ($LASTEXITCODE -ne 0) {
 
 $zipPath = Join-Path $distRoot "$packageName.zip"
 $tarPath = Join-Path $distRoot "$packageName.tar.gz"
+$debPath = Join-Path $distRoot "$packageName.deb"
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $tarPath -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $debPath -Force -ErrorAction SilentlyContinue
 
 if ($Platform -eq "windows-x64") {
     Compress-Archive -Path $packageDir -DestinationPath $zipPath -Force
     Write-Host "Created archive: $zipPath"
+} elseif ($Platform -eq "linux-x64") {
+    # Linux ships a .deb, not a tarball: the shared libraries come from declared
+    # dependencies, and only dpkg can express that.
+    if (-not $RequireRuntime) {
+        Fail "The Linux artifact is a .deb with declared runtime dependencies; build it with -RequireRuntime."
+    }
+    New-LinuxDeb $packageDir $debPath $ReleaseVersion
 } else {
     Push-Location $distRoot
     try {

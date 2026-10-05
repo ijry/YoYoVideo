@@ -206,6 +206,7 @@ jobs:
           path: |
             dist/YoYoVideo-${{ matrix.platform }}.zip
             dist/YoYoVideo-${{ matrix.platform }}.tar.gz
+            dist/YoYoVideo-${{ matrix.platform }}.deb
             dist/YoYoVideo-${{ matrix.platform }}-setup.exe
 
   publish:

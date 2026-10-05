@@ -64,7 +64,22 @@ if ($RequireRuntime) {
             Require-File (Join-Path $PackageDir "bin/libmpv.dylib") "macOS libmpv dylib"
         }
         "linux-x64" {
-            Require-Glob (Join-Path $PackageDir "bin/libmpv.so*") "Linux libmpv shared library"
+            # Linux declares its shared libraries instead of shipping copies, so the
+            # thing to verify is that the declaration exists and names libmpv.
+            $record = Join-Path $PackageDir "LICENSES/runtime-source.json"
+            Require-File $record "Linux runtime source record"
+            $runtime = Get-Content -Raw -LiteralPath $record | ConvertFrom-Json
+            $depends = @($runtime.depends)
+            if ($depends.Count -eq 0) {
+                Fail "The Linux runtime record declares no dependencies"
+            }
+            if (-not ($depends -contains "libmpv2")) {
+                Fail "The Linux runtime record does not declare libmpv2: $($depends -join ', ')"
+            }
+            $bundled = @(Get-ChildItem (Join-Path $PackageDir "bin") -Filter "libmpv.so*" -File -ErrorAction SilentlyContinue)
+            if ($bundled.Count -gt 0) {
+                Fail "The Linux package carries copies of $($bundled.Name -join ', '); the runtime is meant to be a declared dependency"
+            }
         }
     }
 }

@@ -113,24 +113,52 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform ${{ matrix.platform }} -Force
 
-      - name: Assert the staging is loadable
+      - name: Assert the staged runtime is complete
         shell: pwsh
         run: |
-          $stage = "third_party/mpv/${{ matrix.platform }}/lib"
-          $libs = Get-ChildItem $stage -File
+          $platform = "${{ matrix.platform }}"
+          $stage = "third_party/mpv/$platform"
+          $libs = @(Get-ChildItem "$stage/lib" -File)
+          Write-Host "Staged $($libs.Count) file(s) under $stage/lib"
+
+          $recordPath = Join-Path $stage "runtime-source.json"
+          if (-not (Test-Path -LiteralPath $recordPath)) {
+            throw "Missing $recordPath"
+          }
+          $record = Get-Content -Raw -LiteralPath $recordPath | ConvertFrom-Json
+          Write-Host ($record | ConvertTo-Json -Depth 4)
+
+          if ($platform -eq "linux-x64") {
+              # Linux declares its libraries; there is nothing to bundle and the
+              # declaration must name libmpv or the .deb is uninstallable.
+              $depends = @($record.depends)
+              if ($depends.Count -lt 2) {
+                throw "Linux runtime declared only $($depends.Count) dependency package(s)"
+              }
+              if (-not ($depends -contains "libmpv2")) {
+                throw "Linux runtime does not declare libmpv2: $($depends -join ', ')"
+              }
+              if ($libs | Where-Object { $_.Name -match '^lib(avcodec|avformat|avutil|c)\.' }) {
+                throw "The Linux staging is bundling FFmpeg copies; those belong in dependencies."
+              }
+              Write-Host "Declared dependencies: $($depends -join ', ')"
+              exit 0
+          }
+
+          # macOS bundles, because a .app is expected to be self-contained. So the
+          # closure has to actually be there, and no install name may still point
+          # at the build host's Homebrew prefix -- that works on the runner and
+          # breaks the moment the package moves.
           if ($libs.Count -lt 2) {
-            throw "Staging for ${{ matrix.platform }} holds $($libs.Count) file(s); a loadable runtime needs the library plus its dependency closure."
+            throw "macOS staging holds $($libs.Count) file(s); a loadable runtime needs the library plus its dependency closure."
           }
           $libs | ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.Name }
 
-          # Loading must not depend on the machine we happened to stage on: an
-          # absolute build-host path left in an install name would break the
-          # moment the package moves.
-          $suspect = Get-ChildItem $stage -File | Where-Object {
-              $_.Extension -eq ".dylib" -and
-              ((& otool -l $_.FullName | Select-String '/opt/homebrew|/usr/local/Cellar|homebrew') -ne $null)
+          foreach ($lib in $libs) {
+              $paths = & otool -l $lib.FullName | Select-String '/opt/homebrew|/usr/local/Cellar|/usr/local/opt'
+              if ($paths) {
+                  $paths | ForEach-Object { Write-Host "::error file=$($lib.Name)::$($_.Line.Trim())" }
+                  throw "Install names in $($lib.Name) still reference the build host's Homebrew prefix."
+              }
           }
-          if ($suspect) {
-            $suspect | ForEach-Object { Write-Host "::error file=$($_.Name)::still references a Homebrew path" }
-            throw "Install names were not rewritten for ${{ matrix.platform }}."
-          }
+          Write-Host "All macOS install names are relative."
