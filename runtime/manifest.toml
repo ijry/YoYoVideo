@@ -1,22 +1,36 @@
 # Runtime sources for the bundled libmpv playback core.
 #
-# `scripts/fetch-runtime.ps1` downloads each archive, verifies it against the
-# pinned `sha256`, and normalizes it into the `third_party/mpv/<platform>/`
-# layout that `scripts/package.ps1` consumes. `version` + `sha256` pin the exact
-# bytes, so a release cannot silently pick up a different build.
+# `scripts/fetch-runtime.ps1` stages each platform's runtime into the
+# `third_party/mpv/<platform>/` layout that `scripts/package.ps1` consumes:
 #
-# `available = false` means no redistributable public build has been vetted for
-# that platform yet. Those entries exist to document the requirement and to make
-# `bootstrap-runtime.ps1 -DryRun` explain itself; the release workflow refuses to
-# build a platform whose entry is not available.
+#   <destination>/bin/   payload that ships next to the executable
+#   <destination>/lib/   link-time library, and for the ELF/Mach-O platforms the
+#                        shared library plus its whole dependency closure
 #
-# Licensing: mpv and the FFmpeg build below are GPL-2.0-or-later, which is why
-# YoYoVideo itself is distributed under GPL-3.0-or-later. Redistribution requires
-# shipping the corresponding source — see LICENSES.md.
+# Two strategies, because the two families are not actually the same problem:
+#
+#   strategy = "archive"
+#       Download a pinned public archive and normalize it. Used for Windows,
+#       where an upstream build exists with FFmpeg statically linked into a
+#       single DLL.
+#
+#   strategy = "system-library"
+#       Take the library the runner's package manager already installed, copy it
+#       and its dependency closure, and rewrite install names so the loader finds
+#       the copies beside the executable. Used for macOS and Linux: no upstream
+#       redistributable universal/portable build exists, and taking the
+#       distribution package is both reproducible and the library the platform
+#       actually tests against. There is no upstream archive to pin a SHA-256
+#       against, so `scripts/fetch-runtime.ps1` records what it actually resolved
+#       — library version, SHA-256, and the package it came from — into
+#       `runtime-source.json`, which ends up in every package's provenance.
+#
+# `available = false` means the platform is not built yet.
 
 [[runtime]]
 platform = "windows-x64"
 available = true
+strategy = "archive"
 version = "shinchiro-mpv-winbuild-cmake-20261004"
 source_url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261004/mpv-dev-x86_64-20261004-git-413ff0b1cd.7z"
 sha256 = "445fc72a8aa10980504355a5d99c9a0a128c2fa177e029996fb312d9d3193d45"
@@ -26,23 +40,28 @@ required_files = ["lib/mpv.lib", "bin/mpv-2.dll"]
 notes = "shinchiro/mpv-winbuild-cmake mpv-dev x86_64 build, with FFmpeg statically linked into a single libmpv-2.dll. The upstream archive ships a MinGW import library (libmpv.dll.a); fetch-runtime.ps1 renames the DLL to mpv-2.dll and regenerates an MSVC import library from that DLL's own exports, so the executable imports mpv-2.dll and finds it beside the binary."
 
 [[runtime]]
-platform = "macos-universal"
-available = false
-version = "unavailable"
-source_url = "env:YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL"
-sha256 = "env:YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_SHA256"
-archive_format = "zip"
-destination = "third_party/mpv/macos-universal"
+platform = "macos-aarch64"
+available = true
+strategy = "system-library"
+version = "homebrew-mpv"
+destination = "third_party/mpv/macos-aarch64"
 required_files = ["lib/libmpv.dylib"]
-notes = "No public universal libmpv dylib has been vetted yet: upstream Windows builds do not apply, and Homebrew ships per-architecture bottles only, so a single 'macos-universal' artifact would be a lie. Set available = true together with a real source_url and sha256 once a universal build is pinned. Native video embedding is also still unimplemented on macOS (see docs/development/runtime-dependencies.md), so the app there opens without a video surface."
+notes = "libmpv from Homebrew (brew install mpv) plus its otool dependency closure, with install names rewritten to @loader_path so the packaged binary resolves the copies that sit beside it. Requires the build runner's Homebrew prefix to be architecture-matching, which the release matrix guarantees by building each macOS architecture on its own runner."
+
+[[runtime]]
+platform = "macos-x86_64"
+available = true
+strategy = "system-library"
+version = "homebrew-mpv"
+destination = "third_party/mpv/macos-x86_64"
+required_files = ["lib/libmpv.dylib"]
+notes = "Same staging as macos-aarch64, on an Intel runner so the Homebrew bottle and the Rust toolchain are both x86_64."
 
 [[runtime]]
 platform = "linux-x64"
-available = false
-version = "unavailable"
-source_url = "env:YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL"
-sha256 = "env:YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_SHA256"
-archive_format = "zip"
+available = true
+strategy = "system-library"
+version = "debian-libmpv2"
 destination = "third_party/mpv/linux-x64"
 required_files = ["lib/libmpv.so"]
-notes = "No public libmpv build has been vetted yet. Distributing one also means bundling its whole FFmpeg/libplacebo dependency closure, which is why this is not simply a matter of copying a single .so. Set available = true together with a real source_url and sha256 once such a build is pinned."
+notes = "libmpv from the distribution package (apt-get install libmpv-dev) plus the ldd dependency closure, staged under the same name the linker records. Bundling the closure is required: libmpv.so.2 pulls in FFmpeg and libplacebo, and a package that only ships libmpv itself will not start on a machine without them installed."

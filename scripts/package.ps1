@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
+    [ValidateSet("windows-x64", "macos-aarch64", "macos-x86_64", "linux-x64")]
     [string]$Platform,
 
     [ValidateSet("debug", "release")]
@@ -100,9 +100,34 @@ function Read-RuntimeEntrySummary([string]$Platform) {
     }
 }
 
+function Read-ResolvedRuntimeSource([string]$Platform) {
+    # The system-library platforms have no upstream archive to pin a SHA-256
+    # against, so fetch-runtime.ps1 records what it actually resolved. Surface it
+    # here rather than leaving the package claiming a version it cannot name.
+    $path = Join-Path $repoRoot "third_party/mpv/$Platform/runtime-source.json"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return $null
+    }
+    return Get-Content -Raw -LiteralPath $path
+}
+
 function Write-ReleaseMetadata([string]$PackageDir, [string]$Platform, [string]$ReleaseVersion) {
     $runtime = Read-RuntimeEntrySummary $Platform
+    $resolved = Read-ResolvedRuntimeSource $Platform
     $buildDate = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+    # Computed before the here-string below: anything assigned inside @"..."@ is
+    # literal text, not an interpolated expression.
+    $resolvedBlock = if ($resolved) {
+@"
+Resolved runtime source, recorded at build time (see runtime-source.json):
+
+$resolved
+"@
+    } else {
+        "Resolved runtime source: pinned upstream archive; see the URL and SHA-256 above."
+    }
+
     $templatePath = Join-Path $repoRoot "docs/release/RELEASE-NOTES.template.md"
     $releaseNotes = Get-Content -Raw -LiteralPath $templatePath
     $releaseNotes = $releaseNotes.Replace("{{VERSION}}", $ReleaseVersion)
@@ -112,6 +137,9 @@ function Write-ReleaseMetadata([string]$PackageDir, [string]$Platform, [string]$
     Set-Content -LiteralPath (Join-Path $PackageDir "RELEASE-NOTES.md") -Value $releaseNotes
 
     Copy-Item -LiteralPath (Join-Path $repoRoot "docs/release/LICENSES-README.md") -Destination (Join-Path $PackageDir "LICENSES/README.md") -Force
+    if ($resolved) {
+        Set-Content -LiteralPath (Join-Path $PackageDir "LICENSES/runtime-source.json") -Value $resolved -Encoding utf8
+    }
     Set-Content -LiteralPath (Join-Path $PackageDir "LICENSES/runtime-provenance.md") -Value @"
 # Runtime Provenance
 
@@ -123,13 +151,14 @@ function Write-ReleaseMetadata([string]$PackageDir, [string]$Platform, [string]$
 
 $($runtime.Notes)
 
+$resolvedBlock
+
 This runtime is distributed under GPL-2.0-or-later (mpv and FFmpeg). Redistributing this
 package requires providing the corresponding source: the YoYoVideo git tag it was built
 from, plus the upstream mpv, FFmpeg and runtime build projects named above.
 See LICENSES.md in the YoYoVideo source repository for the full details.
 "@
 }
-
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $distRoot = Join-Path $repoRoot "dist"
 $packageName = "YoYoVideo-$Platform"
@@ -156,7 +185,7 @@ if ($RequireRuntime) {
             Require-File (Join-Path $runtimeLibDir "mpv.lib") "Windows mpv import library"
             Require-File (Join-Path $runtimeBinDir "mpv-2.dll") "Windows libmpv runtime DLL"
         }
-        "macos-universal" {
+        { $_ -in @("macos-aarch64", "macos-x86_64") } {
             Require-File (Join-Path $runtimeLibDir "libmpv.dylib") "macOS libmpv dylib"
         }
         "linux-x64" {
@@ -164,9 +193,23 @@ if ($RequireRuntime) {
         }
     }
 
+    $linkFlags = @("-L native=$runtimeLibDir")
+
+    # The packaged executable has to find the bundled libraries beside itself. The
+    # loader records the SONAME / install name at link time, so a copy elsewhere on
+    # the machine is not enough: the search path has to be baked into the binary.
+    # Windows needs none of this -- mpv-2.dll sits next to the .exe and the default
+    # search order already covers that.
+    if ($Platform -eq "linux-x64") {
+        $linkFlags += '-C link-arg=-Wl,-rpath,$ORIGIN'
+    }
+    if ($Platform -in @("macos-aarch64", "macos-x86_64")) {
+        $linkFlags += '-C link-arg=-Wl,-rpath,@loader_path'
+    }
+
     if (Test-Path -LiteralPath $runtimeLibDir -PathType Container) {
-        $linkFlag = "-L native=$runtimeLibDir"
-        $env:RUSTFLAGS = if ([string]::IsNullOrWhiteSpace($env:RUSTFLAGS)) { $linkFlag } else { "$env:RUSTFLAGS $linkFlag" }
+        $linkFlagsJoined = $linkFlags -join " "
+        $env:RUSTFLAGS = if ([string]::IsNullOrWhiteSpace($env:RUSTFLAGS)) { $linkFlagsJoined } else { "$env:RUSTFLAGS $linkFlagsJoined" }
     }
 }
 

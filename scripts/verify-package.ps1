@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
+    [ValidateSet("windows-x64", "macos-aarch64", "macos-x86_64", "linux-x64")]
     [string]$Platform,
 
     [string]$PackageDir,
@@ -60,7 +60,7 @@ if ($RequireRuntime) {
         "windows-x64" {
             Require-File (Join-Path $PackageDir "bin/mpv-2.dll") "Windows libmpv runtime DLL"
         }
-        "macos-universal" {
+        { $_ -in @("macos-aarch64", "macos-x86_64") } {
             Require-File (Join-Path $PackageDir "bin/libmpv.dylib") "macOS libmpv dylib"
         }
         "linux-x64" {

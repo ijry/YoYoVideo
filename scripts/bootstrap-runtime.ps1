@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
+    [ValidateSet("windows-x64", "macos-aarch64", "macos-x86_64", "linux-x64")]
     [string]$Platform,
 
     [string]$Manifest = "runtime/manifest.toml",

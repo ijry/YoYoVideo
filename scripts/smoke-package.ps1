@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
+    [ValidateSet("windows-x64", "macos-aarch64", "macos-x86_64", "linux-x64")]
     [string]$Platform,
 
     [Parameter(Mandatory = $true)]
@@ -41,6 +41,7 @@ function Require-File([string]$Path, [string]$Description) {
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PackageDir = [System.IO.Path]::GetFullPath($PackageDir)
+$stagingLibDir = Join-Path $repoRoot "third_party/mpv/$Platform/lib"
 $script:SmokeLog = Join-Path $PackageDir "smoke/package-smoke.log"
 $binaryName = if ($Platform -eq "windows-x64") { "yoyovideo-desktop.exe" } else { "yoyovideo-desktop" }
 $binaryPath = Join-Path $PackageDir "bin/$binaryName"
@@ -87,7 +88,11 @@ if ($RequireRuntime -and -not $SkipRuntimePlayback) {
         $TimeoutSeconds,
         "-RuntimeBin",
         $runtimeBin,
+        # Link against the staging tree, load from the package. A package ships no
+        # link-time artifacts by design, so pointing the linker at it would fail.
         "-RuntimeLib",
+        $stagingLibDir,
+        "-RuntimeSearchPath",
         $runtimeBin
     )
     $oldPath = $env:PATH
@@ -97,7 +102,7 @@ if ($RequireRuntime -and -not $SkipRuntimePlayback) {
         if ($Platform -eq "windows-x64") {
             $env:PATH = "$runtimeBin;$env:PATH"
         }
-        if ($Platform -eq "macos-universal") {
+        if ($Platform -in @("macos-aarch64", "macos-x86_64")) {
             $env:DYLD_LIBRARY_PATH = "$runtimeBin;$env:DYLD_LIBRARY_PATH"
         }
         if ($Platform -eq "linux-x64") {

@@ -79,7 +79,7 @@
 
 - Run `pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -DryRun` and confirm it prints the manifest entry without downloading.
 - Run `pwsh -NoProfile -File scripts/bootstrap-runtime.ps1 -Platform windows-x64 -Force` on a clean machine with maintainer runtime environment variables set.
-- Download each GitHub Actions artifact: `YoYoVideo-windows-x64`, `YoYoVideo-macos-universal`, and `YoYoVideo-linux-x64`.
+- Download each GitHub Actions artifact: `YoYoVideo-windows-x64`, `YoYoVideo-macos-aarch64`, and `YoYoVideo-linux-x64`.
 - Extract the archive and confirm the top-level directory is named `dist/YoYoVideo-<platform>` locally or `YoYoVideo-<platform>` inside the uploaded archive.
 - Confirm `README.md`, `LICENSES/`, `docs/runtime-dependencies.md`, and `docs/manual-smoke-checklist.md` are present.
 - Confirm `RELEASE-NOTES.md`, `LICENSES/README.md`, and `LICENSES/runtime-provenance.md` are present in the package.

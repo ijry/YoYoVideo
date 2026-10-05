@@ -73,3 +73,64 @@ jobs:
 
       - name: Check desktop runtime feature
         run: cargo check -p yoyovideo-desktop --features mpv-runtime
+  # The release workflow stages the playback core on a tag. Running the same
+  # staging on every push means a broken package-manager layout or a rewritten
+  # install name fails on a pull request instead of at release time.
+  runtime-stage:
+    name: Stage runtime (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (Apple Silicon)
+            platform: macos-aarch64
+            os: macos-14
+          - label: macOS (Intel)
+            platform: macos-x86_64
+            os: macos-15-intel
+          - label: Linux x64
+            platform: linux-x64
+            os: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install macOS playback runtime
+        if: startsWith(matrix.platform, 'macos')
+        run: brew install mpv
+
+      - name: Install Linux playback runtime
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev pkg-config libfontconfig1-dev
+
+      - name: Stage runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform ${{ matrix.platform }} -Force
+
+      - name: Assert the staging is loadable
+        shell: pwsh
+        run: |
+          $stage = "third_party/mpv/${{ matrix.platform }}/lib"
+          $libs = Get-ChildItem $stage -File
+          if ($libs.Count -lt 2) {
+            throw "Staging for ${{ matrix.platform }} holds $($libs.Count) file(s); a loadable runtime needs the library plus its dependency closure."
+          }
+          $libs | ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.Name }
+
+          # Loading must not depend on the machine we happened to stage on: an
+          # absolute build-host path left in an install name would break the
+          # moment the package moves.
+          $suspect = Get-ChildItem $stage -File | Where-Object {
+              $_.Extension -eq ".dylib" -and
+              ((& otool -l $_.FullName | Select-String '/opt/homebrew|/usr/local/Cellar|homebrew') -ne $null)
+          }
+          if ($suspect) {
+            $suspect | ForEach-Object { Write-Host "::error file=$($_.Name)::still references a Homebrew path" }
+            throw "Install names were not rewritten for ${{ matrix.platform }}."
+          }

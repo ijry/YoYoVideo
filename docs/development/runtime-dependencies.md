@@ -53,7 +53,7 @@ The archive must expand into the normalized platform layout expected under `thir
 
 ### macOS Universal
 
-- Required runtime/link file: `third_party/mpv/macos-universal/lib/libmpv.dylib`
+- Required runtime/link file: `third_party/mpv/macos-aarch64/lib/libmpv.dylib`
 - Later app-bundle work should move this into the final bundle layout and configure deterministic loader paths.
 
 ### Linux x64
@@ -68,7 +68,7 @@ The packaging workflow can download maintainer-provided runtime archives before 
 Supported repository secrets:
 
 - `YOYOVIDEO_RUNTIME_ARCHIVE_WINDOWS_X64_URL`: zip archive whose contents expand into `third_party/mpv/windows-x64/`
-- `YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL`: zip archive whose contents expand into `third_party/mpv/macos-universal/`
+- `YOYOVIDEO_RUNTIME_ARCHIVE_MACOS_UNIVERSAL_URL`: zip archive whose contents expand into `third_party/mpv/macos-aarch64/`
 - `YOYOVIDEO_RUNTIME_ARCHIVE_LINUX_X64_URL`: zip archive whose contents expand into `third_party/mpv/linux-x64/`
 
 If a secret is absent or the archive lacks required files, packaging fails with a missing-runtime message instead of uploading an incomplete artifact.

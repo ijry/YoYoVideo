@@ -26,7 +26,6 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
       release_notes: ${{ steps.notes.outputs.body }}
-      platforms: ${{ steps.platforms.outputs.list }}
 
     steps:
       - name: Checkout
@@ -78,13 +77,10 @@ jobs:
           # The annotated tag message is the changelog.
           #
           # Deliberately not `git log -1 --format=%B`: that reads the *commit*
-          # message, which is whatever last landed on main ("ci: install NSIS
-          # ..."), not release notes. The generated notes GitHub offers for a
-          # release tag are no better — they are only a compare link.
+          # message, which is whatever last landed on main, not release notes.
           git for-each-ref --format='%(contents)' "refs/tags/$RELEASE_TAG" > release-notes.md
           if ! grep -q '[^[:space:]]' release-notes.md; then
             echo "Tag $RELEASE_TAG has no annotated message; release notes would be blank." >&2
-            echo "Recreate it with: git tag -a $RELEASE_TAG -m '<changelog>'" >&2
             exit 1
           fi
           delimiter="release-notes-$(openssl rand -hex 8)"
@@ -93,30 +89,31 @@ jobs:
             cat release-notes.md
             echo "${delimiter}"
           } >> "$GITHUB_OUTPUT"
-      # Publishing a platform whose runtime is not pinned would ship a package that
-      # launches without playback. Fail here rather than in the middle of a matrix.
-      - name: Resolve shippable platforms
-        id: platforms
-        shell: bash
-        run: |
-          set -euo pipefail
-          platforms="windows-x64"
-          echo "Building: $platforms"
-          for skipped in macos-universal linux-x64; do
-            echo "::notice::$skipped is not built for this release: its runtime/manifest.toml entry has available = false."
-          done
-          echo "list=$platforms" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.label }}
     needs: prepare
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: Windows x64
             platform: windows-x64
+            os: windows-latest
+            strategy: archive
+          - label: macOS (Apple Silicon)
+            platform: macos-aarch64
+            os: macos-14
+            strategy: system-library
+          - label: macOS (Intel)
+            platform: macos-x86_64
+            os: macos-15-intel
+            strategy: system-library
+          - label: Linux x64
+            platform: linux-x64
+            os: ubuntu-latest
+            strategy: system-library
     env:
       CI: true
 
@@ -129,9 +126,30 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # The macOS rows exist so that each architecture is built natively on a
+      # runner of that architecture: the Homebrew bottle and the Rust toolchain
+      # then agree, which a cross-compile could not guarantee.
+      - name: Install macOS playback runtime
+        if: matrix.platform == 'macos-aarch64' || matrix.platform == 'macos-x86_64'
+        run: brew install mpv
+
+      - name: Install Linux playback runtime
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev pkg-config
+
+      # Slint's Linux text backend needs fontconfig, and the winit X11 backend
+      # dlopens xkbcommon-x11 at run time.
+      - name: Install Linux windowing dependencies
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
+
       - name: Install 7-Zip
         # The pinned runtime archive is a .7z; GitHub's Windows image ships 7z but
-        # not on PATH by default for pwsh.
+        # not on PATH for pwsh.
+        if: matrix.strategy == 'archive'
         shell: pwsh
         run: |
           if (-not (Get-Command 7z.exe -ErrorAction SilentlyContinue)) {
@@ -156,20 +174,20 @@ jobs:
         # real duration/position/track events, so an artifact that cannot actually
         # decode media never reaches the release page.
         #
-        # -SkipLaunch skips the GUI start-up check: the runner is headless, and the
-        # Slint window needs an OpenGL context that a runner without a GPU cannot
-        # create. The decode check below is the part that actually proves the
-        # package works.
+        # -SkipLaunch skips the GUI start-up check: the runners are headless, and
+        # the window needs a display/GL context they do not provide. The decode
+        # check is the part that proves the package works.
         shell: pwsh
         run: pwsh -NoProfile -File scripts/smoke-package.ps1 -Platform ${{ matrix.platform }} -PackageDir dist/YoYoVideo-${{ matrix.platform }} -RequireRuntime -SkipLaunch -TimeoutSeconds 60
 
       - name: Build NSIS installer
+        if: matrix.platform == 'windows-x64'
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
           # Chocolatey installs under "Program Files (x86)", which is not on the
           # PATH of a step that is already running, and $env:GITHUB_PATH only
-          # takes effect for *later* steps. Put it on PATH here as well.
+          # takes effect for *later* steps.
           $nsisDir = "C:\Program Files (x86)\NSIS"
           if (Test-Path -LiteralPath (Join-Path $nsisDir "makensis.exe")) {
             $env:PATH = "$nsisDir;$env:PATH"
@@ -187,6 +205,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/YoYoVideo-${{ matrix.platform }}.zip
+            dist/YoYoVideo-${{ matrix.platform }}.tar.gz
             dist/YoYoVideo-${{ matrix.platform }}-setup.exe
 
   publish:
@@ -255,8 +274,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! gh workflow run docs.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main; then
+          if ! gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main; then
             echo "::warning::Could not dispatch docs.yml for ${TAG}; run it by hand if the site is stale."
           fi

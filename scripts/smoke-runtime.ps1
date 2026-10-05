@@ -1,13 +1,22 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("windows-x64", "macos-universal", "linux-x64")]
+    [ValidateSet("windows-x64", "macos-aarch64", "macos-x86_64", "linux-x64")]
     [string]$Platform = "windows-x64",
 
     [int]$TimeoutSeconds = 5,
 
     [string]$RuntimeBin,
 
-    [string]$RuntimeLib
+    # Link-time directory. Holds the import library on Windows and the shared
+    # library plus its dependency closure elsewhere. This is the *staging*
+    # directory, not the packaged one: a package deliberately ships no
+    # link-time artifacts, so the probe cannot link against it.
+    [string]$RuntimeLib,
+
+    # Directory the loader must search at run time. Defaults to -RuntimeLib,
+    # but the packaged smoke test passes the package's bin/ so that what gets
+    # exercised is the shipped copy rather than the staging copy.
+    [string]$RuntimeSearchPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +36,11 @@ if ([string]::IsNullOrWhiteSpace($RuntimeLib)) {
     $runtimeLib = Join-Path $repoRoot "third_party/mpv/$Platform/lib"
 } else {
     $runtimeLib = [System.IO.Path]::GetFullPath($RuntimeLib)
+}
+if ([string]::IsNullOrWhiteSpace($RuntimeSearchPath)) {
+    $runtimeSearchPath = $runtimeLib
+} else {
+    $runtimeSearchPath = [System.IO.Path]::GetFullPath($RuntimeSearchPath)
 }
 
 if ($Platform -eq "windows-x64" -and -not (Test-Path -LiteralPath (Join-Path $runtimeBin "mpv-2.dll") -PathType Leaf)) {
@@ -132,11 +146,36 @@ fn write_wav(path: &PathBuf) {
 if ($Platform -eq "windows-x64") {
     $env:PATH = "$runtimeBin;$env:PATH"
 }
-if ($Platform -eq "macos-universal") {
-    $env:DYLD_LIBRARY_PATH = "$runtimeLib;$env:DYLD_LIBRARY_PATH"
+if ($Platform -in @("macos-aarch64", "macos-x86_64")) {
+    $env:DYLD_LIBRARY_PATH = "$runtimeSearchPath;$env:DYLD_LIBRARY_PATH"
 }
 if ($Platform -eq "linux-x64") {
-    $env:LD_LIBRARY_PATH = "$runtimeLib;$env:LD_LIBRARY_PATH"
+    $env:LD_LIBRARY_PATH = "$runtimeSearchPath;$env:LD_LIBRARY_PATH"
+}
+
+# The probe has to be told where the library is, for two separate reasons.
+#
+# Linking: libmpv-sys emits `-l mpv` unconditionally, so without -L native the
+# build fails outright on a clean machine -- it only appeared to work because a
+# package.ps1 RUSTFLAGS happened to be in scope.
+#
+# Loading: the staged macOS dylibs carry @rpath install names, and @rpath
+# resolves against the loading binary's LC_RPATH, not DYLD_LIBRARY_PATH. So
+# the run-time directory has to be baked in as an rpath as well.
+$linkFlags = @("-L native=$runtimeLib")
+if ($Platform -in @("macos-aarch64", "macos-x86_64")) {
+    $linkFlags += '-C link-arg=-Wl,-rpath,@loader_path'
+    $linkFlags += "-C link-arg=-Wl,-rpath,$runtimeSearchPath"
+}
+if ($Platform -eq "linux-x64") {
+    $linkFlags += '-C link-arg=-Wl,-rpath,$ORIGIN'
+    $linkFlags += "-C link-arg=-Wl,-rpath,$runtimeSearchPath"
+}
+$oldRustFlags = $env:RUSTFLAGS
+$env:RUSTFLAGS = if ([string]::IsNullOrWhiteSpace($env:RUSTFLAGS)) {
+    $linkFlags -join " "
+} else {
+    "$env:RUSTFLAGS $($linkFlags -join ' ')"
 }
 
 Push-Location $probeRoot
@@ -149,6 +188,7 @@ try {
     }
 } finally {
     $env:CARGO_TARGET_DIR = $oldCargoTargetDir
+    $env:RUSTFLAGS = $oldRustFlags
     Pop-Location
     Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
