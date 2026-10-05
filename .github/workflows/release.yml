@@ -69,15 +69,22 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Release version: v$version"
 
-      - name: Collect release notes from the tag commit
+      - name: Collect release notes from the tag annotation
         id: notes
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          # The tag commit's message is the changelog. GitHub's generated notes for
-          # a release tag are only a compare link, which is not a changelog.
-          git log -1 --format=%B "$GITHUB_SHA" > release-notes.md
-          if [[ ! -s release-notes.md ]]; then
-            echo "Tag commit ${GITHUB_SHA} has an empty message; release notes would be blank." >&2
+          # The annotated tag message is the changelog.
+          #
+          # Deliberately not `git log -1 --format=%B`: that reads the *commit*
+          # message, which is whatever last landed on main ("ci: install NSIS
+          # ..."), not release notes. The generated notes GitHub offers for a
+          # release tag are no better — they are only a compare link.
+          git for-each-ref --format='%(contents)' "refs/tags/$RELEASE_TAG" > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "Tag $RELEASE_TAG has no annotated message; release notes would be blank." >&2
+            echo "Recreate it with: git tag -a $RELEASE_TAG -m '<changelog>'" >&2
             exit 1
           fi
           delimiter="release-notes-$(openssl rand -hex 8)"
@@ -86,7 +93,6 @@ jobs:
             cat release-notes.md
             echo "${delimiter}"
           } >> "$GITHUB_OUTPUT"
-
       # Publishing a platform whose runtime is not pinned would ship a package that
       # launches without playback. Fail here rather than in the middle of a matrix.
       - name: Resolve shippable platforms

@@ -61,7 +61,15 @@ function formatSize(bytes) {
 
 const options = parseArgs(process.argv.slice(2));
 const notes = (await readFile(options["notes-file"], "utf8")).trim();
-const downloadsUrl = `${options.repo}/releases/tag/${options.tag}`;
+// `options.repo` arrives as the GitHub slug ("owner/name"), not a URL. Building
+// links straight from the slug is what produced release pages full of dead
+// relative hrefs the first time round.
+const REPO_URL = /^https?:\/\//.test(options.repo)
+  ? options.repo.replace(/\/+$/, "")
+  : `https://github.com/${options.repo}`;
+const tagUrl = `${REPO_URL}/releases/tag/${options.tag}`;
+// Note the path: /releases/download/<tag>/<asset>, not /releases/tag/<tag>/download.
+const assetUrl = (name) => `${REPO_URL}/releases/download/${options.tag}/${name}`;
 
 const assets = (await collectAssets(options["assets-dir"])).sort((left, right) =>
   left.name.localeCompare(right.name),
@@ -86,8 +94,7 @@ for (const asset of assets) {
   const bytes = await readFile(asset.full);
   const size = formatSize(bytes.length);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  // GitHub's release download URL is /download/<tag>/<asset path>.
-  rows.push(`| [\`${asset.name}\`](${downloadsUrl}/download/${asset.name}) | ${size} |`);
+  rows.push(`| [\`${asset.name}\`](${assetUrl(asset.name)}) | ${size} |`);
   checksums.push(`${sha256}  ${asset.name}`);
 }
 
@@ -96,7 +103,7 @@ const body = [
   "",
   "## 下载 / Downloads",
   "",
-  `本版本由 [\`${options.tag}\`](${downloadsUrl}) 自动构建发布。`,
+  `本版本由 [\`${options.tag}\`](${tagUrl}) 自动构建发布。`,
   "",
   "| 文件 | 大小 |",
   "| --- | ---: |",
