@@ -314,8 +314,15 @@ function Resolve-LinuxDependencyPackages([string]$LibraryPath) {
         # only the dependencies is what dropped libmpv2 from the declaration:
         # the root library is never anybody's dependency, so it was never asked
         # about, and the .deb came out claiming to need only libpulse0.
-        foreach ($line in (& dpkg -S $current 2>$null)) {
-            # "libmpv2:amd64: /lib/x86_64-linux-gnu/libmpv.so.2" is an owner.
+        # Resolve symlinks first. On current Debian and Ubuntu /lib is a symlink
+        # to /usr/lib, and dpkg -S matches the path it recorded rather than the
+        # path that reaches it: querying the /lib spelling returns nothing at all,
+        # which is how the declaration came out holding a single package.
+        $real = (& readlink -f $current 2>$null)
+        if ([string]::IsNullOrWhiteSpace($real)) { $real = $current }
+
+        foreach ($line in (& dpkg -S $real 2>$null)) {
+            # "libmpv2:amd64: /usr/lib/x86_64-linux-gnu/libmpv.so.2" is an owner.
             # dpkg also prints "diversion by libc6 from ..." for diverted paths,
             # which is a notice and not a package: matching it blindly produced a
             # dependency literally named "diversion by libc6 from".
@@ -522,7 +529,10 @@ if ($strategy -eq "system-library") {
         # The linker needs -l mpv to resolve, and it only looks for libmpv.so.
         New-Item -ItemType SymbolicLink -Path (Join-Path $libDir "libmpv.so") -Target $soname -Force | Out-Null
 
-        $dependencies = Resolve-LinuxDependencyPackages $library
+        # Wrapped in @() on purpose: a PowerShell function return unrolls a
+        # single-element array into a bare string, and the record then serialized
+        # "depends" as a string instead of a list.
+        $dependencies = @(Resolve-LinuxDependencyPackages $library)
         Write-Host "Resolved $($dependencies.Count) distribution package(s) providing the runtime"
 
         $version = (& dpkg-query -W -f='${Version}' libmpv2 2>$null)
