@@ -21,7 +21,7 @@
 // the only way to embed video on macOS at all.
 #![allow(deprecated)]
 
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{CString, c_char, c_void};
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -102,11 +102,9 @@ impl GlSurface {
         }
         .ok_or_else(|| "no OpenGL 3.2 core pixel format is available".to_string())?;
 
-        // SAFETY: `format` is a valid pixel format for the duration of the call.
-        let context = unsafe {
+        let context =
             NSOpenGLContext::initWithFormat_shareContext(NSOpenGLContext::alloc(), &format, None)
-        }
-        .ok_or_else(|| "could not create an NSOpenGLContext".to_string())?;
+                .ok_or_else(|| "could not create an NSOpenGLContext".to_string())?;
 
         // The view comes from winit as a raw pointer. Borrowing it rather than
         // retaining it: winit owns it, and the host window outlives this surface.
@@ -205,18 +203,11 @@ unsafe fn resolve<T: Copy>(symbol: &str) -> Option<T> {
     Some(unsafe { std::mem::transmute_copy::<*mut c_void, T>(&pointer) })
 }
 
-/// The `CStr`-free variant of `dlsym` used when checking a symbol is present.
+/// Whether a GL symbol resolves. Used by the test below, and useful when adding a
+/// new entry point to `render`.
+#[cfg(test)]
 pub fn gl_symbol_available(symbol: &str) -> bool {
     !macos_get_proc_address(symbol).is_null()
-}
-
-/// Reads a NUL-terminated symbol name, for error messages.
-pub fn symbol_name(pointer: *const c_char) -> String {
-    if pointer.is_null() {
-        return String::new();
-    }
-    // SAFETY: mpv hands a NUL-terminated C string.
-    unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]

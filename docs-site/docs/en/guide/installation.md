@@ -53,14 +53,23 @@ Window state lives under `%APPDATA%\xyito\YoYoVideo\`.
 
 ## Other platforms
 
-v0.0.1 **ships Windows x64 only.** That is a deliberate limitation, not an oversight:
+Releases cover Windows x64, macOS (Apple Silicon and Intel) and Linux x64. How video reaches the screen
+differs per platform, and so does how much of it is proven:
 
-- macOS has no vetted universal libmpv build available (upstream publishes Windows builds only, and
-  Homebrew ships per-architecture bottles), and native video embedding is not implemented there yet,
-  so the app opens without a video surface.
-- Linux requires bundling libmpv's entire dependency closure, and native embedding under Wayland is
-  likewise unimplemented.
+| Platform | Video | Runtime |
+| --- | --- | --- |
+| Windows x64 | mpv `--wid` | bundled DLL from a pinned upstream build |
+| Linux x64 | mpv `--wid` under X11 | declared as `.deb` dependencies |
+| macOS | mpv render API over OpenGL | Homebrew dylibs, bundled and rewritten to `@rpath` |
 
-If you want to help close either gap, start with the `notes` on the matching entry in
-[`runtime/manifest.toml`](https://github.com/ijry/YoYoVideo/blob/main/runtime/manifest.toml) — they
-spell out what is missing.
+**Two caveats, stated plainly:**
+
+- **Wayland is not supported.** There is no verified host path, so the app reports the limitation rather
+  than pretending.
+- **macOS video is compile-verified only.** The render-API path builds for both architectures, but it has
+  not been run on a real Mac yet — CI runners are headless and never create a window. Treat it as
+  unproven until someone confirms it on hardware.
+
+If you want to help close either gap, the `notes` on the matching entry in
+[`runtime/manifest.toml`](https://github.com/ijry/YoYoVideo/blob/main/runtime/manifest.toml) spell out
+what is missing.

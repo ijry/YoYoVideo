@@ -51,7 +51,15 @@ Windows 上可见视频走 mpv 的 `wid` 窗口绑定：Rust 创建一个原生�
 由 mpv 往里渲染。界面本身只画控制条和背景，**画面区域是故意留空的**——否则 mpv 的窗口会被
 Slint 的绘制盖住。弹出菜单时宿主窗口会被临时隐藏。
 
-macOS 与 Wayland 尚未实现这条路径，程序会正常启动并在上层报告该限制。
+Linux X11 走同一条路径（`wid` 可以是 X11 的 `Window`）。
+
+macOS 不能走这条路径：mpv 只在 `x11_common.c` 和 `w32_common.c` 里读 `--wid`，它的 macOS 后端
+（`video/out/mac/common.swift`）自己创建并持有 NSWindow/NSView，没有任何接受外部宿主视图的入口。
+所以 macOS 改用 mpv 的 **渲染 API**：应用自己在子窗口的 NSView 上挂一个 `NSOpenGLContext`，
+再用 `mpv_render_context_*` 把画面画进 framebuffer 0。代码在 `macos_gl.rs`，平台无关的那半在
+`yoyo-mpv` 的 `render_gl.rs`。
+
+Wayland 仍未实现，程序会正常启动并在上层报告该限制。
 
 ## 界面
 

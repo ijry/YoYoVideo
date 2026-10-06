@@ -103,11 +103,11 @@ features:
       </div>
       <div class="yv-step" data-state="next">
         <h4>macOS packages <span class="yv-tag" data-state="next">pending</span></h4>
-        <p>No vetted universal libmpv build exists yet, and native video embedding is not implemented on macOS.</p>
+        <p>libmpv comes from Homebrew, built per architecture. Video goes through mpv's render API — implemented and compile-verified, but not yet run on real hardware.</p>
       </div>
       <div class="yv-step" data-state="next">
         <h4>Linux packages <span class="yv-tag" data-state="next">pending</span></h4>
-        <p>Requires bundling libmpv's whole dependency closure, and Wayland embedding is not implemented yet.</p>
+        <p>Declares libmpv as a .deb dependency rather than bundling it; video works under X11. Wayland embedding is not implemented.</p>
       </div>
     </div>
   </div>

@@ -85,9 +85,31 @@ If `makensis` is missing, install NSIS and rerun the command. Installer generati
 
 ## Video Host Requirements
 
-Visible video uses mpv's `wid` window binding. The desktop app creates a native video host and passes that id to mpv before initialization.
+Visible video takes one of two paths, depending on what mpv supports on the platform.
 
-- Windows: required first target for native video host embedding.
-- Linux X11: required design target using an X11 window id.
-- Wayland: reports unsupported embedding unless a verified host path is implemented.
-- macOS: reports unsupported embedding unless a verified host path is implemented.
+**`wid` embedding** — the app creates a native child window and hands its id to mpv before initialization.
+
+- Windows: `HWND`.
+- Linux X11: X11 `Window`.
+
+**Render API** — the app owns the GL context and draws mpv's frames into it.
+
+- macOS: mpv reads `--wid` only in `video/out/x11_common.c` and
+  `video/out/w32_common.c` (`opts->WinID`). Its macOS backend
+  (`video/out/mac/common.swift`) creates and owns its own `NSWindow`/`NSView` and
+  never reads it, so there is no host view to hand over. `macos_gl.rs` attaches an
+  `NSOpenGLContext` to the child window's view and renders into framebuffer 0;
+  `crates/yoyo-mpv/src/render_gl.rs` wraps `mpv_render_context_*`.
+  libmpv 3.1.0 exports only `MPV_RENDER_API_TYPE_OPENGL`, so this is OpenGL, not
+  Metal.
+
+**Not implemented**
+
+- Wayland: no verified host path. The app reports the limitation rather than
+  pretending.
+
+## Verification status
+
+Compile-verified for `aarch64-apple-darwin` and `x86_64-apple-darwin`. The macOS
+render path has **not** been run on real hardware: CI runners are headless, so no
+window is ever created there. It needs a real Mac before it can be called working.

@@ -102,11 +102,11 @@ features:
       </div>
       <div class="yv-step" data-state="next">
         <h4>macOS 发行包 <span class="yv-tag" data-state="next">待完成</span></h4>
-        <p>还没有经过审核的通用架构 libmpv；且原生视频嵌入在 macOS 上尚未实现。</p>
+        <p>libmpv 取自 Homebrew，两个架构分开构建。视频走 mpv 渲染 API——已实现并通过编译验证，尚未在真机跑过。</p>
       </div>
       <div class="yv-step" data-state="next">
         <h4>Linux 发行包 <span class="yv-tag" data-state="next">待完成</span></h4>
-        <p>需要打包 libmpv 的完整依赖闭包，Wayland 下的原生嵌入同样尚未实现。</p>
+        <p>以 .deb 声明依赖而非捆绑，X11 下视频可用；Wayland 原生嵌入尚未实现。</p>
       </div>
     </div>
   </div>

@@ -52,11 +52,20 @@ Get-FileHash -Algorithm SHA256 .\YoYoVideo-windows-x64.zip
 
 ## 其他平台
 
-v0.0.1 **只发布 Windows x64**。这不是疏忽：
+发行覆盖 Windows x64、macOS（Apple Silicon 与 Intel）和 Linux x64。视频怎么到达屏幕，各平台并不相同，
+验证程度也不相同：
 
-- macOS 目前没有经过审核的通用架构 libmpv 构建（上游只提供 Windows 构建，Homebrew 只有分架构的 bottle），
-  而且原生视频嵌入在 macOS 上尚未实现，程序会正常启动但不显示视频画面。
-- Linux 需要打包 libmpv 的完整依赖闭包，且 Wayland 下的原生嵌入同样尚未实现。
+| 平台 | 视频路径 | 运行时 |
+| --- | --- | --- |
+| Windows x64 | mpv `--wid` | 固定上游构建的 DLL，随包捆绑 |
+| Linux x64 | X11 下的 mpv `--wid` | 声明为 `.deb` 依赖 |
+| macOS | mpv 渲染 API（OpenGL） | Homebrew dylib，随包捆绑并改写为 `@rpath` |
 
-如果你愿意协助这两个平台，可以从 [`runtime/manifest.toml`](https://github.com/ijry/YoYoVideo/blob/main/runtime/manifest.toml)
+**两个需要说清楚的保留：**
+
+- **不支持 Wayland。** 没有经过验证的宿主路径，程序会明确报告这个限制，而不是假装可用。
+- **macOS 视频只通过了编译验证。** 渲染 API 这条路在两个架构上都能编译，但还没有在真机上跑过——
+  CI runner 是无头的，根本不会创建窗口。在有人在真机上确认之前，请当作未验证。
+
+如果你愿意补上这两块，可以从 [`runtime/manifest.toml`](https://github.com/ijry/YoYoVideo/blob/main/runtime/manifest.toml)
 里对应条目的 `notes` 开始读——那里写清楚了缺什么。

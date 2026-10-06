@@ -7,7 +7,7 @@ description: YoYoVideo 的常见问题与排查方法。
 
 ## 启动后没有画面，只有一片黑色
 
-这是 macOS 和 Linux（Wayland）上目前的已知限制：原生视频嵌入只在 Windows 上实现。
+Linux（Wayland）上仍是这个限制。Windows 和 Linux X11 用 mpv 的 `wid`，macOS 用渲染 API（见下一条）。
 程序会正常启动，播放状态栏也会更新，但在没有视频宿主窗口的系统上不会显示画面。
 相关记录见 [`docs/development/runtime-dependencies.md`](https://github.com/ijry/YoYoVideo/blob/main/docs/development/runtime-dependencies.md)。
 
