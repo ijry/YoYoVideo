@@ -36,8 +36,14 @@ features:
     details: 内嵌 libmpv 运行时，无需另外安装 mpv，也不会上传任何数据。
 ---
 
+<script setup>
+import { withBase } from "vitepress";
+</script>
+
 <div class="yv-shot-wrap">
-  <img class="yv-shot" src="/player-default.png" alt="YoYoVideo 默认界面" />
+  <!-- withBase, not a bare path: VitePress rewrites markdown image syntax but
+       leaves raw HTML alone, so a literal src would break under the site base. -->
+  <img class="yv-shot" :src="withBase('/player-default.png')" alt="YoYoVideo 默认界面" />
 </div>
 
 <section class="yv-section">
@@ -121,7 +127,7 @@ features:
     <div class="yv-actions">
       <a class="yv-btn yv-btn-primary" href="https://github.com/ijry/YoYoVideo/releases/latest">前往下载页</a>
       <a class="yv-btn yv-btn-ghost" href="https://github.com/ijry/YoYoVideo">查看源码</a>
-      <a class="yv-btn yv-btn-ghost" href="/guide/installation">安装说明</a>
+      <a class="yv-btn yv-btn-ghost" :href="withBase('/guide/installation')">安装说明</a>
     </div>
   </div>
 </section>

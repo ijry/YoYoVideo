@@ -20,6 +20,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $packageFullPath = [System.IO.Path]::GetFullPath($PackageDir)
 $outputFullPath = [System.IO.Path]::GetFullPath($OutputPath)
 $scriptPath = Join-Path $repoRoot "installer/windows/yoyovideo.nsi"
+$iconPath = Join-Path $repoRoot "apps/yoyovideo-desktop/assets/icons/yoyovideo.ico"
 
 if (-not (Test-Path -LiteralPath $packageFullPath -PathType Container)) {
     Fail "Package directory not found: $packageFullPath"
@@ -30,6 +31,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $packageFullPath "bin/yoyovideo-desk
 if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
     Fail "NSIS script not found: $scriptPath"
 }
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+    Fail "Icon not found: $iconPath. Run: node scripts/generate-icons.mjs"
+}
 
 $makensis = Get-Command makensis -ErrorAction SilentlyContinue
 if ($null -eq $makensis) {
@@ -39,7 +43,7 @@ if ($null -eq $makensis) {
 $outputDir = Split-Path -Parent $outputFullPath
 New-Item -ItemType Directory -Force $outputDir | Out-Null
 
-& $makensis.Source "/DPACKAGE_DIR=$packageFullPath" "/DOUTPUT_EXE=$outputFullPath" "/DAPP_VERSION=$Version" $scriptPath
+& $makensis.Source "/DPACKAGE_DIR=$packageFullPath" "/DOUTPUT_EXE=$outputFullPath" "/DAPP_VERSION=$Version" "/DICON_FILE=$iconPath" $scriptPath
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

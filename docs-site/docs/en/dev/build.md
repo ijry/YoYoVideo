@@ -78,3 +78,17 @@ pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir dist/YoYoVideo-win
 The core's version and checksum live in `runtime/manifest.toml`. To upgrade, change `source_url`,
 `sha256` and `version`, then re-run fetch, package and smoke. `version` is part of the cache
 filename, so changing it forces a fresh download instead of silently reusing the old archive.
+
+
+## Icons
+
+The app icon is **generated**, not a hand-exported bitmap:
+
+```powershell
+node scripts/generate-icons.mjs
+```
+
+It renders the same geometry (a rounded square with a play triangle, shared with
+`docs-site/docs/public/logo.svg`) into a Windows `.ico` with seven sizes, the PNGs the Linux package
+installs, and the PNG the Slint window uses. The outputs are committed; re-run the script after
+changing the shape. It needs no image tooling -- the PNG and ICO encoding is in the script.

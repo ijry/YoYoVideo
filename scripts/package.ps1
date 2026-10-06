@@ -188,13 +188,39 @@ function New-LinuxDeb([string]$PackageDir, [string]$OutputPath, [string]$Release
     $controlDir = Join-Path $tree "DEBIAN"
     $binDir = Join-Path $tree "usr/bin"
     $docDir = Join-Path $tree "usr/share/doc/yoyovideo"
-    New-Item -ItemType Directory -Force $controlDir, $binDir, $docDir | Out-Null
+    # A desktop entry plus its icon, or the app is only reachable by hunting for
+    # the binary on PATH and shows up with no icon anywhere.
+    $appsDir = Join-Path $tree "usr/share/applications"
+    $iconDir = Join-Path $tree "usr/share/icons/hicolor/256x256/apps"
+    New-Item -ItemType Directory -Force $controlDir, $binDir, $docDir, $appsDir, $iconDir | Out-Null
 
     Copy-Item -LiteralPath (Join-Path $PackageDir "bin/yoyovideo-desktop") -Destination $binDir -Force
     Copy-Item -LiteralPath (Join-Path $PackageDir "README.md") -Destination $docDir -Force
     Copy-Item -LiteralPath (Join-Path $PackageDir "RELEASE-NOTES.md") -Destination $docDir -Force
     Copy-Item -LiteralPath (Join-Path $PackageDir "LICENSES/runtime-provenance.md") -Destination (Join-Path $docDir "copyright") -Force
     Copy-Item -LiteralPath (Join-Path $PackageDir "LICENSES/README.md") -Destination (Join-Path $docDir "LICENSES.md") -Force
+
+    $iconSource = Join-Path $repoRoot "apps/yoyovideo-desktop/assets/icons/yoyovideo-256.png"
+    if (-not (Test-Path -LiteralPath $iconSource)) {
+        Fail "Missing $iconSource. Run: node scripts/generate-icons.mjs"
+    }
+    Copy-Item -LiteralPath $iconSource -Destination (Join-Path $iconDir "yoyovideo.png") -Force
+
+    # Categories=AudioVideo is the freedesktop name for exactly this.
+    $desktopLines = @(
+        "[Desktop Entry]"
+        "Type=Application"
+        "Name=YoYoVideo"
+        "Name[zh_CN]=悠悠乐播"
+        "Comment=Full-format local video player"
+        "Comment[zh_CN]=全格式本地视频播放器"
+        "Exec=yoyovideo-desktop %F"
+        "Icon=yoyovideo"
+        "Terminal=false"
+        "Categories=AudioVideo;Player;Video;"
+        "MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;"
+    )
+    Set-Content -LiteralPath (Join-Path $appsDir "yoyovideo.desktop") -Value (($desktopLines -join "`n") + "`n") -Encoding utf8NoBOM
 
     $installedSize = [math]::Round((Get-ChildItem $tree -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1024)
     # Built line by line rather than as a here-string: the control file has a

@@ -77,6 +77,10 @@ const enSidebar: DefaultTheme.Sidebar = {
 };
 
 export default defineConfig({
+  // The site is served from a project subpath (ijry.github.io/YoYoVideo/), not
+  // from a domain root. Without this every asset is requested as /assets/...,
+  // which 404s and leaves the page unstyled.
+  base: "/YoYoVideo/",
   title: "YoYoVideo",
   description:
     "YoYoVideo 是一款用 Rust + Slint + libmpv 打造的全格式本地视频播放器，支持多画面批量播放、字幕与音轨切换、画面滤镜与 A-B 循环。",
@@ -85,7 +89,9 @@ export default defineConfig({
   lastUpdated: true,
   sitemap: { hostname: HOSTNAME },
   head: [
-    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+    // head is rendered verbatim -- base is NOT prepended -- so these paths are
+// spelled out in full.
+    ["link", { rel: "icon", href: "/YoYoVideo/favicon.svg", type: "image/svg+xml" }],
     ["meta", { name: "theme-color", content: "#38bdf8" }],
     ["meta", { property: "og:title", content: "YoYoVideo · 全格式本地视频播放器" }],
     [

@@ -76,3 +76,16 @@ pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir dist/YoYoVideo-win
 播放内核的版本和校验和写在 `runtime/manifest.toml` 里。升级时改 `source_url` / `sha256` /
 `version` 三个字段，然后重新跑一次 fetch + package + smoke。
 `version` 参与缓存文件名，所以改版本号会让脚本重新下载而不是复用旧缓存。
+
+
+## 图标
+
+应用图标是**生成**的，不是手工导出的位图：
+
+```powershell
+node scripts/generate-icons.mjs
+```
+
+它会用同一套几何（圆角方块 + 播放三角，与 `docs-site/docs/public/logo.svg` 同源）渲染出
+Windows 的 `.ico`（7 个尺寸）、Linux 用的 PNG，以及 Slint 窗口图标用的 PNG。产物已提交到仓库，
+改了形状之后重跑这个脚本即可——没有依赖任何图像工具，PNG 和 ICO 都是脚本自己编码的。

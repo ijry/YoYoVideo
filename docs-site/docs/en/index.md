@@ -36,8 +36,14 @@ features:
     details: libmpv ships inside the package. No separate mpv install, no data leaves your machine.
 ---
 
+<script setup>
+import { withBase } from "vitepress";
+</script>
+
 <div class="yv-shot-wrap">
-  <img class="yv-shot" src="/player-default.png" alt="The YoYoVideo window on startup" />
+  <!-- withBase, not a bare path: VitePress rewrites markdown image syntax but
+       leaves raw HTML alone, so a literal src would break under the site base. -->
+  <img class="yv-shot" :src="withBase('/player-default.png')" alt="The YoYoVideo window on startup" />
 </div>
 
 <section class="yv-section">
@@ -122,7 +128,7 @@ features:
     <div class="yv-actions">
       <a class="yv-btn yv-btn-primary" href="https://github.com/ijry/YoYoVideo/releases/latest">Go to downloads</a>
       <a class="yv-btn yv-btn-ghost" href="https://github.com/ijry/YoYoVideo">Browse the source</a>
-      <a class="yv-btn yv-btn-ghost" href="/en/guide/installation">Installation</a>
+      <a class="yv-btn yv-btn-ghost" :href="withBase('/en/guide/installation')">Installation</a>
     </div>
   </div>
 </section>

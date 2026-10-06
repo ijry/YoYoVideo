@@ -35,6 +35,12 @@ tempfile = "3.27.0"
 # application owns, and on macOS that context is an NSOpenGLContext attached to
 # the view. mpv has no --wid embedding on macOS at all -- its cocoa backend
 # creates and owns its own NSWindow -- so this is the only supported path.
+# Windows resources: the .exe icon, so the binary does not show up as a generic
+# blank page in Explorer and the taskbar. Windows-only, and a build dependency
+# because a resource has to be compiled into the binary before it links.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 # `objc2-open-gl` is what gates NSOpenGLContext's ``initWithFormat:shareContext:``
