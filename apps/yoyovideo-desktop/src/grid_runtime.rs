@@ -19,9 +19,15 @@ use crate::{
 };
 
 /// One video in the grid.
+///
+/// `host` is declared before `session` on purpose. Rust drops fields in
+/// declaration order, and on macOS the host owns mpv's render context, which keeps
+/// a pointer into the mpv handle that `session`'s backend owns. mpv requires the
+/// render context to be freed before the handle, so swapping these two would make
+/// teardown a use-after-free.
 pub struct GridTile {
-    session: AppSession<MpvBackend>,
     host: WinitVideoHost,
+    session: AppSession<MpvBackend>,
     /// Per-tile gesture tracking; the picture is a native window Slint never sees.
     pointer: VideoAreaPointer,
     title: String,
@@ -46,6 +52,21 @@ impl GridTile {
 
     pub fn host_physical_size(&self) -> (u32, u32) {
         self.host.physical_size()
+    }
+
+    /// Draws one frame of this tile's video.
+    ///
+    /// macOS only: every tile owns its own mpv render context, because there is no
+    /// `--wid` embedding there. See `build_host_and_backend`.
+    #[cfg(target_os = "macos")]
+    pub fn render_frame(&mut self) -> Result<(), String> {
+        self.host.render_frame().map_err(|error| error.to_string())
+    }
+
+    /// Tells this tile's GL context that its drawable was resized.
+    #[cfg(target_os = "macos")]
+    pub fn refresh_drawable(&self) {
+        self.host.refresh_drawable();
     }
 }
 

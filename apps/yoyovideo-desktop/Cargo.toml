@@ -30,3 +30,16 @@ slint-build = "1.17.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# macOS video rendering: mpv's render API needs an OpenGL context the
+# application owns, and on macOS that context is an NSOpenGLContext attached to
+# the view. mpv has no --wid embedding on macOS at all -- its cocoa backend
+# creates and owns its own NSWindow -- so this is the only supported path.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+# `objc2-open-gl` is what gates NSOpenGLContext's ``initWithFormat:shareContext:``
+# and NSOpenGLPixelFormat's ``initWithAttributes:``; without it the only
+# constructors in scope are the deprecated CGL ones. NSResponder is required by
+# ``setView:``.
+objc2-app-kit = { version = "0.3", features = ["NSOpenGL", "NSView", "NSResponder", "NSWindow", "objc2-open-gl"] }
+objc2-foundation = { version = "0.3", features = ["NSThread"] }

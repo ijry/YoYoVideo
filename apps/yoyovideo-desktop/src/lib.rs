@@ -7,6 +7,8 @@ mod grid_state;
 mod history_runtime;
 mod i18n;
 mod keyboard;
+#[cfg(all(target_os = "macos", feature = "mpv-runtime"))]
+mod macos_gl;
 mod osd;
 pub mod platform;
 mod presenter;

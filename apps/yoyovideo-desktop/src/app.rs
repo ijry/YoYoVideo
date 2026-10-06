@@ -361,6 +361,15 @@ pub fn recent_item_status(item: &crate::platform::RecentOpenItem) -> String {
 }
 
 struct DesktopRuntime {
+    /// Declared before `controller` on purpose.
+    ///
+    /// Rust drops fields in declaration order. On macOS the host holds mpv's render
+    /// context, which keeps a pointer into the mpv handle that `controller` owns,
+    /// and mpv requires the render context to be freed *before* the handle is
+    /// destroyed. Moving this below `controller` would turn shutdown into a
+    /// use-after-free, silently.
+    #[cfg(feature = "mpv-runtime")]
+    video_host: Option<WinitVideoHost>,
     controller: Option<DesktopController<MpvBackend>>,
     video_host_error: Option<String>,
     app_handle: Option<slint::Weak<MainWindow>>,
@@ -384,8 +393,6 @@ struct DesktopRuntime {
     diagnostic_log_path: PathBuf,
     diagnostic_log_failed: bool,
     window_state_path: Option<PathBuf>,
-    #[cfg(feature = "mpv-runtime")]
-    video_host: Option<WinitVideoHost>,
     /// The native video surface is hidden while a popup is open, otherwise it would
     /// occlude the popup. Authoritative: bounds sync must not re-show it.
     #[cfg(feature = "mpv-runtime")]
@@ -2806,6 +2813,47 @@ fn grid_tile_title(locator: &MediaLocator) -> String {
     }
 }
 
+/// Creates the video surface and the playback backend that draws into it.
+///
+/// The two platform families wire up differently, and the difference is not
+/// cosmetic:
+///
+/// - On X11 and Win32 the child window's native handle goes to mpv as `--wid` and
+///   mpv renders into it. The backend therefore needs the window id up front.
+/// - On macOS mpv has no `--wid` embedding at all -- its cocoa backend creates and
+///   owns its own NSWindow and never reads `opts->WinID` -- so the app owns an
+///   OpenGL context on the child window's view and mpv renders into that through
+///   the render API. The backend is built without a window id, and the render
+///   context is attached to the host afterwards.
+///
+/// Both return the same pair, so callers do not branch.
+#[cfg(feature = "mpv-runtime")]
+fn build_host_and_backend(
+    event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+    parent_window: &slint::winit_030::winit::window::Window,
+) -> Result<(WinitVideoHost, MpvBackend), String> {
+    let mut host =
+        WinitVideoHost::new_child(event_loop, parent_window).map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    let backend = {
+        let backend = build_desktop_backend().map_err(|e| e.to_string())?;
+        // SAFETY: `backend` is returned alongside `host` and every caller keeps the
+        // backend alive for at least as long as the host -- `DesktopRuntime` and
+        // `GridTile` both declare the host first so it drops first. See the notes
+        // on those two structs.
+        unsafe { host.attach_render_context(&backend) }.map_err(|e| e.to_string())?;
+        backend
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let backend = {
+        let window_id = host.mpv_window_id().map_err(|e| e.to_string())?;
+        build_desktop_backend_with_video_window(window_id).map_err(|e| e.to_string())?
+    };
+
+    Ok((host, backend))
+}
 /// Builds one tile: its own native child window, its own mpv instance, its own session.
 #[cfg(feature = "mpv-runtime")]
 fn build_grid_tile(
@@ -2814,9 +2862,7 @@ fn build_grid_tile(
     config: AppConfig,
     locator: &MediaLocator,
 ) -> Result<(AppSession<MpvBackend>, WinitVideoHost, String), String> {
-    let host = WinitVideoHost::new_child(event_loop, parent_window).map_err(|e| e.to_string())?;
-    let window_id = host.mpv_window_id().map_err(|e| e.to_string())?;
-    let backend = build_desktop_backend_with_video_window(window_id).map_err(|e| e.to_string())?;
+    let (host, backend) = build_host_and_backend(event_loop, parent_window)?;
     let mut session = AppSession::new(config, backend);
 
     let command = match locator {
@@ -3120,11 +3166,7 @@ impl DesktopWinitHandler {
         let config = runtime.config.clone();
         let shortcuts = config.shortcuts.clone();
         let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
-            let video_host = WinitVideoHost::new_child(event_loop, parent_window)
-                .map_err(|error| error.to_string())?;
-            let window_id = video_host.mpv_window_id().map_err(|error| error.to_string())?;
-            let backend = build_desktop_backend_with_video_window(window_id)
-                .map_err(|error| error.to_string())?;
+            let (video_host, backend) = build_host_and_backend(event_loop, parent_window)?;
             let session = AppSession::new(config, backend);
             Ok((DesktopController::with_shortcuts(session, shortcuts), video_host))
         })();
@@ -3206,6 +3248,36 @@ impl DesktopWinitHandler {
 
         if self.video_host_window_id() != Some(window_id) {
             return;
+        }
+
+        // On macOS the frame is drawn here rather than by mpv: there is no native
+        // window for mpv to paint into, so mpv's update callback asks winit for a
+        // redraw and this is where that request is answered. On X11 and Win32 mpv
+        // owns the child window and paints it itself, so none of this applies.
+        #[cfg(target_os = "macos")]
+        {
+            match event {
+                WindowEvent::RedrawRequested => {
+                    let mut runtime = self.runtime.borrow_mut();
+                    let render_error =
+                        runtime.video_host.as_mut().and_then(|host| host.render_frame().err());
+                    if let Some(error) = render_error {
+                        runtime.record_diagnostic(
+                            "WARN",
+                            format!("Video frame render failed: {error}"),
+                        );
+                    }
+                    return;
+                }
+                WindowEvent::Resized(_) => {
+                    // The GL context has to be told its drawable changed size, or
+                    // it keeps presenting at the old dimensions.
+                    if let Some(host) = self.runtime.borrow().video_host.as_ref() {
+                        host.refresh_drawable();
+                    }
+                }
+                _ => {}
+            }
         }
 
         let gesture = match event {
@@ -3292,6 +3364,31 @@ impl DesktopWinitHandler {
         let Some(index) = self.runtime.borrow().grid.tile_index_for_window(window_id) else {
             return;
         };
+
+        // Each tile draws its own frame on macOS, for the same reason the
+        // single-video surface does: no `--wid` embedding, so the app owns every
+        // tile's GL context. See `handle_video_host_event`.
+        #[cfg(target_os = "macos")]
+        {
+            match event {
+                WindowEvent::RedrawRequested => {
+                    let mut runtime = self.runtime.borrow_mut();
+                    let render_error =
+                        runtime.grid.tile_mut(index).and_then(|tile| tile.render_frame().err());
+                    if let Some(error) = render_error {
+                        runtime
+                            .record_diagnostic("WARN", format!("Grid tile render failed: {error}"));
+                    }
+                    return;
+                }
+                WindowEvent::Resized(_) => {
+                    if let Some(tile) = self.runtime.borrow_mut().grid.tile_mut(index) {
+                        tile.refresh_drawable();
+                    }
+                }
+                _ => {}
+            }
+        }
 
         match event {
             WindowEvent::MouseInput {

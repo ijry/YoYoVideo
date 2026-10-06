@@ -115,6 +115,26 @@ impl MpvBackend {
     pub fn render_bridge(&mut self) -> &mut MpvRenderBridge {
         &mut self.render_bridge
     }
+
+    /// Creates an OpenGL render context bound to this backend's mpv handle.
+    ///
+    /// The handle stays private: callers get a render context, not the ability to
+    /// reach into mpv. Needed on macOS, where mpv has no `--wid` embedding and the
+    /// render API is the only way to put video on screen.
+    ///
+    /// # Safety
+    ///
+    /// The GL context behind `get_proc` must be current on the thread that later
+    /// calls into the returned context, and this backend must outlive it.
+    #[cfg(feature = "mpv-runtime")]
+    pub unsafe fn create_gl_render_context(
+        &self,
+        get_proc: crate::GetProcAddress,
+    ) -> Result<crate::MpvGlRenderContext, MpvError> {
+        // SAFETY: the caller upholds the contract above; `handle` is an initialised
+        // mpv handle owned by `self.client`.
+        unsafe { crate::MpvGlRenderContext::new(self.client.handle, get_proc) }
+    }
 }
 
 #[cfg(not(feature = "mpv-runtime"))]

@@ -3081,6 +3081,7 @@ dependencies = [
  "objc2-core-text",
  "objc2-core-video",
  "objc2-foundation 0.3.2",
+ "objc2-open-gl",
  "objc2-quartz-core 0.3.2",
 ]
 
@@ -3252,6 +3253,7 @@ checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
  "bitflags 2.13.0",
  "block2 0.6.2",
+ "libc",
  "objc2 0.6.4",
  "objc2-core-foundation",
 ]
@@ -3300,6 +3302,15 @@ dependencies = [
  "bitflags 2.13.0",
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-open-gl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecc7fd7519a189d9ba9ed9de51af81e41d096aea1d08cca59fd9d8c65d8f585"
+dependencies = [
+ "objc2 0.6.4",
 ]
 
 [[package]]
@@ -6011,6 +6022,9 @@ dependencies = [
  "chrono",
  "directories",
  "i-slint-backend-winit",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "raw-window-handle",
  "rfd",
  "serde",
