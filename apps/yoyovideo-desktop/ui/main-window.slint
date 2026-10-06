@@ -410,6 +410,18 @@ export component MainWindow inherits Window {
     in-out property <bool> jump_panel_visible: false;
     in-out property <string> jump_input_text: "";
     in-out property <string> ui_language_code: "zh";
+    // Video composited by the UI rather than drawn by mpv into its own surface.
+    //
+    // On X11 and Win32 mpv gets a native child window (`--wid`) and draws there,
+    // so these stay unset. On Wayland mpv has no such handle, so the frame arrives
+    // as a texture borrowed from the renderer's GL context and is composited here
+    // instead -- see `video_surface_gl.rs`.
+    //
+    // An explicit flag rather than testing the image for emptiness: an unset
+    // `image` and a transparent one are hard to tell apart, and the layout should
+    // not depend on that distinction.
+    in-out property <bool> video_frame_active: false;
+    in-out property <image> video_frame;
     in-out property <bool> url_focused: false;
 
     out property <length> video_area_x: video_area.absolute-position.x - root.absolute-position.x;
@@ -1024,6 +1036,18 @@ export component MainWindow inherits Window {
                     video_area := Rectangle {
                         background: #000000;
                         min-height: 360px;
+
+                        // The composited frame, when there is one. Drawn before the
+                        // grid strips and the chrome, which come after it.
+                        if root.video_frame_active: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: root.video_frame;
+                            // Letterbox rather than stretch: the frame is rendered at
+                            // the video area's pixel size, but a resize can outrun the
+                            // last rendered frame by a frame or two.
+                            image-fit: contain;
+                        }
                         // Its own minimum, so the reported rect never collapses to zero
                         // when the sibling deck is a not-yet-instantiated conditional.
                         // The window itself is at least 860px wide.
