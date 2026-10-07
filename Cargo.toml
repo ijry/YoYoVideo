@@ -2,6 +2,7 @@
 members = [
     "crates/yoyo-core",
     "crates/yoyo-mpv",
+    "crates/yoyo-updater",
     "apps/yoyovideo-desktop",
 ]
 resolver = "2"
