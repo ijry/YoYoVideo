@@ -114,34 +114,39 @@ impl VerifiedManifest {
 
     /// Always recompute the hash, even if the SDK elected to reuse a cached file.
     pub fn verify_package(&self, path: &Path) -> Result<(), UpdateError> {
-        let asset = self.asset();
-        let file = File::open(path)?;
-        if file.metadata()?.len() != asset.Size {
-            return Err(UpdateError::PackageSize);
-        }
-        let mut reader = BufReader::new(file);
-        let mut hash = Sha256::new();
-        let mut total = 0_u64;
-        let mut buffer = [0_u8; 64 * 1024];
-        loop {
-            let count = reader.read(&mut buffer)?;
-            if count == 0 {
-                break;
-            }
-            total += count as u64;
-            if total > asset.Size {
-                return Err(UpdateError::PackageSize);
-            }
-            hash.update(&buffer[..count]);
-        }
-        if total != asset.Size {
-            return Err(UpdateError::PackageSize);
-        }
-        if !format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&asset.SHA256) {
-            return Err(UpdateError::PackageHash);
-        }
-        Ok(())
+        verify_package_file(self.asset(), path)
     }
+}
+
+/// Checks bytes against supplied metadata, without authenticating that metadata.
+/// Callers must validate/authenticate the manifest separately.
+pub fn verify_package_file(asset: &VelopackAsset, path: &Path) -> Result<(), UpdateError> {
+    let file = File::open(path)?;
+    if file.metadata()?.len() != asset.Size {
+        return Err(UpdateError::PackageSize);
+    }
+    let mut reader = BufReader::new(file);
+    let mut hash = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        total += count as u64;
+        if total > asset.Size {
+            return Err(UpdateError::PackageSize);
+        }
+        hash.update(&buffer[..count]);
+    }
+    if total != asset.Size {
+        return Err(UpdateError::PackageSize);
+    }
+    if !format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&asset.SHA256) {
+        return Err(UpdateError::PackageHash);
+    }
+    Ok(())
 }
 
 fn decode_box(encoded: &str, limit: usize) -> Result<String, UpdateError> {

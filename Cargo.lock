@@ -6525,6 +6525,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoyo-update-sign"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "minisign",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "velopack",
+ "yoyo-updater",
+]
+
+[[package]]
 name = "yoyo-updater"
 version = "0.0.1"
 dependencies = [

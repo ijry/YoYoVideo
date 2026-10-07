@@ -6,5 +6,6 @@ mod policy;
 pub use error::UpdateError;
 pub use manifest::{
     MAX_MANIFEST_BYTES, MAX_PACKAGE_BYTES, MAX_SIGNATURE_BYTES, UpdateManifest, VerifiedManifest,
+    verify_package_file,
 };
 pub use policy::Platform;
