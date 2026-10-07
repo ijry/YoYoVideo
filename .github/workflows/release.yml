@@ -1,296 +1,137 @@
 name: Release
-
 on:
   push:
-    tags:
-      - "v*.*.*"
+    tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)publish, e.g. v0.0.1"
+        description: 'Existing stable tag to publish (existing releases are refused)'
         required: true
         type: string
-
 permissions:
-  contents: write
-
+  contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
-
 jobs:
   prepare:
-    name: Validate release tag
+    name: Validate immutable release tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
-      release_notes: ${{ steps.notes.outputs.body }}
-
+      commit: ${{ steps.tag.outputs.commit }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      # A release is only ever made from the commit the tag points at, so a tag
-      # that sits on a stale branch cannot publish artifacts built from other code.
-      - name: Resolve tag and workspace version
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Resolve annotated tag, version and exact commit
         id: tag
         shell: bash
         env:
-          INPUT_TAG: ${{ inputs.tag }}
-          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ "$IS_DISPATCH" == "true" ]]; then
-            tag="${INPUT_TAG#v}"
-            git fetch --depth 1 origin "refs/tags/v$tag:refs/tags/v$tag"
-            git checkout --detach "v$tag"
-            echo "tag=v$tag" >> "$GITHUB_OUTPUT"
-          else
-            git fetch --force --tags
-            tag="${GITHUB_REF_NAME#v}"
-            git checkout --detach "$GITHUB_REF_NAME"
-            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-          fi
-
-          if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)(\.[0-9]+)?)?$ ]]; then
-            echo "Unsupported release version: $tag" >&2
-            exit 1
-          fi
-
-          # Cargo.toml owns the version, so the tag cannot drift away from the code.
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Expected stable vX.Y.Z'; exit 1; }
+          git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          git checkout --detach "$TAG"
+          commit="$(git rev-parse HEAD)"
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-          if [[ "$version" != "$tag" ]]; then
-            echo "Workspace version ${version} does not match tag v${tag}." >&2
-            echo "Update [workspace.package] version in Cargo.toml, or retag." >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Release version: v$version"
-
-      - name: Collect release notes from the tag annotation
-        id: notes
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          # The annotated tag message is the changelog.
-          #
-          # Deliberately not `git log -1 --format=%B`: that reads the *commit*
-          # message, which is whatever last landed on main, not release notes.
-          git for-each-ref --format='%(contents)' "refs/tags/$RELEASE_TAG" > release-notes.md
-          if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "Tag $RELEASE_TAG has no annotated message; release notes would be blank." >&2
-            exit 1
-          fi
-          delimiter="release-notes-$(openssl rand -hex 8)"
-          {
-            echo "body<<${delimiter}"
-            cat release-notes.md
-            echo "${delimiter}"
-          } >> "$GITHUB_OUTPUT"
-
-  build:
-    name: Build ${{ matrix.label }}
-    needs: prepare
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: Windows x64
-            platform: windows-x64
-            os: windows-latest
-            strategy: archive
-          - label: macOS (Apple Silicon)
-            platform: macos-aarch64
-            os: macos-14
-            strategy: system-library
-          - label: macOS (Intel)
-            platform: macos-x86_64
-            os: macos-15-intel
-            strategy: system-library
-          - label: Linux x64
-            platform: linux-x64
-            os: ubuntu-latest
-            strategy: system-library
-    env:
-      CI: true
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+          [[ "v$version" == "$TAG" ]] || { echo 'Tag/workspace version mismatch'; exit 1; }
+          [[ "$(git cat-file -t "refs/tags/$TAG")" == tag ]] || { echo 'Release notes require an annotated tag'; exit 1; }
+          git for-each-ref --format='%(contents)' "refs/tags/$TAG" > release-notes.md
+          grep -q '[^[:space:]]' release-notes.md
+          printf 'tag=%s\nversion=%s\ncommit=%s\n' "$TAG" "$version" "$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # The macOS rows exist so that each architecture is built natively on a
-      # runner of that architecture: the Homebrew bottle and the Rust toolchain
-      # then agree, which a cross-compile could not guarantee.
-      - name: Install macOS playback runtime
-        if: matrix.platform == 'macos-aarch64' || matrix.platform == 'macos-x86_64'
-        run: brew install mpv
-
-      - name: Install Linux playback runtime
-        if: matrix.platform == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpv-dev pkg-config
-
-      # Slint's Linux text backend needs fontconfig, and the winit X11 backend
-      # dlopens xkbcommon-x11 at run time.
-      - name: Install Linux windowing dependencies
-        if: matrix.platform == 'linux-x64'
-        run: |
-          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
-
-      - name: Install 7-Zip
-        # The pinned runtime archive is a .7z; GitHub's Windows image ships 7z but
-        # not on PATH for pwsh.
-        if: matrix.strategy == 'archive'
-        shell: pwsh
-        run: |
-          if (-not (Get-Command 7z.exe -ErrorAction SilentlyContinue)) {
-            choco install 7zip --yes --no-progress
-            "C:\Program Files\7-Zip" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          }
-
-      - name: Validate runtime manifest
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform ${{ matrix.platform }} -DryRun
-
-      - name: Stage runtime
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform ${{ matrix.platform }} -Force
-
-      - name: Build package
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/package.ps1 -Platform ${{ matrix.platform }} -Configuration release -RequireRuntime -ReleaseMode -ReleaseVersion $env:GITHUB_REF_NAME
-
-      - name: Verify runtime playback
-        # Decodes a generated WAV with the *packaged* playback core and waits for
-        # real duration/position/track events, so an artifact that cannot actually
-        # decode media never reaches the release page.
-        #
-        # -SkipLaunch skips the GUI start-up check: the runners are headless, and
-        # the window needs a display/GL context they do not provide. The decode
-        # check is the part that proves the package works.
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/smoke-package.ps1 -Platform ${{ matrix.platform }} -PackageDir dist/YoYoVideo-${{ matrix.platform }} -RequireRuntime -SkipLaunch -TimeoutSeconds 60
-
-      - name: Build NSIS installer
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress
-          # Chocolatey installs under "Program Files (x86)", which is not on the
-          # PATH of a step that is already running, and $env:GITHUB_PATH only
-          # takes effect for *later* steps.
-          $nsisDir = "C:\Program Files (x86)\NSIS"
-          if (Test-Path -LiteralPath (Join-Path $nsisDir "makensis.exe")) {
-            $env:PATH = "$nsisDir;$env:PATH"
-            "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          }
-          pwsh -NoProfile -File scripts/build-installer.ps1 `
-            -PackageDir dist/YoYoVideo-${{ matrix.platform }} `
-            -OutputPath dist/YoYoVideo-${{ matrix.platform }}-setup.exe `
-            -Version $env:GITHUB_REF_NAME
-
-      - name: Verify installed Windows app and shortcut
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
-          pwsh -NoProfile -File scripts/test-windows-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64
-
-      - name: Verify restored Windows main window is visible
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          $runtime = (Resolve-Path "third_party/mpv/windows-x64").Path
-          $env:PATH = "$(Join-Path $runtime 'bin');$env:PATH"
-          $env:RUSTFLAGS = "-L native=$(Join-Path $runtime 'lib')"
-          cargo test -p yoyovideo-desktop --release --features mpv-runtime --test window_restore_smoke -- --ignored
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: YoYoVideo-${{ matrix.platform }}
+          name: release-notes
+          path: release-notes.md
           if-no-files-found: error
-          path: |
-            dist/YoYoVideo-${{ matrix.platform }}.zip
-            dist/YoYoVideo-${{ matrix.platform }}.tar.gz
-            dist/YoYoVideo-${{ matrix.platform }}.deb
-            dist/YoYoVideo-${{ matrix.platform }}-setup.exe
-
+  build:
+    needs: prepare
+    uses: ./.github/workflows/updater-build.yml
+    with:
+      revision: ${{ needs.prepare.outputs.commit }}
+      version: ${{ needs.prepare.outputs.version }}
+      require-public-key-variable: true
   publish:
-    name: Publish GitHub Release
+    name: Sign, verify draft and publish
     needs: [prepare, build]
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
+      actions: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Download release assets
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Restore release notes
+      - name: Compare signing public key with client pin
+        shell: pwsh
         env:
-          RELEASE_NOTES: ${{ needs.prepare.outputs.release_notes }}
-        shell: bash
+          YOYOVIDEO_UPDATER_PUBLIC_KEY: ${{ vars.YOYOVIDEO_UPDATER_PUBLIC_KEY }}
         run: |
-          printf '%s\n' "$RELEASE_NOTES" > release-notes.md
-          if [[ ! -s release-notes.md ]]; then
-            echo "The prepare job produced no release notes." >&2
-            exit 1
-          fi
-
-      - name: Build the release body
-        run: |
-          node scripts/create-release-body.mjs \
-            --assets-dir release-assets \
-            --tag "${{ needs.prepare.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --output release-body.md \
-            --notes-file release-notes.md
-
-      - name: Create or update release
-        uses: ncipollo/release-action@v1
+          $pinned = (Get-Content -Raw apps/yoyovideo-desktop/assets/updater.pub).Trim()
+          if (-not $env:YOYOVIDEO_UPDATER_PUBLIC_KEY -or $env:YOYOVIDEO_UPDATER_PUBLIC_KEY.Trim() -cne $pinned) { throw 'Public key mismatch' }
+      - name: Build trusted signing tool without signing credentials
+        run: cargo build --locked --release -p yoyo-update-sign
+      - uses: actions/download-artifact@v4
         with:
-          tag: ${{ needs.prepare.outputs.tag }}
-          commit: ${{ github.sha }}
-          name: ${{ needs.prepare.outputs.tag }}
-          draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.tag, '-rc') || contains(needs.prepare.outputs.tag, '-beta') || contains(needs.prepare.outputs.tag, '-alpha') }}
-          allowUpdates: true
-          bodyFile: release-body.md
-          replacesArtifacts: true
-          artifactErrorsFailBuild: true
-          artifacts: "release-assets/**/*.*"
-
-      - name: Notify the docs site
-        # GitHub does not start workflow runs from events its own GITHUB_TOKEN
-        # created, so a release published here would otherwise never rebuild the
-        # site. workflow_dispatch is the documented exception.
+          pattern: updater-*
+          path: .cache/release-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Merge without overwriting and verify unsigned packages
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          . ./scripts/velopack-common.ps1
+          $platforms = @('windows-x64','macos-aarch64','macos-x86_64','linux-x64')
+          $dirs = @(Get-ChildItem .cache/release-input -Force)
+          if ($dirs.Count -ne 4) { throw 'Expected four native artifacts' }
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          foreach ($platform in $platforms) {
+            $dir = Get-Item -LiteralPath ".cache/release-input/updater-$platform"
+            if (-not $dir.PSIsContainer -or $dir.LinkType) { throw 'Invalid artifact directory' }
+            foreach ($file in Get-ChildItem -LiteralPath $dir.FullName -Force) {
+              Assert-VelopackAssetName $file.Name
+              if ($file.PSIsContainer -or $file.LinkType -or (Test-Path -LiteralPath (Join-Path release-assets $file.Name))) { throw 'Nested, linked or colliding artifact' }
+              Copy-Item -LiteralPath $file.FullName -Destination release-assets/
+            }
+            & ./scripts/verify-velopack-package.ps1 -ReleaseDir release-assets -Platform $platform -Version $env:RELEASE_VERSION -BeforeSigning
+          }
+      - name: Sign all four manifests (credentials only in this step)
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          YOYOVIDEO_UPDATER_PRIVATE_KEY: ${{ secrets.YOYOVIDEO_UPDATER_PRIVATE_KEY }}
+          YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD }}
+        run: |
+          . ./scripts/velopack-common.ps1
+          foreach ($platform in @('windows-x64','macos-aarch64','macos-x86_64','linux-x64')) {
+            Invoke-VelopackTool -FilePath ./target/release/yoyo-update-sign -Arguments @('sign','--feed',"release-assets/releases.stable-$platform.json",'--platform',$platform,'--version',$env:RELEASE_VERSION,'--assets-dir','release-assets','--output',"release-assets/yoyovideo-update.$platform.json",'--public-key','apps/yoyovideo-desktop/assets/updater.pub') -Signing | Out-Host
+          }
+      - name: Verify complete authenticated release and generate download table
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          node scripts/verify-updater-release.mjs verify --assets-dir release-assets --version "$RELEASE_VERSION" --signer target/release/yoyo-update-sign --public-key apps/yoyovideo-desktop/assets/updater.pub
+          node scripts/create-release-body.mjs --assets-dir release-assets --tag "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --output release-body.md --notes-file release-notes.md
+      - name: Upload draft, download and reverify, then publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        shell: bash
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
         run: |
-          set -euo pipefail
-          if ! gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main; then
-            echo "::warning::Could not dispatch docs.yml for ${TAG}; run it by hand if the site is stale."
-          fi
+          node scripts/verify-updater-release.mjs publish --assets-dir release-assets --version "$RELEASE_VERSION" --signer target/release/yoyo-update-sign --public-key apps/yoyovideo-desktop/assets/updater.pub --repo "$GITHUB_REPOSITORY" --commit "$RELEASE_COMMIT" --notes-file release-body.md
+      - name: Notify docs site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main || echo '::warning::Dispatch docs.yml manually if the site is stale.'

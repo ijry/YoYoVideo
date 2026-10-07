@@ -1,91 +1,43 @@
 ---
 title: Release process
-description: How YoYoVideo versions releases, what the tag triggers, and what ends up on the release page.
+description: Four-platform Velopack builds, authenticated updates and draft verification gates.
 ---
 
 # Release process
 
-## One source for the version
+The single version source is `[workspace.package]` in the root `Cargo.toml`; crates inherit it.
+Only matching stable `vX.Y.Z` **annotated tags** are accepted. Release notes come from the tag annotation, not the target commit message.
 
-The version lives in `[workspace.package]` at the root of the repository:
+## Pipeline
 
-```toml
-[workspace.package]
-version = "0.0.1"
-```
+1. Commit a tested version, prepare nonempty tag notes and push the corresponding tag. Resolve it to an exact commit.
+2. `updater-build.yml` builds Windows x64, macOS ARM64, macOS Intel and Linux x64.
+   macOS architectures build natively; Linux AppImages use the Ubuntu 22.04 baseline.
+3. Stage libmpv, build real playback, decode a test file, package with pinned **vpk 1.2.161**, and validate native artifacts.
+   These jobs have no production signing keys. The release installer no longer uses the legacy NSIS flow.
+4. Only after all four targets succeed: merge without overwrites, validate, then sign four manifests in an isolated step.
+5. Verify the complete signed release, upload a new draft, download every draft asset, reverify signatures/package contents/all file hashes,
+   recheck the tag commit, then publish. Any failure prevents publication.
+6. Notify the documentation deployment after success.
 
-All three crates inherit it with `version.workspace = true`, so there is no second place to change.
-`.github/workflows/release.yml` compares the tag against this value and refuses to publish on a
-mismatch — "the code says 0.0.1 but the tag says 0.0.2" cannot happen quietly.
+Download tables and SHA-256 values are generated from actual artifacts. Each platform has its own stable channel; only full packages are produced, never deltas.
 
-## Cutting a release
+## Keys and OS signing
 
-```powershell
-# 1. Update version in Cargo.toml and write the changelog
-# 2. Commit and push
-git commit -am "release: 0.0.1"
-git push origin main
+GitHub Secrets: `YOYOVIDEO_UPDATER_PRIVATE_KEY` and `YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD`.
+Variable `YOYOVIDEO_UPDATER_PUBLIC_KEY` must match the client `assets/updater.pub`.
+Only the signing step receives private keys; pull requests and regular builds do not.
 
-# 3. Tag — the commit message *is* the changelog for this version
-git tag -a v0.0.1 -m @"
-## 0.0.1
+Update authentication is not OS code signing. macOS uses ad-hoc signing without Apple notarization; Windows currently has no trusted Authenticode certificate. System warnings may remain.
 
-First public release.
+## Retries and republishing
 
-- Multi-tile batch playback
-- Bundled libmpv runtime, no decoders to install
-- Windows x64 portable package and installer
-"@
-git push origin v0.0.1
-```
+Manual dispatch accepts an existing stable tag, but **any existing release or draft for that tag is refused**.
+There is no automatic clobber, deletion, or retagging. Investigate a failed draft instead of publishing it manually.
+Reissuing the old 0.0.1 requires an explicit separate operator action.
 
-Pushing the tag starts `.github/workflows/release.yml`.
+## Verification status
 
-::: warning The tag commit's message is the changelog
-The release body is taken verbatim from the tag commit's full message. GitHub's generated notes
-for a release tag are only a compare link, which is not a changelog. Make sure the message is not
-empty before you push.
-:::
-
-## What the pipeline does
-
-1. **prepare** — validate the tag format, compare it against `Cargo.toml`, read the tag commit
-   message as the changelog, and confirm which platforms may be published.
-2. **build** (`windows-latest`) — fetch and verify the playback core, package, **run the playback
-   smoke test**, build the NSIS installer, upload artifacts.
-3. **publish** (`ubuntu-latest`) — download the artifacts, generate the release body with
-   `scripts/create-release-body.mjs` (changelog, asset table, per-asset SHA-256), then create or
-   update the Release.
-4. Dispatch `docs.yml` so the documentation site redeploys.
-
-The asset list is **generated from what was actually built**. If a platform's job fails, the release
-page never links to a file that does not exist.
-
-## Why only Windows ships
-
-Every platform has an entry in `runtime/manifest.toml` with an `available` flag. macOS and Linux are
-currently `available = false`, for reasons written into their own `notes`: macOS has no vetted
-universal libmpv build (upstream publishes Windows builds only, and Homebrew ships per-architecture
-bottles, so claiming "universal" would be a lie), and Linux would require bundling libmpv's entire
-dependency closure.
-
-`prepare` checks this up front, rather than discovering it halfway through a matrix.
-
-## Adding a platform
-
-1. Fill in a real `source_url`, `sha256` and `version` for that entry in `runtime/manifest.toml`, and
-   flip `available` to `true`.
-2. Add the normalization for the platform in `scripts/fetch-runtime.ps1` (the Windows branch renames
-   the DLL and rebuilds the import library; other platforms drop the archive contents into `lib/`).
-3. Run `fetch` → `package` → `smoke-package` locally and confirm playback really works.
-4. Add the platform to the matrix in `release.yml` and to the platform list in `prepare`.
-
-## Re-running a release
-
-If a platform build failed and you want to retry the same tag:
-
-```powershell
-gh workflow run release.yml --ref v0.0.1 -f tag=v0.0.1
-```
-
-`allowUpdates: true`, so a re-run replaces the assets on the same Release.
+`updater-smoke.yml` tests native packaging/playback, not actual old-to-new installation and restart.
+Local Windows package/signature success does not prove native macOS/Linux success or end-to-end upgrades.
+See the [updater notes](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md) for commands, backups and current verification status.

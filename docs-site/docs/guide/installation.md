@@ -1,54 +1,41 @@
 ---
 title: 安装与下载
-description: 下载 YoYoVideo v0.0.1 并在 Windows 上安装运行。
+description: YoYoVideo 的平台包与自动更新。
 ---
 
 # 安装与下载
 
-## 下载
+新的 0.0.1 发布流程使用 Velopack；请以 [Releases](https://github.com/ijry/YoYoVideo/releases/latest) 实际已发布资源为准。
 
-前往 [Releases 页](https://github.com/ijry/YoYoVideo/releases/latest) 下载 v0.0.1。
+| 平台 | 文件 | 更新方式 |
+| --- | --- | --- |
+| Windows x64 | `YoYoVideo-stable-windows-x64-Setup.exe` | 安装后应用内更新 |
+| macOS ARM / Intel | 各架构独立 `Portable.zip`，内含 .app | 应用内更新 |
+| Linux x64 | `YoYoVideo.AppImage` | 可写位置支持应用内更新 |
+| Linux x64 | `YoYoVideo-linux-x64.deb` | 包管理器或手动更新 |
 
-| 文件 | 说明 |
-| --- | --- |
-| `YoYoVideo-windows-x64-setup.exe` | NSIS 安装包，安装后开始菜单有快捷方式 |
-| `YoYoVideo-windows-x64.zip` | 免安装绿色包，解压即用 |
-
-两种包内容完全一致，都包含 `bin/`（程序与播放内核）、`LICENSES/`（许可与运行时来源）和说明文档。
-
-::: tip 不需要预装解码器
-libmpv 及其依赖的 FFmpeg 已经打包在 `bin/` 目录里。系统上装没装 mpv、装没装第三方解码器，
-都不影响 YoYoVideo 播放。
-:::
-
-## 校验
-
-发行页每条资产都附有 SHA-256。下载后可以自行核对：
+发行页提供 SHA-256，例如 Windows 下载后可核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\YoYoVideo-windows-x64.zip
+Get-FileHash -Algorithm SHA256 .\YoYoVideo-stable-windows-x64-Setup.exe
 ```
 
-值应当与发行页"校验和 / SHA-256"一节中同名文件的值一致。
+Windows 安装后从开始菜单启动；macOS 解压后将 .app 放在可写应用目录；Linux AppImage 需要执行权限。
+本地播放所需 libmpv 随 Windows/macOS/AppImage 包分发，.deb 使用发行版依赖。
+启动后点击中间的“打开文件”按钮或拖入媒体文件/文件夹。
 
-## 运行
+## 自动更新
 
-**免安装包**：解压后双击 `bin\yoyovideo-desktop.exe`。
+通过“检查更新”打开更新窗口，可关闭自动检查、下载、稍后安装或确认退出安装。
+安装前验证签名和包哈希；未确认的下载不会在下次启动时自动安装。设置和历史保留，更新后不会自动播放。
+旧 NSIS、普通 ZIP 和开发构建不能原地迁移到新格式，请手动安装新的发行包。
 
-**安装包**：运行安装程序，安装完成后从开始菜单启动。
+macOS 使用 **ad-hoc 签名，未做 Apple 公证**，首次启动可能被 Gatekeeper 拦截。
+请只从可信发布页下载，按系统正常审批流程处理；不建议关闭安全检查。
+Windows 当前也没有受信任 Authenticode 证书，可能有 SmartScreen 提示；更新签名不等于系统代码签名。
 
-首次启动时窗口可能偏小或位置落在屏幕外，播放器会自行纠正；相关状态保存在
-`%APPDATA%\xyito\YoYoVideo\` 下。
-
-## 把文件交给播放器
-
-- 双击 `bin\yoyovideo-desktop.exe` 后，把视频或整个文件夹拖进窗口。
-- 在资源管理器里右键文件，选择"打开方式"并指定 `yoyovideo-desktop.exe`。
-- 也可以在命令行传入文件；传入多个文件即进入批量播放：
-
-```powershell
-.\bin\yoyovideo-desktop.exe D:\videos\a.mp4 D:\videos\b.mkv D:\videos\c.mp4
-```
+AppImage 的构建基线为 Ubuntu 22.04，仍需要系统图形驱动、桌面和音频环境。
+打包通过不等于各平台实际安装升级都已验收，详见[开发验证状态](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md)。
 
 ## 其他平台
 
@@ -58,7 +45,7 @@ Get-FileHash -Algorithm SHA256 .\YoYoVideo-windows-x64.zip
 | 平台 | 视频路径 | 运行时 |
 | --- | --- | --- |
 | Windows x64 | mpv `--wid` | 固定上游构建的 DLL，随包捆绑 |
-| Linux x64 | X11 下的 mpv `--wid` | 声明为 `.deb` 依赖 |
+| Linux x64 | X11 下的 mpv `--wid` | AppImage 捆绑非宿主依赖；.deb 声明系统依赖 |
 | macOS | mpv 渲染 API（OpenGL） | Homebrew dylib，随包捆绑并改写为 `@rpath` |
 
 **两个需要说清楚的保留：**

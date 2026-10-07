@@ -23,16 +23,14 @@ simultaneously, and giving each one its own pause, seek and volume — few playe
 - **Picture tools.** Common video filter presets plus brightness, contrast and saturation.
 - **A quiet frameless shell.** The title bar and control bar are drawn by the app and fade out
   after a few idle seconds.
-- **Completely local.** No network calls, no telemetry, no data collection. The playback core ships
-  inside the package.
+- **Local playback, no telemetry.** Local media needs no network. Optional update checks contact GitHub, without uploading media or playback history.
 
 ## What it is not
 
 - **Not a transcoder.** YoYoVideo plays; it does not edit or export.
 - **Not a streaming client.** It can open a network URL, but it is not a product with
   recommendations and accounts.
-- **Not on every platform yet.** v0.0.1 ships a Windows x64 package only; see
-  [Installation](/en/guide/installation).
+- **Platform validation varies.** A package target is not proof of native playback or upgrades; see [Installation](/en/guide/installation).
 
 ## How it is put together
 

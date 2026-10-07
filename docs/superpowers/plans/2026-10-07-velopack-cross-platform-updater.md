@@ -16,12 +16,29 @@
 - Task 3 已实现并通过契约测试：后台 worker、请求编号过滤、冻结候选、缓存重验、双阶段安装授权、Windows 同目录进程检查。下载进度单独发送，避免反复复制更新说明。
 - Task 4 已实现并验证渲染：独立中英文更新窗口、菜单入口、标题栏提示、下载进度、自动检查设置、稍后操作，以及复选框的鼠标/键盘焦点行为。
 - Task 5 已接线：启动关闭 SDK 自动应用；后台复验后先保存播放器状态，确认安装助手启动后正常退出。保存失败、未应用设置、过期回调和无效缓存不触发退出。标记尚未恢复或未改变时不覆盖/制造空记录。
-- 本轮整仓验证：cargo test --workspace -j 2，304 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
+- 本轮整仓验证：cargo test --workspace -j 2，305 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
 - 高并行整仓链接曾出现 MSVC LNK1123；失败目标单独运行以及低并行整仓重试通过，没有删除测试或修改业务逻辑绕过该链接失败。
-- Task 6–9 未完成：尚未改造正式 Velopack 打包/发布工作流，尚未进行四个目标的真实 0.0.1→0.0.2 安装升级验证，0.0.1 未重发。当前开发/普通安装上下文显示手动升级提示，属于预期保护行为。
+- Task 6 包装实现已提交（5554dd0）：真实 Windows vpk 打包与一次性密钥验签通过；macOS/Linux 格式契约和脚本已实现，但对应原生构建/运行未执行，6.4/6.5 仍未验收。
+- Task 7 发布工作流与文档已实现：四目标无私钥构建、独立签名、完整集合检查、draft 上传后下载复验、tag commit 双重核对，拒绝已有同 tag Release/draft。尚未推送/触发此次四目标 CI。
+- Task 8/9 未完成：未实现/执行四目标真实 0.0.1→0.0.2 安装重启验证，0.0.1 未重发。普通开发/非 Velopack 安装显示手动升级提示，属于预期保护行为。
 - 新界面的本地渲染图：.cache/update-window-verified.png（不提交生成图片）。
 - 私钥和密码仍只在用户指定目录与 GitHub Secrets 中；本轮没有复制进源码、日志或产物。
 - 工具链：Slint 1.17.0 本身要求 Rust 1.92，本地使用 1.94.1；保留了仓库既有 1.85 声明，不据此宣称真实支持 1.85。Velopack 固定 1.2.161 并启用 public-utils。
+
+
+### 2026-10-08 本轮验证记录
+
+- `scripts/test-velopack-package-integration.ps1`：实际 Windows vpk 1.2.161，已有空输出目录、一次性加密密钥签名、独立验签；坏签名、PrepareOnly 未签名资产、包篡改均拒绝；未执行安装器。诊断在 `.cache/velopack-integration-23a365f22e104235adf692bc89b12349`。
+- `scripts/test-velopack-package.ps1`：13 项通过（在 runtime-enabled debug EXE 构建后执行）；涵盖目标/RID/channel、无 delta、ad-hoc 参数、秘密环境隔离、架构、ZIP 路径/XML、资源布局、sq.version、实际 build-info、AppImage 来源哈希。
+- `scripts/test-appimage-runtime.ps1`：策略/解析器/22.04 基线/AppRun 参数测试通过；libmpv1 与 libmpv2 的依赖式 staging 验证都通过。原生 AppImage 仍待 CI；不将 fixture 当原生结果。
+- Linux 修正原 fetch/verifier 的 libmpv2 写死假设。按实际 .so.1/.so.2 SONAME 使用，不伪装 ABI；.deb 依赖式 staging 不变，AppImage 单独收集非宿主闭包并记录许可证。
+- `node --test scripts/test-updater-release.mjs`：8 项通过，覆盖缺平台/签名、版本混杂、哈希损坏，以及 fake gh 上传/下载/复验失败、已有 Release、上传后 tag 移动均不 publish。
+- `cargo test --workspace -j 2`：305 passed，0 failed，1 ignored；日志 `.cache/updater-final-workspace-tests.log`。
+- `cargo fmt --all --check`、mpv-runtime check、updater/signer all-targets Clippy `-D warnings`、12 个 PowerShell 文件 AST 检查通过。
+- Actionlint 1.7.12 校验 4 个工作流通过（`-shellcheck= -pyflakes=`）；文档站 `npm run docs:build` 通过。
+- GitHub 公钥 Variable 与客户端 pin 再次核对相同；没有读取远端私钥。生产签名密钥未用于本机测试。
+- 新增 `updater-build.yml` 复用无私钥矩阵，`updater-smoke.yml` 明确只做包装/解码，不伪装 Task 8。修正中英文 README 和文档站的旧 NSIS/自动覆盖/“没有网络请求”说明。
+- Task 6.1 的剩余模拟工具负例可继续补充；Task 6.4/6.5 原生验收、完整 CI、Task 8 真实升级仍未执行。不推送、不移动 tag、不覆盖旧 0.0.1。
 
 ## Global Constraints
 
@@ -300,7 +317,7 @@ pwsh -NoProfile -File scripts/verify-velopack-package.ps1 -Platform windows-x64 
 ```
 
 - [ ] **6.1 RED：** fixture 目录模拟 staging 和 vpk 可执行程序边界；实际运行脚本，断言生成调用的 packId、version、channel、主程序路径、无 delta、macOS ad-hoc 参数，以及缺 libmpv/错误 vpk 版本/缺公钥/缺签名配置时在发布前失败。fixture 只替代 vpk 子进程，不替代本仓库参数与资源验证。
-- [ ] **6.2 GREEN：** 查找 dotnet/vpk，验证 1.2.161；缺失时给出明确安装命令，不静默使用最新版。执行基本打包命令：
+- [x] **6.2 GREEN：** 查找 dotnet/vpk，验证 1.2.161；缺失时给出明确安装命令，不静默使用最新版。执行基本打包命令：
 
 ```powershell
 dotnet tool install vpk --version 1.2.161 --tool-path .cache/tools/vpk
@@ -308,11 +325,11 @@ dotnet tool install vpk --version 1.2.161 --tool-path .cache/tools/vpk
 ```
 
 不同平台参数从 vpk 1.2.161 help/源码验证后按目标追加，不能用错误参数吞掉退出码；不下载前一版本、不提供 delta 基包。打包前只在验证过的临时 packroot 复制 staging，绝不移动原始 staging 或用户安装目录。
-- [ ] **6.3 Windows：** staging 的 bin 内容成为版本目录主程序/运行库，docs/LICENSES/发行说明一起带入；用 Velopack 默认稳定 stub 建立快捷方式。验证 PE 无 console 子系统、正确图标及相邻 DLL，不执行真实用户安装。
+- [x] **6.3 Windows：** staging 的 bin 内容成为版本目录主程序/运行库，docs/LICENSES/发行说明一起带入；用 Velopack 默认稳定 stub 建立快捷方式。验证 PE 无 console 子系统、正确图标及相邻 DLL，不执行真实用户安装。
 - [ ] **6.4 macOS：** 提供 .icns，构造并检查 .app，调整 dylib @loader_path/@rpath 后，vpk 使用 --signAppIdentity - 且不传 notaryProfile。对主程序、更新助手、dylib 与最终 bundle 执行 codesign --verify；otool -L 不得留下 Cellar 或 runner 临时目录依赖。ARM/Intel 分别原生构建。
 - [ ] **6.5 Linux：** 独立脚本以 Ubuntu 22.04 runtime 为基线用 ldd/依赖解析组成 AppDir，复制可分发依赖与许可证；排除 glibc 和硬件驱动宿主组件，验证没有缺失依赖。必须包含 libmpv，不复用 .deb 的“依赖系统安装”假设。生成 PNG/.desktop，再由 vpk 生成 AppImage。
-- [ ] **6.6 发布签名与验证：** 对 vpk 产出的原生 feed 调用 Task 2 sign/verify；验证只有本平台 full 包、版本一致和实际资源哈希一致。外部工具退出码非零立即失败，不生成假成功标志。
-- [ ] **6.7 验证提交：**
+- [x] **6.6 发布签名与验证：** 对 vpk 产出的原生 feed 调用 Task 2 sign/verify；验证只有本平台 full 包、版本一致和实际资源哈希一致。外部工具退出码非零立即失败，不生成假成功标志。
+- [x] **6.7 验证提交：**
 
 ```powershell
 pwsh -NoProfile -File scripts/test-velopack-package.ps1
@@ -324,8 +341,8 @@ git commit -m "feat: package signed Velopack releases for desktop targets"
 
 **Files:** .github/workflows/release.yml、ci.yml、updater-smoke.yml、scripts/test-updater-release.mjs、scripts/verify-updater-release.mjs、README.md、README-EN.md、docs/development/updater.md。
 
-- [ ] **7.1 RED：** Node test runner 验证发布产物集合构造和 release 校验函数的实际行为，输入缺平台/缺 .sig/版本不一致必须拒绝；不把“YAML 包含某行”当功能测试。独立的 GitHub draft 发布边界由 fake gh 记录命令和退出码，校验只有全部验证成功才进入 publish。
-- [ ] **7.2 GREEN：** 复用原 tag/version/notes 流程，增加 setup-dotnet@v4 的 8.0.x 和本地 vpk 1.2.161；Linux 包构建 runner 选择 ubuntu-22.04。将正式安装器步骤从 NSIS 改为 Task 6，不删除旧脚本或覆盖工作区的旧改动。设置：
+- [x] **7.1 RED：** Node test runner 验证发布产物集合构造和 release 校验函数的实际行为，输入缺平台/缺 .sig/版本不一致必须拒绝；不把“YAML 包含某行”当功能测试。独立的 GitHub draft 发布边界由 fake gh 记录命令和退出码，校验只有全部验证成功才进入 publish。
+- [x] **7.2 GREEN：** 复用原 tag/version/notes 流程，增加 setup-dotnet@v4 的 8.0.x 和本地 vpk 1.2.161；Linux 包构建 runner 选择 ubuntu-22.04。将正式安装器步骤从 NSIS 改为 Task 6，不删除旧脚本或覆盖工作区的旧改动。设置：
 
 ```yaml
 env:
@@ -335,8 +352,8 @@ env:
 ```
 
 仅受信任 release job 注入私钥。编译前比较 Variable 与固定 updater.pub；PR job 不读生产密钥。四个平台构建/测试完成后在 publish job 合并资产，完整校验→上传 draft→再次下载校验→publish。已有公开同 tag Release 先拒绝，重新发布 0.0.1 时再以明确操作处理，不自动 clobber。
-- [ ] **7.3 文档：** 中英文说明各平台的自动更新入口、macOS 未公证限制、.deb/zip 手动升级、密钥备份和 GitHub 变量名；私钥值不出现。记录网络/验签/安装错误日志路径和恢复方法，不建议关闭验签。
-- [ ] **7.4 验证提交：**
+- [x] **7.3 文档：** 中英文说明各平台的自动更新入口、macOS 未公证限制、.deb/zip 手动升级、密钥备份和 GitHub 变量名；私钥值不出现。记录网络/验签/安装错误日志路径和恢复方法，不建议关闭验签。
+- [x] **7.4 验证提交：**
 
 ```powershell
 node --test scripts/test-updater-release.mjs

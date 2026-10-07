@@ -1,88 +1,45 @@
 ---
 title: 发布流程
-description: YoYoVideo 的版本号规则、tag 触发流程与发行资产构成。
+description: 四平台 Velopack 构建、更新认证和 draft 复验门禁。
 ---
 
 # 发布流程
 
-## 版本号只有一个来源
+版本号只来自根目录 `Cargo.toml` 的 `[workspace.package]`，各 crate 使用 `version.workspace = true`。
+发布只接受与版本一致的稳定 `vX.Y.Z` **annotated tag**；发行说明读取 tag 的 annotation，而不是其指向的 commit message。
 
-版本号写在仓库根目录 `Cargo.toml` 的 `[workspace.package]` 里：
+## 流程
 
-```toml
-[workspace.package]
-version = "0.0.1"
-```
+1. 提交经过测试的版本，准备非空 tag annotation，再推送对应 tag。工作流把 tag 解析成精确 commit。
+2. `updater-build.yml` 构建 Windows x64、macOS ARM64、macOS Intel、Linux x64。
+   macOS 两种架构分别原生构建；Linux AppImage 固定 Ubuntu 22.04 基线。
+3. 各平台拉取 libmpv、构建真实播放内核、解码冒烟、用固定 **vpk 1.2.161** 包装并原生验证。
+   这里没有生产签名私钥。正式 Windows 安装包不再使用旧 NSIS 流程。
+4. 四个平台都成功后，发布 job 无覆盖合并资源并校验，独立签名步骤签署四份更新清单。
+5. 完整验签与资产校验 → 上传到新 draft → 下载全部 draft 资源 → 再次验签、校验包内容及所有文件哈希 →
+   再核对 tag commit → 公开 Release。任一步失败都不会公开。
+6. 成功后通知文档站重新部署。
 
-三个 crate 都用 `version.workspace = true` 继承它，没有第二处可以改。
-`.github/workflows/release.yml` 会比对 tag 与这个值，不一致直接拒绝发布——
-所以"代码里是 0.0.1、tag 却打了 0.0.2"这种漂移不会发生。
+资产表和 SHA-256 从实际产物生成，不手写不存在的下载链接。
+只发布完整更新包，不生成 delta。每个平台有独立稳定 channel。
 
-## 发一个版本
+## 密钥与系统签名
 
-```powershell
-# 1. 改 Cargo.toml 里的 version，并写好 changelog
-# 2. 提交并推送
-git commit -am "release: 0.0.1"
-git push origin main
+GitHub Secrets 是 `YOYOVIDEO_UPDATER_PRIVATE_KEY` 和 `YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD`；
+Variable `YOYOVIDEO_UPDATER_PUBLIC_KEY` 必须与客户端 `assets/updater.pub` 一致。
+仅签名步骤注入私钥。PR/普通构建不使用生产密钥。
 
-# 3. 打 tag —— commit message 就是这一版的 changelog
-git tag -a v0.0.1 -m @"
-## 0.0.1
+更新认证不等于系统代码签名：macOS 使用 ad-hoc 签名，无 Apple 公证；Windows 无受信任 Authenticode 证书。
+不要把这些限制描述成“已消除系统拦截”。
 
-首个公开版本。
+## 重跑与重新发布
 
-- 多画面批量播放
-- 内嵌 libmpv 运行时，无需预装解码器
-- Windows x64 便携包与安装包
-"@
-git push origin v0.0.1
-```
+可以手动触发 `release.yml` 并指定现有稳定 tag，但**已有同 tag 的公开 Release 或 draft 一律拒绝**。
+不使用 `allowUpdates`/clobber，不自动删除 Release 或移动 tag。
+失败留下的 draft 需要先调查，不能直接公开。旧 0.0.1 的重新发布必须另行明确处理。
 
-打 tag 的那条命令会触发 `.github/workflows/release.yml`。
+## 验收状态
 
-::: warning tag commit 的 message 就是 changelog
-发行页正文直接取 tag commit 的完整 message。GitHub 自动生成的 release notes 对一个 release tag
-只会给一条 compare 链接，那不叫 changelog。发布前请确认 message 不是空的。
-:::
-
-## 流水线做了什么
-
-1. **prepare** — 校验 tag 格式、比对 `Cargo.toml` 版本号、读取 tag commit 的 message 作为
-   changelog、确认哪些平台可以发布。
-2. **build**（`windows-latest`）— 拉取并校验播放内核 → 打包 → **跑播放冒烟测试** →
-   打 NSIS 安装包 → 上传产物。
-3. **publish**（`ubuntu-latest`）— 下载产物，用 `scripts/create-release-body.mjs` 生成发行页正文
-   （changelog + 资产表 + 每个资产的 SHA-256），然后创建或更新 Release。
-4. 顺带 dispatch 一次 `docs.yml`，让文档站重新部署。
-
-资产列表是**从实际产物生成的**，不是手写的——某个平台的构建失败时，发行页不会出现指向
-不存在文件的下载链接。
-
-## 为什么只能发 Windows
-
-`runtime/manifest.toml` 里每个平台有一条记录，带 `available` 字段。macOS 与 Linux 目前是
-`available = false`，原因写在各自的 `notes` 里：macOS 没有经过审核的通用架构 libmpv
-（上游只发 Windows 构建，Homebrew 只有分架构 bottle，硬凑"universal"是不诚实的），
-Linux 则需要打包 libmpv 的完整依赖闭包。
-
-`prepare` 这一步会先检查这一点，不会在矩阵跑到一半才发现某平台没法构建。
-
-## 补一个新平台
-
-1. 在 `runtime/manifest.toml` 对应条目里填上真实的 `source_url`、`sha256`、`version`，
-   把 `available` 改成 `true`。
-2. 在 `scripts/fetch-runtime.ps1` 里为该平台补上归一化逻辑（Windows 那段把 DLL 改名并重建
-   导入库；其他平台直接把归档内容放进 `lib/`）。
-3. 跑一次本地 `fetch` → `package` → `smoke-package`，确认播放真的能工作。
-4. 在 `release.yml` 的矩阵里加上该平台，并把 `prepare` 里的平台列表一起改掉。
-
-## 手动重发
-
-某个平台构建挂了、想用同一个 tag 重跑：
-
-```powershell
-gh workflow run release.yml --ref v0.0.1 -f tag=v0.0.1
-```
-
-`allowUpdates: true`，所以重跑会覆盖同一个 Release 里的产物。
+`updater-smoke.yml` 测的是原生包装/解码，不是从旧版到新版的安装重启。
+Windows 本机包装与验签通过不能代替 macOS/Linux 原生验证，也不能代替真实升级。
+精确命令、密钥备份和当前验收状态见[更新机制文档](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md)。

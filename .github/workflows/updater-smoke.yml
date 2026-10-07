@@ -1,0 +1,16 @@
+name: Updater native packaging smoke
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['crates/**', 'apps/**', 'scripts/**', 'runtime/**', 'Cargo.*', '.github/workflows/updater-*.yml']
+  push:
+    branches-ignore: ['gh-pages']
+    paths: ['crates/**', 'apps/**', 'scripts/**', 'runtime/**', 'Cargo.*', '.github/workflows/updater-*.yml']
+permissions:
+  contents: read
+jobs:
+  # This proves native packaging/playback, not 0.0.1 -> 0.0.2 install/restart.
+  packages:
+    uses: ./.github/workflows/updater-build.yml
+    with:
+      revision: ${{ github.sha }}

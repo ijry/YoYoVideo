@@ -6,7 +6,7 @@
 
 <p align="center">
   A full-format local video player built with Rust, Slint and libmpv.<br>
-  Multi-tile batch playback · subtitle and track switching · picture filters · A-B loop · fully offline
+  Multi-tile batch playback · subtitle and track switching · picture filters · A-B loop · offline playback
 </p>
 
 <p align="center">
@@ -38,28 +38,29 @@ handled by [libmpv](https://mpv.io/). It mainly exists to do one thing most play
   audio track switching and cycling channel modes.
 - **Picture tools.** Common filter presets plus brightness, contrast and saturation.
 - **A quiet frameless shell.** Self-drawn title bar and control bar, wheel for volume, hover menus.
-- **Completely offline.** No network calls and no telemetry. libmpv ships inside the package, so
-  **there is nothing to install first**.
+- **Offline playback, no telemetry.** Local playback needs no network. Optional update checks contact GitHub for versions and packages, never upload media/history, and can be disabled.
 
 See the [documentation site](https://ijry.github.io/YoYoVideo/) for the full feature and shortcut
 list.
 
-## Download
+## Download and updates
 
-v0.0.1 ships a Windows x64 portable package and an NSIS installer. Unpack and run.
+The new 0.0.1 release pipeline uses **Velopack 1.2.161**. Availability is determined by the files actually published on [Releases](https://github.com/ijry/YoYoVideo/releases/latest).
 
-| File | What it is |
-| --- | --- |
-| `YoYoVideo-windows-x64-setup.exe` | Installer |
-| `YoYoVideo-windows-x64.zip` | Portable package |
+| Platform | Format | In-app updates |
+| --- | --- | --- |
+| Windows x64 | `YoYoVideo-stable-windows-x64-Setup.exe` | Supported after installation |
+| macOS Apple Silicon / Intel | Architecture-specific `Portable.zip` containing .app | Supported for the Velopack app bundle |
+| Linux x64 | `YoYoVideo.AppImage` | Supported at a writable location |
+| Linux x64 | `YoYoVideo-linux-x64.deb` | Package manager/manual updates only |
 
-Grab it from [Releases](https://github.com/ijry/YoYoVideo/releases/latest); every asset carries a
-SHA-256.
+Open **Check for updates** to control automatic checks, download, postpone, or confirm exit and install. Signatures and package hashes are checked before installation. Pending downloads are not silently installed on startup. Settings/history are preserved; playback does not automatically resume after an update.
 
-> **Why Windows only?** macOS has no vetted universal libmpv build and native video embedding is not
-> implemented there yet; Linux would require bundling libmpv's whole dependency closure, and
-> Wayland single-video playback now has an experimental OpenGL-composited path, not yet verified on a Wayland desktop; grid playback remains unsupported. See the `notes` on the matching entries in
-> [`runtime/manifest.toml`](runtime/manifest.toml).
+- Development builds, old NSIS installs and ordinary portable ZIPs require manual installation of the new format.
+- macOS uses **ad-hoc signing, without Apple notarization**. This is not an Apple Developer signature; Gatekeeper may block first launch. Download only from the trusted release page and use normal system approval flows rather than disabling system security.
+- AppImages target Ubuntu 22.04 and bundle libmpv/distributable libraries, not the host graphics drivers, desktop or audio services. Existing Wayland/grid-playback limitations still apply.
+
+See [updater development notes](docs/development/updater.md) for verification status, key management and publishing.
 
 ## Building from source
 
