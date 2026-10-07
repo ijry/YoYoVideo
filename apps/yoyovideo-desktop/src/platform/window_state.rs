@@ -6,7 +6,7 @@ use yoyo_core::StorageError;
 
 use super::AppPaths;
 
-pub const MIN_WINDOW_WIDTH: u32 = 900;
+pub const MIN_WINDOW_WIDTH: u32 = 800;
 pub const MIN_WINDOW_HEIGHT: u32 = 560;
 
 /// Windows reports a minimized window at (-32000, -32000). Persisting that would
