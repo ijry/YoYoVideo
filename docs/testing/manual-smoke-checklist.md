@@ -123,3 +123,18 @@
   an actionable startup error, not an endless retry/log loop.
 - Recheck Windows/X11 native child-window playback and macOS render-API playback;
   neither should select the Wayland composited surface.
+
+
+## Windows installed-app identity and launch
+
+- The package builder and installer builder run `scripts/test-windows-app-artifacts.ps1`
+  against the actual executable: PE subsystem must be Windows GUI (2), with
+  embedded icon and icon-group resources. Missing resources or Console (3) block packaging.
+- Run `pwsh -NoProfile -File scripts/test-windows-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64`
+  with NSIS on PATH. This compiles and silently installs the production installer
+  under a unique app identity, verifies the actual installed shortcut and uninstall
+  registration, and uninstalls/cleans up. It must not replace a normal YoYoVideo installation.
+- On a real installation, the Start Menu icon and Add/Remove Programs icon must
+  resolve inside the installed application, never a repository or CI runner path.
+- Launch from the Start Menu and by opening the installed EXE in Explorer. No
+  console/terminal window should appear; fatal startup errors remain in the diagnostic log.

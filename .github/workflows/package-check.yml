@@ -104,6 +104,13 @@ jobs:
             -OutputPath dist/YoYoVideo-${{ matrix.platform }}-setup.exe `
             -Version 0.0.0-check
 
+      - name: Verify installed Windows app and shortcut
+        if: env.WANTED == 'true' && matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
+          pwsh -NoProfile -File scripts/test-windows-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64
+
       - name: List the produced artifacts
         if: env.WANTED == 'true'
         shell: pwsh

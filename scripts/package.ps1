@@ -327,6 +327,12 @@ if (-not $SkipBuild) {
 
 Require-File $binaryPath "desktop binary. Build first or omit -SkipBuild"
 
+if ($Platform -eq "windows-x64") {
+    & pwsh -NoProfile -File (Join-Path $repoRoot "scripts/test-windows-app-artifacts.ps1") -ExecutablePath $binaryPath
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+
 if (Test-Path -LiteralPath $packageDir) {
     Remove-Item -LiteralPath $packageDir -Recurse -Force
 }

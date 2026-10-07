@@ -35,6 +35,12 @@ if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
     Fail "Icon not found: $iconPath. Run: node scripts/generate-icons.mjs"
 }
 
+# A GUI subsystem and embedded icon are properties of the actual binary, not
+# guarantees made by cargo check or by the presence of an .ico source file.
+& pwsh -NoProfile -File (Join-Path $repoRoot "scripts/test-windows-app-artifacts.ps1") `
+    -ExecutablePath (Join-Path $packageFullPath "bin/yoyovideo-desktop.exe")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 $makensis = Get-Command makensis -ErrorAction SilentlyContinue
 if ($null -eq $makensis) {
     Fail "NSIS makensis command not found. Install NSIS, then retry: pwsh -NoProfile -File scripts/build-installer.ps1 -PackageDir $PackageDir -OutputPath $OutputPath -Version $Version"

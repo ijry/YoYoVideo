@@ -1,3 +1,7 @@
+// This is a GUI application, including when installed via a Windows shortcut.
+// Startup failures are still written to the diagnostic log below.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 fn main() -> std::process::ExitCode {
     match yoyovideo_desktop::run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
