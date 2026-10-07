@@ -1,5 +1,15 @@
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {
+    #[error("update operation failed: {0}")]
+    Backend(String),
+    #[error("application is not installed with the updater")]
+    Unsupported,
+    #[error("invalid update operation: {0}")]
+    State(&'static str),
+    #[error("update installation failed: {0}")]
+    Install(String),
+    #[error("invalid pending update cache")]
+    Cache,
     #[error("update network request failed: {0}")]
     Network(&'static str),
     #[error("invalid update preferences")]

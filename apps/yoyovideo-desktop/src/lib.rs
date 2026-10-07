@@ -17,6 +17,7 @@ mod settings_controller;
 mod sidebar;
 mod subtitle_prefs;
 mod track_popup;
+mod update_runtime;
 mod video_area_input;
 mod video_host;
 #[cfg(feature = "mpv-runtime")]
@@ -27,9 +28,10 @@ mod video_texture;
 
 pub use app::{
     DesktopController, MainWindow, NavigationRowData, ProgressTickRowData, SettingsWindow,
-    ShortcutDispatch, TrackPopupRowData, build_desktop_backend, build_desktop_backend_with_options,
-    build_desktop_backend_with_video_window, dispatch_shortcut, dropped_media_status,
-    format_runtime_startup_error, recent_item_status, refresh_window, resolve_shortcut, run,
+    ShortcutDispatch, TrackPopupRowData, UpdateWindow, build_desktop_backend,
+    build_desktop_backend_with_options, build_desktop_backend_with_video_window, dispatch_shortcut,
+    dropped_media_status, format_runtime_startup_error, recent_item_status, refresh_window,
+    resolve_shortcut, run,
 };
 pub use chrome_autohide::{CHROME_IDLE_HIDE_DELAY, CHROME_SETTLE, ChromeAction, ChromeAutoHide};
 pub use grid_layout::{

@@ -1141,7 +1141,10 @@ fn remember_recent_open(
     }
 }
 
-fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &slint::Window) {
+fn try_save_current_window_state(
+    runtime: &mut DesktopRuntime,
+    window: &slint::Window,
+) -> Result<(), yoyo_core::StorageError> {
     let size = window.size();
     let position = window.position();
     let state = crate::platform::WindowState {
@@ -1152,11 +1155,11 @@ fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &sli
         maximized: window.is_maximized(),
     }
     .clamped();
-
+    crate::platform::save_window_state(runtime.window_state_path.clone(), &state)
+}
+fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &slint::Window) {
     let mut runtime = runtime.borrow_mut();
-    if let Err(error) =
-        crate::platform::save_window_state(runtime.window_state_path.clone(), &state)
-    {
+    if let Err(error) = try_save_current_window_state(&mut runtime, window) {
         runtime.record_diagnostic("WARN", format!("Window state save failed: {error}"));
     }
 }
@@ -1385,7 +1388,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(app) = app_handle.upgrade() {
                 save_current_window_state(&runtime, app.window());
                 let _ = app.hide();
+                let _ = slint::quit_event_loop();
             }
+        }
+    });
+    app.window().on_close_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                save_current_window_state(&runtime, app.window());
+            }
+            let _ = slint::quit_event_loop();
+            slint::CloseRequestResponse::HideWindow
         }
     });
 
@@ -2688,22 +2703,61 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    app.run()?;
+    let _updates = match crate::update_runtime::UpdateRuntime::attach(
+        &app,
+        paths.clone(),
+        {
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                let app =
+                    app_handle.upgrade().ok_or_else(|| "Player window is closed".to_string())?;
+                let mut runtime = runtime.borrow_mut();
+                if runtime.settings_window.as_ref().is_some_and(|w| w.window().is_visible())
+                    && runtime.settings_controller.as_ref().is_some_and(|c| c.snapshot().dirty)
+                {
+                    return Err(match runtime.ui_language {
+                        crate::UiLanguage::Chinese => {
+                            "请先应用或取消设置窗口中尚未保存的修改。".into()
+                        }
+                        crate::UiLanguage::English => {
+                            "Apply or cancel unsaved settings before updating.".into()
+                        }
+                    });
+                }
+                persist_playback_for_shutdown(&mut runtime).map_err(|e| e.to_string())?;
+                try_save_current_window_state(&mut runtime, app.window()).map_err(|e| e.to_string())
+            }
+        },
+        {
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                if let Some(window) = runtime.borrow().settings_window.as_ref() {
+                    let _ = window.hide();
+                }
+                if let Some(app) = app_handle.upgrade() {
+                    let _ = app.hide();
+                }
+                let _ = slint::quit_event_loop();
+            }
+        },
+    ) {
+        Ok(updates) => Some(updates),
+        Err(error) => {
+            runtime
+                .borrow_mut()
+                .record_diagnostic("WARN", format!("Updater UI unavailable: {error}"));
+            None
+        }
+    };
 
+    app.run()?;
     {
         let mut runtime = runtime.borrow_mut();
-        if let Some(controller) = runtime.controller() {
-            let snapshot = capture_history_snapshot(controller.session());
-            let state = controller.session().state().clone();
-            let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
-            let _ = sync_subtitle_prefs_from_state(&mut runtime, &state);
-            persist_current_markers(&mut runtime, &state);
+        if let Err(error) = persist_playback_for_shutdown(&mut runtime) {
+            runtime.record_diagnostic("WARN", format!("Shutdown state save failed: {error}"));
         }
-        let shutdown_now = history_now(&runtime);
-        let _ = runtime.history.flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
-        let _ = runtime
-            .subtitle_prefs
-            .flush_if_needed(shutdown_now, crate::SubtitlePrefsFlushReason::Shutdown);
     }
 
     Ok(())
@@ -3576,3 +3630,54 @@ impl CustomApplicationHandler for DesktopWinitHandler {
         EventResult::Propagate
     }
 }
+
+fn remember_shutdown_markers(runtime: &mut DesktopRuntime, state: &PlayerState) {
+    let Some(key) = current_locator_key(state) else {
+        return;
+    };
+    if runtime.last_marker_locator_key.as_ref() != Some(&key) {
+        return;
+    }
+    if runtime.marker_store.markers_for(&key) != state.markers {
+        runtime.marker_store.set_markers(key, state.markers.clone());
+    }
+}
+
+fn persist_playback_for_shutdown(
+    runtime: &mut DesktopRuntime,
+) -> Result<(), yoyo_core::StorageError> {
+    // Attempt every store even if one fails; updating must still reject any failure.
+    let mut first_error = None;
+    let mut save = |result: Result<(), yoyo_core::StorageError>| {
+        if let Err(error) = result {
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
+    };
+    if let Some(controller) = runtime.controller() {
+        let snapshot = capture_history_snapshot(controller.session());
+        let state = controller.session().state().clone();
+        save(sync_history_from_snapshot(runtime, &snapshot));
+        save(sync_subtitle_prefs_from_state(runtime, &state));
+        remember_shutdown_markers(runtime, &state);
+    }
+    let now = history_now(runtime);
+    save(runtime.history.flush_if_needed(now, crate::FlushReason::Shutdown).map(|_| ()));
+    save(
+        runtime
+            .subtitle_prefs
+            .flush_if_needed(now, crate::SubtitlePrefsFlushReason::Shutdown)
+            .map(|_| ()),
+    );
+    save(runtime.recent_open.save());
+    // Do not skip this because an earlier failed save left identical in-memory markers.
+    save(runtime.marker_store.save());
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+#[cfg(test)]
+#[path = "update_shutdown_tests.rs"]
+mod update_shutdown_tests;

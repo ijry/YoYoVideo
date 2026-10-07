@@ -24,6 +24,9 @@ tracing-subscriber = "0.3.23"
 toml = "1.1.2"
 yoyo-core = { path = "../../crates/yoyo-core" }
 yoyo-mpv = { path = "../../crates/yoyo-mpv" }
+yoyo-updater = { path = "../../crates/yoyo-updater" }
+velopack = "=1.2.161"
+open = "5.3"
 
 [build-dependencies]
 slint-build = "1.17.0"

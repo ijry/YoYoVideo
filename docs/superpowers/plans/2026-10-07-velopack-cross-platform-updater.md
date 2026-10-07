@@ -10,17 +10,18 @@
 
 **Spec:** docs/superpowers/specs/2026-10-07-velopack-cross-platform-updater-design.md
 
-## 当前实施状态（2026-10-07）
+## 当前实施状态
 
-- Task 1 已完成：签名清单、平台/版本策略和流式包校验，12 项契约测试通过；提交 f48e59f。
-- Task 2 已完成：加密密钥签名/验证 CLI、保护既有输出、公钥固定，8 项测试通过；提交 90dbd7d。
-- 已用实际存储的加密密钥验证新签名工具，确认签名/验签成功、篡改被拒绝；未发布测试包，临时签名产物已清理。
-- Task 3 部分完成：SignedSource 和偏好持久化已实现，5 项来源测试、4 项偏好测试通过。后台 service/actor、待安装缓存恢复、安装协调仍待实现，因此 Task 3 不能标为完成。
-- 本批整仓回归：276 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、两新增 crate 的 Clippy -D warnings、格式和 diff 检查通过。
-- 来源测试实际放在 src/source/tests.rs，以测试私有传输边界而不向正式应用暴露测试源配置。
-- Task 4–9 尚未实现；播放器界面没有接入自动升级，发布工作流未切换，0.0.1 未重发。
-- 适配发现：Velopack 的 UpdateSource 参数涉及 bundle::Manifest，需要开启官方 public-utils feature，SDK 版本仍固定 1.2.161。
-- 工具链核对：现有 Slint 1.17.0 自身已要求 Rust 1.92；新增 Velopack 的 zip 依赖要求 1.88。本地验证使用 1.94.1，未修改仓库既有 1.85 声明，也不宣称本仓库当前真的支持 1.85。
+- Task 1、2 已完成：签名协议、包校验与发布签名工具；原提交 f48e59f、90dbd7d。
+- Task 3 已实现并通过契约测试：后台 worker、请求编号过滤、冻结候选、缓存重验、双阶段安装授权、Windows 同目录进程检查。下载进度单独发送，避免反复复制更新说明。
+- Task 4 已实现并验证渲染：独立中英文更新窗口、菜单入口、标题栏提示、下载进度、自动检查设置、稍后操作，以及复选框的鼠标/键盘焦点行为。
+- Task 5 已接线：启动关闭 SDK 自动应用；后台复验后先保存播放器状态，确认安装助手启动后正常退出。保存失败、未应用设置、过期回调和无效缓存不触发退出。标记尚未恢复或未改变时不覆盖/制造空记录。
+- 本轮整仓验证：cargo test --workspace -j 2，304 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
+- 高并行整仓链接曾出现 MSVC LNK1123；失败目标单独运行以及低并行整仓重试通过，没有删除测试或修改业务逻辑绕过该链接失败。
+- Task 6–9 未完成：尚未改造正式 Velopack 打包/发布工作流，尚未进行四个目标的真实 0.0.1→0.0.2 安装升级验证，0.0.1 未重发。当前开发/普通安装上下文显示手动升级提示，属于预期保护行为。
+- 新界面的本地渲染图：.cache/update-window-verified.png（不提交生成图片）。
+- 私钥和密码仍只在用户指定目录与 GitHub Secrets 中；本轮没有复制进源码、日志或产物。
+- 工具链：Slint 1.17.0 本身要求 Rust 1.92，本地使用 1.94.1；保留了仓库既有 1.85 声明，不据此宣称真实支持 1.85。Velopack 固定 1.2.161 并启用 public-utils。
 
 ## Global Constraints
 
@@ -39,9 +40,9 @@
 
 1. 协议：crates/yoyo-updater/{Cargo.toml,src/lib.rs,src/error.rs,src/manifest.rs,src/policy.rs,tests/manifest_contract.rs,tests/policy_contract.rs}。
 2. 发布签名：crates/yoyo-update-sign/{Cargo.toml,src/lib.rs,src/main.rs,tests/sign_contract.rs}，apps/yoyovideo-desktop/assets/updater.pub。
-3. 服务：crates/yoyo-updater/src/{source.rs,service.rs,preferences.rs}，相应 tests/source_contract.rs、service_contract.rs、preferences_contract.rs。
+3. 服务：crates/yoyo-updater/src/{source.rs,service.rs,service/native.rs,pending.rs,worker.rs,control.rs,process_guard.rs,preferences.rs}；私有边界测试在 src/source/tests.rs、src/service/tests.rs，另有 tests/control_contract.rs、preferences_contract.rs。
 4. UI：apps/yoyovideo-desktop/ui/update-window.slint、main-window.slint，tests/update_window_contract.rs。
-5. 播放器接入：apps/yoyovideo-desktop/src/{main.rs,lib.rs,app.rs,update_runtime.rs}、Cargo.toml、tests/update_runtime_contract.rs。
+5. 播放器接入：apps/yoyovideo-desktop/src/{main.rs,lib.rs,app.rs,update_runtime.rs}、Cargo.toml、src/update_runtime/tests.rs。
 6. 打包：scripts/{package-velopack.ps1,verify-velopack-package.ps1,test-velopack-package.ps1,stage-appimage-runtime.ps1}；scripts/package.ps1 只增加独立 staging 能力，避免改写原安装器脚本。
 7. CI：.github/workflows/{release.yml,ci.yml,updater-smoke.yml}，scripts/test-updater-release.mjs、scripts/verify-updater-release.mjs、README.md、README-EN.md、docs/development/updater.md。
 8. 原生验证：scripts/test-velopack-upgrade.ps1、apps/yoyovideo-desktop/src/update_qa.rs、tests/fixtures/updater/（仅公开测试密钥/数据）。
@@ -171,22 +172,25 @@ pub struct UpdateSnapshot {
     pub progress: i16, pub error: String,
 }
 pub struct UpdatePreferences { pub automatic_check: bool, pub last_checked_at: Option<i64> }
-pub enum UpdateCommand { Check, Download, VerifyForInstall, LaunchInstaller, Stop }
-pub enum UpdateEvent { Snapshot(UpdateSnapshot), VerifiedForInstall, InstallerStarted }
+pub enum UpdateCommand { Check, Download, VerifyForInstall, LaunchInstaller, AbortInstall(String), Stop }
+pub enum UpdateEvent { Snapshot(UpdateSnapshot), Progress(i16), VerifiedForInstall, InstallerStarted }
+pub struct UpdateRequest { pub id: u64, pub command: UpdateCommand }
+pub struct UpdateMessage { pub id: u64, pub event: UpdateEvent }
 // ServiceConfig { platform: Platform, public_key: String, cache_dir: PathBuf }
 // UpdateService::new(ServiceConfig) -> Result<UpdateService, UpdateError>
 // UpdateService::check() -> Result<UpdateSnapshot, UpdateError>
 // UpdateService::download(Sender<i16>) -> Result<(), UpdateError>
 // UpdateService::verify_for_install() -> Result<(), UpdateError>
 // UpdateService::launch_installer() -> Result<(), UpdateError>
-// spawn_worker(ServiceConfig) -> (Sender<UpdateCommand>, Receiver<UpdateEvent>)
+// spawn_worker(ServiceConfig) -> std::io::Result<UpdateWorker>
+// UpdateWorker.requests: Sender<UpdateRequest>; UpdateWorker.events: Receiver<UpdateMessage>
 ```
 
 UpdatePreferences::should_check(now: i64, manual: bool) -> bool；load(path: &Path) -> Result<Self, UpdateError>；save(path: &Path) -> Result<(), UpdateError>。
 
 服务内部保留候选 UpdateInfo 和冻结的 VerifiedManifest，不允许 UI 构造或替换候选包。安装未发现 Velopack context 时返回 Unsupported，不在构造窗口时 panic。
 
-- [ ] **3.1 RED：** 测试 source 的实际验签分支；只替换网络 I/O（用私有 Transport trait 提供 signed bytes/包），不替换 verifier。覆盖响应限额、HTTPS 降级、过期快照、错包、不再访问变化后的 latest。测试实际缓存文件先验证成功再篡改，要求 verify_for_install 失败。
+- [x] **3.1 RED：** 测试 source 的实际验签分支；只替换网络 I/O（用私有 Transport trait 提供 signed bytes/包），不替换 verifier。覆盖响应限额、HTTPS 降级、过期快照、错包、不再访问变化后的 latest。测试实际缓存文件先验证成功再篡改，要求 verify_for_install 失败。
 - [x] **3.2 GREEN：** 实现正式 HTTPS 客户端，固定源 https://github.com/ijry/YoYoVideo，给所有请求设定上限、截止时间及 HTTPS 重定向检查。manifest URL 为 releases/latest/download/yoyovideo-update.<platform>.json，包 URL 从已验证 release_tag 与安全文件名构造。实现 UpdateSource 的真实签名：
 
 ```rust
@@ -200,8 +204,8 @@ fn download_release_entry(
 ```
 
 source 内用互斥保护不可变的已验证快照；下载请求的 asset 必须与快照完全匹配。包下载流写入 SDK 指定的 partial 文件，限长、算哈希，错误时只删除本次 partial 文件。额外在服务验证缓存包，不依赖 SDK 是否选择重下载。
-- [ ] **3.3 状态与偏好 TDD：** Check/Download 安装请求每次只有一个任务编号，旧任务事件不能覆盖新状态。自动检查开启且距 last_checked_at 至少 86400 秒才触发，手动绕过；持久化到 updater.toml。验证稍后安装的 signed JSON、.sig、包路径在新服务中重新验签/验包，不能只反序列化一个 trusted=true 标志。
-- [ ] **3.4 安装调用：** Worker 完成 VerifyForInstall 只发送 VerifiedForInstall，等待 UI 成功保存后另发 LaunchInstaller。应用检查同目录其他实例，检测到时拒绝并提示。启动助手的关键调用为：
+- [x] **3.3 状态与偏好 TDD：** Check/Download 安装请求每次只有一个任务编号，旧任务事件不能覆盖新状态。自动检查开启且距 last_checked_at 至少 86400 秒才触发，手动绕过；持久化到 updater.toml。验证稍后安装的 signed JSON、.sig、包路径在新服务中重新验签/验包，不能只反序列化一个 trusted=true 标志。
+- [x] **3.4 安装调用：** Worker 完成 VerifyForInstall 只发送 VerifiedForInstall，等待 UI 成功保存后另发 LaunchInstaller。应用检查同目录其他实例，检测到时拒绝并提示。启动助手的关键调用为：
 
 ```rust
 manager.wait_exit_then_apply_updates(
@@ -210,7 +214,7 @@ manager.wait_exit_then_apply_updates(
 ```
 
 不得调用 apply_updates_and_restart、unsafe_apply_updates 或 NoWait。
-- [ ] **3.5 验证提交：**
+- [x] **3.5 验证提交：**
 
 ```powershell
 cargo test -p yoyo-updater
@@ -244,9 +248,9 @@ export component UpdateWindow inherits Window {
 
 phase_index 按 Task 3 UpdatePhase 列出的顺序从 0 起映射。窗口独立，默认约 520×420，适配小屏；不要改变主窗口 800×600 默认值。
 
-- [ ] **4.1 RED：** 按现有 main_window_empty_state_contract.rs 的 headless backend 模式写实际编译窗口测试，验证各 phase 的按钮事件、繁忙时禁用、完成后显示安装/稍后、Unsupported 只引导发布页，以及两种语言。首次先确认缺少接口/动作。
-- [ ] **4.2 GREEN：** 导出窗口、添加菜单项，构建深色布局。版本/状态、纯文本可滚动 notes、进度条和动作区明确区分；不会默认触发下载或安装。窗口闭合只发 later_requested。用可访问名称定位测试，不依赖随机布局坐标。
-- [ ] **4.3 验证提交：**
+- [x] **4.1 RED：** 按现有 main_window_empty_state_contract.rs 的 headless backend 模式写实际编译窗口测试，验证各 phase 的按钮事件、繁忙时禁用、完成后显示安装/稍后、Unsupported 只引导发布页，以及两种语言。首次先确认缺少接口/动作。
+- [x] **4.2 GREEN：** 导出窗口、添加菜单项，构建深色布局。版本/状态、纯文本可滚动 notes、进度条和动作区明确区分；不会默认触发下载或安装。窗口闭合只发 later_requested。用可访问名称定位测试，不依赖随机布局坐标。
+- [x] **4.3 验证提交：**
 
 ```powershell
 cargo test -p yoyovideo-desktop --test update_window_contract --test main_window_empty_state_contract
@@ -256,12 +260,12 @@ git commit -m "feat: add bilingual update window and menu entry"
 
 ## Task 5: 播放器接线和正常退出
 
-**Files:** desktop Cargo.toml、src/main.rs、src/lib.rs、src/app.rs、src/update_runtime.rs、tests/update_runtime_contract.rs。
+**Files:** desktop Cargo.toml、src/main.rs、src/lib.rs、src/app.rs、src/update_runtime.rs、src/update_runtime/tests.rs。
 **Consumes:** Task 3 worker API、Task 4 UpdateWindow。
-**Produces:** UpdateRuntime::attach(&MainWindow, paths: Option<AppPaths>)，open()、poll()；播放器拥有该运行时，不能由视频播放状态决定更新器是否存在。
+**Produces:** UpdateRuntime::attach(&MainWindow, paths: Option<AppPaths>, save: FnMut() -> Result<(), String>, exit: FnMut())。构造时直接接好菜单和按钮，内部轮询事件；主程序持有整个运行时。纯状态与授权逻辑放在 yoyo-updater/src/control.rs，避免 UI 回调重复实现安全条件。
 
-- [ ] **5.1 RED：** 使用可控 worker 事件与真实偏好临时目录验证后台检查只触发一次、手动入口、关闭弹窗不终止下载、UI 销毁后消息安全丢弃。对退出顺序记录边界调用：VerifyForInstall→保存→LaunchInstaller→正常关窗；保存/启动助手任一失败不得关窗。测试不真正安装程序。
-- [ ] **5.2 GREEN：** main 的第一项应用逻辑：
+- [x] **5.1 RED：** 使用可控 worker 事件与真实偏好临时目录验证后台检查只触发一次、手动入口、关闭弹窗不终止下载、UI 销毁后消息安全丢弃。对退出顺序记录边界调用：VerifyForInstall→保存→LaunchInstaller→正常关窗；保存/启动助手任一失败不得关窗。测试不真正安装程序。
+- [x] **5.2 GREEN：** main 的第一项应用逻辑：
 
 ```rust
 velopack::VelopackApp::build()
@@ -270,14 +274,15 @@ velopack::VelopackApp::build()
 ```
 
 在 app.rs 创建 UpdateRuntime，把 check_updates_requested 接到 open。独立 timer 定期 drain channel；用户语言变化时同步更新窗口，启动后 10 秒调用受偏好控制的检查。后台任务不得捕获 Rc<DesktopRuntime> 或跨线程操作 Slint window。
-- [ ] **5.3 收尾：** 从 app.run() 之后的现有清理提取返回 Result 的更新前保存方法，使用当前播放历史/字幕/标记快照和窗口位置；失败显示诊断且保持播放。VerifiedForInstall 到来后先保存，成功再发送 LaunchInstaller；InstallerStarted 到来后关闭更新、设置与主窗口并退出事件循环。保持 mpv/render drop 顺序，使用 Stop 结束后台 actor；普通关窗仍保留原有收尾语义。
-- [ ] **5.4 验证提交：**
+- [x] **5.3 收尾：** 从 app.run() 之后的现有清理提取返回 Result 的更新前保存方法，使用当前播放历史/字幕/标记快照和窗口位置；失败显示诊断且保持播放。VerifiedForInstall 到来后先保存，成功再发送 LaunchInstaller；InstallerStarted 到来后关闭更新、设置与主窗口并退出事件循环。保持 mpv/render drop 顺序，使用 Stop 结束后台 actor；普通关窗仍保留原有收尾语义。
+- [x] **5.4 验证提交：**
 
 ```powershell
-cargo test -p yoyovideo-desktop --test update_runtime_contract --test history_runtime_contract --test window_state_contract
+cargo test -p yoyovideo-desktop --lib update_runtime::tests
+cargo test -p yoyovideo-desktop --test history_runtime_contract --test window_state_contract
 cargo test --workspace
 cargo check -p yoyovideo-desktop --features mpv-runtime
-git add -- apps/yoyovideo-desktop/Cargo.toml apps/yoyovideo-desktop/src apps/yoyovideo-desktop/tests/update_runtime_contract.rs Cargo.lock
+git add -- apps/yoyovideo-desktop/Cargo.toml apps/yoyovideo-desktop/src apps/yoyovideo-desktop/src/update_runtime/tests.rs Cargo.lock
 git commit -m "feat: wire safe player update lifecycle"
 ```
 

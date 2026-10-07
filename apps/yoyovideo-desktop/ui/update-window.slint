@@ -1,0 +1,79 @@
+import { Button, CheckBox, ScrollView } from "std-widgets.slint";
+
+export component UpdateWindow inherits Window {
+    title: "YoYoVideo";
+    icon: @image-url("icons/app-icon.png");
+    preferred-width: 520px; preferred-height: 420px;
+    min-width: 420px; min-height: 360px;
+    background: #080d14;
+    in-out property <string> ui_language_code: "zh";
+    in-out property <string> current_version;
+    in-out property <string> available_version;
+    in-out property <string> release_notes;
+    in-out property <string> status_message;
+    in-out property <int> progress_value;
+    in-out property <int> phase_index: 1;
+    in-out property <bool> automatic_check: true;
+    out property <bool> can_install: root.phase_index == 6;
+    out property <bool> can_download: root.phase_index == 4;
+    out property <bool> can_check: root.phase_index == 1 || root.phase_index == 3 || root.phase_index == 8;
+    out property <string> rendered_status:
+        root.phase_index == 0 ? (root.ui_language_code == "zh" ? "此安装方式需手动升级" : "Manual update required") :
+        root.phase_index == 2 ? (root.ui_language_code == "zh" ? "正在检查更新…" : "Checking for updates…") :
+        root.phase_index == 3 ? (root.ui_language_code == "zh" ? "当前已是最新版本" : "You're up to date") :
+        root.phase_index == 4 ? (root.ui_language_code == "zh" ? "发现新版本" : "An update is available") :
+        root.phase_index == 5 ? (root.ui_language_code == "zh" ? "正在下载并验证…" : "Downloading and verifying…") :
+        root.phase_index == 6 ? (root.ui_language_code == "zh" ? "更新已就绪" : "Ready to update") :
+        root.phase_index == 7 ? (root.ui_language_code == "zh" ? "正在准备重启更新…" : "Preparing to restart and update…") :
+        root.phase_index == 8 ? (root.ui_language_code == "zh" ? "更新未完成，请重试" : "Update failed. Please retry") :
+        (root.ui_language_code == "zh" ? "检查是否有可用更新" : "Check for available updates");
+    callback check_requested(); callback download_requested(); callback install_requested(); callback later_requested();
+    callback automatic_check_changed(bool); callback open_releases_requested();
+
+    VerticalLayout {
+        x: 20px; y: 20px; width: parent.width - 40px; height: parent.height - 40px; spacing: 8px;
+        Text { height: 24px; text: root.ui_language_code == "zh" ? "软件更新" : "Software update"; color: #f8fafc; font-size: 21px; font-weight: 750; }
+        Text { height: 20px; text: (root.ui_language_code == "zh" ? "当前版本 " : "Current version ") + root.current_version + (root.available_version == "" ? "" : "   →   " + root.available_version); color: #94a3b8; font-size: 12px; }
+        Text { height: 18px; text: root.rendered_status; color: root.phase_index == 8 ? #fb7185 : #38bdf8; font-size: 13px; font-weight: 600; }
+        Rectangle {
+            vertical-stretch: 1; min-height: 56px; background: #0c1420;
+            border-radius: 8px; border-width: 1px; border-color: #233040;
+            ScrollView {
+                x: 12px; y: 10px; width: parent.width - 24px; height: parent.height - 20px;
+                VerticalLayout {
+                    spacing: 8px; alignment: start;
+                    if root.status_message != "" && root.phase_index != 0: Text { text: root.status_message; color: #fda4af; wrap: word-wrap; font-size: 12px; }
+                    Text {
+                        text: root.release_notes != "" ? root.release_notes :
+                            (root.phase_index == 0 ? (root.ui_language_code == "zh" ? "开发运行、普通压缩包及系统包管理安装暂不支持应用内升级。请从官方发布页面下载新版。" : "Development builds, plain archives, and system-managed packages cannot update in place. Download a new version from the official releases page.") :
+                            (root.ui_language_code == "zh" ? "发现新版后，将在此显示更新说明。" : "Release notes will appear here when an update is available."));
+                        color: #cbd5e1; wrap: word-wrap; font-size: 13px;
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 18px; background: transparent;
+            if root.phase_index == 5 || root.phase_index == 6 || root.phase_index == 7: Rectangle {
+                x: 0px; y: 6px; height: 6px; width: parent.width - 48px; background: #1f2c3a; border-radius: 3px;
+                Rectangle { x: 0px; y: 0px; width: parent.width * clamp(root.progress_value / 100.0, 0, 1); height: parent.height; background: #e11d48; border-radius: 3px; }
+            }
+            if root.phase_index == 5 || root.phase_index == 6 || root.phase_index == 7: Text { x: parent.width - 40px; width: 40px; height: parent.height; text: clamp(root.progress_value, 0, 100) + "%"; color: #94a3b8; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; }
+        }
+        Rectangle {
+            height: 24px; background: transparent;
+            automatic_checkbox := CheckBox { x: 0px; y: 0px; width: 24px; height: 24px; text: ""; accessible-label: root.ui_language_code == "zh" ? "自动检查更新" : "Automatically check for updates"; checked <=> root.automatic_check; enabled: root.phase_index != 7; toggled => { root.automatic_check_changed(self.checked); } }
+            Text { x: 32px; width: parent.width - 32px; height: parent.height; text: root.ui_language_code == "zh" ? "自动检查更新" : "Automatically check for updates"; color: #cbd5e1; font-size: 12px; vertical-alignment: center; }
+            TouchArea { x: 32px; width: parent.width - 32px; height: parent.height; enabled: root.phase_index != 7; mouse-cursor: MouseCursor.pointer; clicked => { automatic_checkbox.focus(); root.automatic_check = !root.automatic_check; root.automatic_check_changed(root.automatic_check); } }
+        }
+        Text { height: 30px; text: root.can_install ? (root.ui_language_code == "zh" ? "更新前请关闭其他 YoYoVideo 实例。" : "Close other YoYoVideo instances before updating.") : (root.ui_language_code == "zh" ? "检查更新和下载不会中断播放。" : "Checking and downloading will not interrupt playback."); color: #94a3b8; wrap: word-wrap; font-size: 11px; vertical-alignment: center; }
+        Rectangle {
+            height: 34px; background: transparent;
+            if root.can_check || root.phase_index == 2: Button { x: 0px; width: 156px; height: parent.height; text: root.ui_language_code == "zh" ? "检查更新" : "Check for Updates"; enabled: root.can_check; clicked => { if root.can_check { root.check_requested(); } } }
+            if root.phase_index == 0: Button { x: 0px; width: 168px; height: parent.height; text: root.ui_language_code == "zh" ? "打开发布页面" : "Open Releases"; clicked => { root.open_releases_requested(); } }
+            if root.can_download: Button { x: parent.width - 260px; width: 158px; height: parent.height; text: root.ui_language_code == "zh" ? "下载更新" : "Download Update"; primary: true; clicked => { if root.can_download { root.download_requested(); } } }
+            if root.can_install: Button { x: parent.width - 260px; width: 158px; height: parent.height; text: root.ui_language_code == "zh" ? "立即重启更新" : "Restart and Update"; primary: true; clicked => { if root.can_install { root.install_requested(); } } }
+            Button { x: parent.width - 92px; width: 92px; height: parent.height; text: root.can_install ? (root.ui_language_code == "zh" ? "稍后" : "Later") : (root.ui_language_code == "zh" ? "关闭" : "Close"); enabled: root.phase_index != 7; clicked => { root.later_requested(); } }
+        }
+    }
+}

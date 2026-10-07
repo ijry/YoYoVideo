@@ -14,3 +14,18 @@ mod preferences;
 mod source;
 pub use preferences::UpdatePreferences;
 pub use source::SignedSource;
+
+mod service;
+pub use service::{ServiceConfig, UpdatePhase, UpdateService, UpdateSnapshot};
+
+mod pending;
+#[cfg(windows)]
+mod process_guard;
+
+mod worker;
+pub use worker::{
+    UpdateCommand, UpdateEvent, UpdateMessage, UpdateRequest, UpdateWorker, spawn_worker,
+};
+
+mod control;
+pub use control::{ControlEffect, UpdateControl};

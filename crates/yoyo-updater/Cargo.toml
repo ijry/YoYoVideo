@@ -21,3 +21,6 @@ tempfile = "3"
 
 [dev-dependencies]
 minisign = "=0.10.0"
+
+[target.'cfg(windows)'.dependencies]
+sysinfo = { version = "=0.37.2", default-features = false, features = ["system"] }
