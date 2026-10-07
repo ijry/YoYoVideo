@@ -101,3 +101,25 @@
 - Toggle fullscreen and confirm the video host resizes.
 - Type in the URL input and confirm player shortcuts do not fire while it is focused.
 - Use keyboard shortcuts for play/pause, seek, volume, speed, zoom, rotation, audio channel, A-B loop, and fullscreen.
+
+
+## Experimental Wayland GL Compositing (not yet hardware-verified)
+
+- Run a feature-enabled Linux build in an actual Wayland session (not XWayland).
+  Confirm Slint uses its femtovg OpenGL renderer and no video child window opens.
+- Open one video from the command line: initialization must precede playback,
+  without a second mpv window, startup deadlock, or blank first frame.
+- Play for several minutes; verify continuous updates, orientation, aspect ratio,
+  subtitles, seek/pause/frame-step, and A/V synchronization.
+- Resize while playing and while paused. Move between monitors with fractional
+  scale factors; verify sharp physical-pixel sizing and no stale cached frame.
+- Open context menus/settings, show OSD, seek and change volume over the picture.
+  Video must remain behind UI overlays and inputs must keep working.
+- Open several files as a grid: expect the explicit unsupported-Wayland-grid
+  message, no extra top-level windows, and usable single-video controls afterward.
+- Minimize/restore, fullscreen/unfullscreen, then close while playing. Check for
+  GL errors, callback-after-close crashes, and "Missing GL teardown" diagnostics.
+- Force a missing/unsupported GL renderer or driver in a test environment. Expect
+  an actionable startup error, not an endless retry/log loop.
+- Recheck Windows/X11 native child-window playback and macOS render-API playback;
+  neither should select the Wayland composited surface.

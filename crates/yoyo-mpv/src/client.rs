@@ -135,6 +135,20 @@ impl MpvBackend {
         // mpv handle owned by `self.client`.
         unsafe { crate::MpvGlRenderContext::new(self.client.handle, get_proc) }
     }
+
+    /// Creates a render context using a GL loader borrowed during initialization.
+    ///
+    /// # Safety
+    /// The same GL context must be current for creation, rendering and teardown;
+    /// this backend must outlive the returned render context.
+    #[cfg(feature = "mpv-runtime")]
+    pub unsafe fn create_gl_render_context_with_loader(
+        &self,
+        get_proc: &dyn Fn(&std::ffi::CStr) -> *const std::ffi::c_void,
+    ) -> Result<crate::MpvGlRenderContext, MpvError> {
+        // SAFETY: the caller upholds the context and backend lifetime requirements.
+        unsafe { crate::MpvGlRenderContext::new_with_loader(self.client.handle, get_proc) }
+    }
 }
 
 #[cfg(not(feature = "mpv-runtime"))]

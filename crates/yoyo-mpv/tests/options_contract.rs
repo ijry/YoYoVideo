@@ -39,3 +39,9 @@ fn audio_output_is_passed_as_the_ao_option() {
 
     assert_eq!(options.mpv_option_pairs(), vec![("ao", "null".to_string())]);
 }
+
+#[test]
+fn render_api_options_select_libmpv_instead_of_a_standalone_video_output() {
+    let options = MpvClientOptions { render_api: true, ..Default::default() };
+    assert_eq!(options.mpv_option_pairs(), vec![("vo", "libmpv".to_string())]);
+}

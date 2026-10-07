@@ -1,3 +1,5 @@
+#![cfg(not(feature = "mpv-runtime"))]
+
 use yoyovideo_desktop::build_desktop_backend;
 
 #[test]

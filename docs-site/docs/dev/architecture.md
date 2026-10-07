@@ -59,7 +59,9 @@ macOS 不能走这条路径：mpv 只在 `x11_common.c` 和 `w32_common.c` 里�
 再用 `mpv_render_context_*` 把画面画进 framebuffer 0。代码在 `macos_gl.rs`，平台无关的那半在
 `yoyo-mpv` 的 `render_gl.rs`。
 
-Wayland 仍未实现，程序会正常启动并在上层报告该限制。
+Wayland 单视频使用实验性的 UI 合成路径：mpv 在 Slint 当前的 OpenGL 上下文中渲染纹理，
+由 UI 合成到视频区域；Linux 使用 femtovg GL 渲染器。帧回调只请求重绘，资源在
+RenderingTeardown 中释放。此路径尚未经过 Wayland 实机验证，多宫格仍明确报不支持。
 
 ## 界面
 

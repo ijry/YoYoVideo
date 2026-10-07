@@ -64,8 +64,8 @@ differs per platform, and so does how much of it is proven:
 
 **Two caveats, stated plainly:**
 
-- **Wayland is not supported.** There is no verified host path, so the app reports the limitation rather
-  than pretending.
+- **Wayland remains experimental.** Single-video playback uses Slint/OpenGL compositing,
+  not yet verified on a Wayland desktop. Grid playback is unsupported.
 - **macOS video is compile-verified only.** The render-API path builds for both architectures, but it has
   not been run on a real Mac yet — CI runners are headless and never create a window. Treat it as
   unproven until someone confirms it on hardware.

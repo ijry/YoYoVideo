@@ -14,8 +14,8 @@
 ## Requirements
 
 - No separately installed mpv or third-party codec pack is needed; the playback core is bundled.
-- Wayland is not supported: there is no verified host path, and the app reports that rather than
-  pretending.
+- Wayland single-video playback has an experimental Slint/OpenGL-composited path.
+  It has not been verified on a Wayland desktop; grid playback remains unsupported.
 - macOS video goes through mpv's render API. It is compile-verified for both architectures but has
   not been run on real hardware, so treat it as unproven.
 

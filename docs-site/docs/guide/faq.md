@@ -7,8 +7,9 @@ description: YoYoVideo 的常见问题与排查方法。
 
 ## 启动后没有画面，只有一片黑色
 
-Linux（Wayland）上仍是这个限制。Windows 和 Linux X11 用 mpv 的 `wid`，macOS 用渲染 API（见下一条）。
-程序会正常启动，播放状态栏也会更新，但在没有视频宿主窗口的系统上不会显示画面。
+Windows 和 Linux X11 用 mpv 的 `wid`，macOS 用渲染 API。Wayland 单视频已接入实验性的
+Slint/OpenGL 合成路径，但尚未实机验证；多宫格仍不支持。Wayland 上请确认使用支持 OpenGL 的
+驱动和启用了 `mpv-runtime` 的构建，并查看状态栏及诊断日志中的合成初始化错误。
 相关记录见 [`docs/development/runtime-dependencies.md`](https://github.com/ijry/YoYoVideo/blob/main/docs/development/runtime-dependencies.md)。
 
 ## 状态栏提示 "Playback runtime is disabled in this build"

@@ -103,13 +103,38 @@ Visible video takes one of two paths, depending on what mpv supports on the plat
   libmpv 3.1.0 exports only `MPV_RENDER_API_TYPE_OPENGL`, so this is OpenGL, not
   Metal.
 
-**Not implemented**
+**UI-composited render API (experimental)**
 
-- Wayland: no verified host path. The app reports the limitation rather than
-  pretending.
+- Wayland: single-video playback uses mpv's render API in Slint's current OpenGL
+  context. `video_surface_gl.rs` owns the texture/FBO, and
+  `composited_video_runtime.rs` registers setup, redraw and teardown callbacks.
+  Both render-API paths explicitly select mpv `vo=libmpv` before initialization;
+  merely creating a render context does not select that video output.
+  Linux selects the `femtovg` GL renderer; software/Vulkan cannot consume the
+  borrowed GL texture. Selection uses the actual window handle, not environment
+  variables. No native child window or `--wid` is created on Wayland.
+- mpv frame notifications enqueue UI redraws; there is no permanent video timer.
+  GL symbols come from Slint's loader. The borrowed image is cleared before GL
+  objects are destroyed, while the same context is current.
+- Wayland grid playback remains unsupported and reports an explicit error.
+- This path has **not been verified on a real Wayland compositor**. Native display
+  resources for zero-copy hardware-decoder interop are not wired in this change;
+  do not assume hardware decode or zero-copy playback.
 
 ## Verification status
 
 Compile-verified for `aarch64-apple-darwin` and `x86_64-apple-darwin`. The macOS
 render path has **not** been run on real hardware: CI runners are headless, so no
 window is ever created there. It needs a real Mac before it can be called working.
+
+
+The composited GL boundary also has an opt-in Windows desktop smoke test. It
+opens a small test window, decodes a generated red lavfi video, reads framebuffer
+pixels at two render sizes, and verifies context teardown. With libmpv on PATH:
+
+```powershell
+cargo test -p yoyovideo-desktop --features mpv-runtime --lib native_gl_decodes_resizes_and_tears_down -- --ignored --nocapture
+```
+
+This test passed on Windows during the integration. It does **not** establish
+Wayland compositor compatibility or macOS hardware playback.

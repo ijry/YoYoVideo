@@ -113,7 +113,7 @@ import { withBase } from "vitepress";
       </div>
       <div class="yv-step" data-state="next">
         <h4>Linux packages <span class="yv-tag" data-state="next">pending</span></h4>
-        <p>Declares libmpv as a .deb dependency rather than bundling it; video works under X11. Wayland embedding is not implemented.</p>
+        <p>Declares libmpv as a .deb dependency rather than bundling it; video works under X11. Wayland single-video GL compositing is experimental and unverified on a Wayland desktop; grids are unsupported.</p>
       </div>
     </div>
   </div>

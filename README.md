@@ -50,7 +50,7 @@ v0.0.1 发布 **Windows x64** 便携包与 NSIS 安装包，解压即用。
 前往 [Releases](https://github.com/ijry/YoYoVideo/releases/latest) 下载，发行页附有每个文件的 SHA-256。
 
 > **为什么只有 Windows？** macOS 目前没有经过审核的通用架构 libmpv 构建，且原生视频嵌入尚未实现；
-> Linux 需要打包 libmpv 的完整依赖闭包，且 Wayland 下的原生嵌入同样未实现。
+> Linux 需要打包 libmpv 的完整依赖闭包，Wayland 单视频已有实验性的 OpenGL 合成路径，但尚未经过 Wayland 实机验证，多宫格仍不支持。
 > 详见 [`runtime/manifest.toml`](runtime/manifest.toml) 里对应条目的 `notes`。
 
 ## 从源码构建

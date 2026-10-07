@@ -21,7 +21,17 @@ use crate::VideoHost;
 use crate::platform::{AppPaths, DialogService, RfdDialogService, scan_media_folder};
 #[cfg(feature = "mpv-runtime")]
 use crate::video_host_winit::WinitVideoHost;
+#[cfg(feature = "mpv-runtime")]
+use crate::video_surface_gl::{CompositedVideo, physical_video_size, requires_compositing};
 use crate::video_texture::VideoTexture;
+#[cfg(feature = "mpv-runtime")]
+use raw_window_handle::HasWindowHandle;
+
+#[cfg(feature = "mpv-runtime")]
+#[path = "composited_video_runtime.rs"]
+mod composited_video_runtime;
+#[cfg(feature = "mpv-runtime")]
+use composited_video_runtime::install_composited_video_notifier;
 
 slint::include_modules!();
 
@@ -361,6 +371,11 @@ pub fn recent_item_status(item: &crate::platform::RecentOpenItem) -> String {
 }
 
 struct DesktopRuntime {
+    // Both render contexts must be freed before the controller's mpv handle.
+    #[cfg(feature = "mpv-runtime")]
+    composited_video: Option<CompositedVideo>,
+    #[cfg(feature = "mpv-runtime")]
+    composited_notifier_error: Option<String>,
     /// Declared before `controller` on purpose.
     ///
     /// Rust drops fields in declaration order. On macOS the host holds mpv's render
@@ -425,6 +440,10 @@ impl DesktopRuntime {
         window_state_path: Option<PathBuf>,
     ) -> Self {
         Self {
+            #[cfg(feature = "mpv-runtime")]
+            composited_video: None,
+            #[cfg(feature = "mpv-runtime")]
+            composited_notifier_error: None,
             controller: None,
             video_host_error: initial_runtime_error(),
             app_handle: None,
@@ -460,10 +479,18 @@ impl DesktopRuntime {
     }
 
     fn controller(&self) -> Option<&DesktopController<MpvBackend>> {
+        #[cfg(feature = "mpv-runtime")]
+        if self.composited_video.as_ref().is_some_and(|surface| !surface.is_ready()) {
+            return None;
+        }
         self.controller.as_ref()
     }
 
     fn controller_mut(&mut self) -> Option<&mut DesktopController<MpvBackend>> {
+        #[cfg(feature = "mpv-runtime")]
+        if self.composited_video.as_ref().is_some_and(|surface| !surface.is_ready()) {
+            return None;
+        }
         self.controller.as_mut()
     }
 
@@ -503,6 +530,21 @@ impl DesktopRuntime {
         self.controller = Some(controller);
         self.video_host = Some(video_host);
         self.video_host_error = None;
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
+impl Drop for DesktopRuntime {
+    fn drop(&mut self) {
+        // The notifier keeps the runtime alive until GL teardown. If a renderer
+        // misses that notification, retain the core rather than leave a live
+        // render context pointing into a destroyed mpv core.
+        if self.composited_video.as_ref().is_some_and(CompositedVideo::has_context) {
+            if let Some(controller) = self.controller.take() {
+                tracing::error!("Missing GL teardown; retaining playback core for safety");
+                std::mem::forget(controller);
+            }
+        }
     }
 }
 
@@ -1210,6 +1252,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     configure_backend(Rc::clone(&runtime))?;
 
     let app = MainWindow::new()?;
+    #[cfg(feature = "mpv-runtime")]
+    install_composited_video_notifier(&app, Rc::clone(&runtime));
     if let Ok(Some(state)) = crate::platform::load_window_state(window_state_path) {
         app.window().set_size(slint::PhysicalSize::new(state.width, state.height));
         if let (Some(x), Some(y)) = (state.x, state.y) {
@@ -2832,12 +2876,17 @@ fn build_host_and_backend(
     event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
     parent_window: &slint::winit_030::winit::window::Window,
 ) -> Result<(WinitVideoHost, MpvBackend), String> {
-    let mut host =
-        WinitVideoHost::new_child(event_loop, parent_window).map_err(|e| e.to_string())?;
+    let host = WinitVideoHost::new_child(event_loop, parent_window).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let mut host = host;
 
     #[cfg(target_os = "macos")]
     let backend = {
-        let backend = build_desktop_backend().map_err(|e| e.to_string())?;
+        let backend = build_desktop_backend_with_options(yoyo_mpv::MpvClientOptions {
+            render_api: true,
+            ..Default::default()
+        })
+        .map_err(|e| e.to_string())?;
         // SAFETY: `backend` is returned alongside `host` and every caller keeps the
         // backend alive for at least as long as the host -- `DesktopRuntime` and
         // `GridTile` both declare the host first so it drops first. See the notes
@@ -2862,6 +2911,10 @@ fn build_grid_tile(
     config: AppConfig,
     locator: &MediaLocator,
 ) -> Result<(AppSession<MpvBackend>, WinitVideoHost, String), String> {
+    let handle = parent_window.window_handle().map_err(|e| e.to_string())?;
+    if requires_compositing(handle.as_raw()) {
+        return Err("Wayland grid playback is not supported; open a single video instead".into());
+    }
     let (host, backend) = build_host_and_backend(event_loop, parent_window)?;
     let mut session = AppSession::new(config, backend);
 
@@ -2998,6 +3051,15 @@ fn sync_video_host_bounds<H: crate::VideoHost>(
 
 #[cfg(feature = "mpv-runtime")]
 fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    if let Some(surface) = runtime.composited_video.as_ref() {
+        if let Some(error) = &runtime.video_host_error {
+            window.set_status_label(error.clone().into());
+        }
+        if !surface.is_ready() || runtime.grid.is_active() {
+            window.set_video_frame_active(false);
+        }
+        return;
+    }
     // Grid mode owns the video area. Leaving the single surface up would occlude every
     // tile strip, since native child windows composite above the Slint canvas.
     if runtime.grid.is_active() {
@@ -3064,9 +3126,12 @@ fn apply_video_host_suppression(
 fn configure_backend(
     runtime: Rc<RefCell<DesktopRuntime>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let backend = WinitBackend::builder()
-        .with_custom_application_handler(Box::new(DesktopWinitHandler::new(runtime)))
-        .build()?;
+    let builder = WinitBackend::builder()
+        .with_custom_application_handler(Box::new(DesktopWinitHandler::new(runtime)));
+    // A borrowed GL texture cannot be consumed by Vulkan/software renderers.
+    #[cfg(target_os = "linux")]
+    let builder = builder.with_renderer_name("femtovg");
+    let backend = builder.build()?;
     slint::platform::set_platform(Box::new(backend))?;
     Ok(())
 }
@@ -3165,6 +3230,38 @@ impl DesktopWinitHandler {
 
         let config = runtime.config.clone();
         let shortcuts = config.shortcuts.clone();
+        if parent_window.window_handle().is_ok_and(|handle| requires_compositing(handle.as_raw())) {
+            let result = runtime.composited_notifier_error.clone().map_or_else(
+                || {
+                    build_desktop_backend_with_options(yoyo_mpv::MpvClientOptions {
+                        render_api: true,
+                        ..Default::default()
+                    })
+                    .map_err(|e| e.to_string())
+                },
+                Err,
+            );
+            match result {
+                Ok(backend) => {
+                    runtime.composited_video = Some(CompositedVideo::default());
+                    runtime.controller = Some(DesktopController::with_shortcuts(
+                        AppSession::new(config, backend),
+                        shortcuts,
+                    ));
+                    // Startup media waits until the render context exists.
+                    parent_window.request_redraw();
+                }
+                Err(error) => {
+                    let message = format!("Composited video startup failed: {error}");
+                    runtime.record_diagnostic("ERROR", &message);
+                    runtime.mark_error(message.clone());
+                    if let Some(app) = runtime.app_handle.as_ref().and_then(slint::Weak::upgrade) {
+                        app.set_status_label(message.into());
+                    }
+                }
+            }
+            return;
+        }
         let result = (|| -> Result<(DesktopController<MpvBackend>, WinitVideoHost), String> {
             let (video_host, backend) = build_host_and_backend(event_loop, parent_window)?;
             let session = AppSession::new(config, backend);

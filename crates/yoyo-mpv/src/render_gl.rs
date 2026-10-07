@@ -19,7 +19,6 @@ use libmpv_sys::{
     mpv_render_context, mpv_render_context_create, mpv_render_context_free,
     mpv_render_context_render, mpv_render_context_report_swap,
     mpv_render_context_set_update_callback, mpv_render_context_update, mpv_render_param,
-    mpv_render_param_type_MPV_RENDER_PARAM_ADVANCED_CONTROL,
     mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE, mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
     mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
     mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
@@ -32,7 +31,8 @@ use crate::MpvError;
 /// Resolves an OpenGL entry point for libmpv.
 ///
 /// mpv resolves every GL function through this, and does so during
-/// `mpv_render_context_create`, so the closure has to outlive the context.
+/// `mpv_render_context_create`. The owned form is retained for native hosts;
+/// `new_with_loader` also accepts a loader borrowed just for initialization.
 pub type GetProcAddress = Arc<dyn Fn(&str) -> *mut c_void + Send + Sync>;
 
 /// What `mpv_render_context_update` is asking for.
@@ -65,6 +65,8 @@ unsafe extern "C" fn update_trampoline(ctx: *mut c_void) {
     (holder.callback)();
 }
 
+struct ProcAddressHolder<'a>(&'a dyn Fn(&CStr) -> *const c_void);
+
 unsafe extern "C" fn get_proc_trampoline(
     ctx: *mut c_void,
     name: *const std::ffi::c_char,
@@ -72,12 +74,9 @@ unsafe extern "C" fn get_proc_trampoline(
     if ctx.is_null() || name.is_null() {
         return ptr::null_mut();
     }
-    let resolve = unsafe { &*ctx.cast::<GetProcAddress>() };
-    let symbol = match unsafe { CStr::from_ptr(name) }.to_str() {
-        Ok(symbol) => symbol,
-        Err(_) => return ptr::null_mut(),
-    };
-    resolve(symbol)
+    // `ctx` points to the holder, not to the data behind a trait object.
+    let resolve = unsafe { &*ctx.cast::<ProcAddressHolder<'_>>() };
+    (resolve.0)(unsafe { CStr::from_ptr(name) }).cast_mut()
 }
 
 /// An mpv render context that draws into a GL framebuffer we own.
@@ -87,9 +86,6 @@ unsafe extern "C" fn get_proc_trampoline(
 pub struct MpvGlRenderContext {
     context: *mut mpv_render_context,
     holder: Option<Box<UpdateHolder>>,
-    // Held so the closure mpv was handed stays alive for as long as it can call
-    // it. Dropped after `free`, never before.
-    _get_proc: GetProcAddress,
 }
 
 impl MpvGlRenderContext {
@@ -99,23 +95,39 @@ impl MpvGlRenderContext {
     ///
     /// `handle` must be an initialised mpv handle that outlives the returned
     /// context. The GL context the proc-address closure resolves against must be
-    /// current on the calling thread for the lifetime of this object.
+    /// current during creation, rendering, and destruction of this object.
     pub unsafe fn new(handle: *mut mpv_handle, get_proc: GetProcAddress) -> Result<Self, MpvError> {
+        // SAFETY: identical handle/context requirements; the adapter is borrowed
+        // only during initialization, while `get_proc` is still alive.
+        unsafe {
+            Self::new_with_loader(handle, &|name| {
+                name.to_str().map(|name| get_proc(name).cast_const()).unwrap_or(ptr::null())
+            })
+        }
+    }
+
+    /// Creates a context with the current renderer's borrowed GL loader.
+    ///
+    /// libmpv's OpenGL backend calls mpgl_load_functions2 synchronously in init;
+    /// it retains the resulting function pointers, not this loader or its data.
+    ///
+    /// # Safety
+    /// The initialized `handle` must outlive this context. The same GL context
+    /// must be current during creation, render calls, and destruction.
+    pub unsafe fn new_with_loader(
+        handle: *mut mpv_handle,
+        get_proc: &dyn Fn(&CStr) -> *const c_void,
+    ) -> Result<Self, MpvError> {
+        let holder = ProcAddressHolder(get_proc);
         let init = mpv_opengl_init_params {
             get_proc_address: Some(get_proc_trampoline),
-            // `Arc::as_ptr` is a shared reference to the heap allocation. The Arc
-            // is moved into the struct below, which moves the pointer to the Arc
-            // itself and not the allocation, so this stays valid.
-            get_proc_address_ctx: Arc::as_ptr(&get_proc) as *mut c_void,
-            // No extensions: libmpv 3.1.0 only speaks the OpenGL render API, so
-            // there is nothing extra to hand it.
+            get_proc_address_ctx: ptr::from_ref(&holder).cast_mut().cast(),
             extra_exts: ptr::null(),
         };
 
-        // Advanced control keeps mpv from blocking the render thread waiting for
-        // mpv_render_context_update, and makes the update flags meaningful
-        // instead of "render unconditionally".
-        let advanced: i32 = 1;
+        // Do not enable advanced control: callers issue synchronous player
+        // commands on the UI/render thread. Advanced control permits decoder
+        // requests that would deadlock those commands waiting on this thread.
         let mut params = [
             mpv_render_param {
                 type_: mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
@@ -124,10 +136,6 @@ impl MpvGlRenderContext {
             mpv_render_param {
                 type_: mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
                 data: ptr::addr_of!(init).cast_mut().cast::<c_void>(),
-            },
-            mpv_render_param {
-                type_: mpv_render_param_type_MPV_RENDER_PARAM_ADVANCED_CONTROL,
-                data: ptr::addr_of!(advanced).cast_mut().cast::<c_void>(),
             },
             mpv_render_param {
                 type_: mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
@@ -148,7 +156,7 @@ impl MpvGlRenderContext {
             ));
         }
 
-        Ok(Self { context, holder: None, _get_proc: get_proc })
+        Ok(Self { context, holder: None })
     }
 
     /// Registers the callback mpv invokes when the renderer wants attention.
@@ -188,7 +196,7 @@ impl MpvGlRenderContext {
         self.holder = None;
     }
 
-    /// Asks what, if anything, needs drawing. Safe to call from any thread.
+    /// Asks what needs drawing. Call on the render thread, never in the update callback.
     pub fn update(&self) -> UpdateFlags {
         if self.context.is_null() {
             return UpdateFlags(0);
@@ -276,5 +284,23 @@ mod tests {
         assert!(flags.frame());
         assert!(!UpdateFlags(0).frame());
         assert!(UpdateFlags(0).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod loader_regression_tests {
+    use super::*;
+
+    #[test]
+    fn render_context_rejects_missing_gl_entry_points() {
+        let backend = crate::MpvBackend::new_runtime_with_options(crate::MpvClientOptions {
+            audio_output: Some("null".into()),
+            ..Default::default()
+        })
+        .expect("runtime available");
+        // No GL pointer is returned: libmpv must report unsupported GL, not call
+        // a miscast Rust closure or access GL state.
+        let result = unsafe { backend.create_gl_render_context(Arc::new(|_| ptr::null_mut())) };
+        assert!(result.is_err());
     }
 }

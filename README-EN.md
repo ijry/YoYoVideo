@@ -58,7 +58,7 @@ SHA-256.
 
 > **Why Windows only?** macOS has no vetted universal libmpv build and native video embedding is not
 > implemented there yet; Linux would require bundling libmpv's whole dependency closure, and
-> Wayland embedding is unimplemented too. See the `notes` on the matching entries in
+> Wayland single-video playback now has an experimental OpenGL-composited path, not yet verified on a Wayland desktop; grid playback remains unsupported. See the `notes` on the matching entries in
 > [`runtime/manifest.toml`](runtime/manifest.toml).
 
 ## Building from source

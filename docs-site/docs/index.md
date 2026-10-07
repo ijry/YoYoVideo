@@ -112,7 +112,7 @@ import { withBase } from "vitepress";
       </div>
       <div class="yv-step" data-state="next">
         <h4>Linux 发行包 <span class="yv-tag" data-state="next">待完成</span></h4>
-        <p>以 .deb 声明依赖而非捆绑，X11 下视频可用；Wayland 原生嵌入尚未实现。</p>
+        <p>以 .deb 声明依赖而非捆绑，X11 下视频可用；Wayland 单视频采用实验性 GL 合成，尚待实机验证；不支持多宫格。</p>
       </div>
     </div>
   </div>

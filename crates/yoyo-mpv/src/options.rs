@@ -17,6 +17,9 @@ impl MpvVideoWindow {
 pub struct MpvClientOptions {
     pub video_window: Option<MpvVideoWindow>,
     pub force_window: bool,
+    /// Select `vo=libmpv` for an application-owned render context. Creating a
+    /// render context alone does not change mpv's automatic video-output choice.
+    pub render_api: bool,
     pub profile: Option<String>,
     /// mpv `ao` setting. `None` lets mpv choose.
     ///
@@ -29,6 +32,9 @@ pub struct MpvClientOptions {
 impl MpvClientOptions {
     pub fn mpv_option_pairs(&self) -> Vec<(&'static str, String)> {
         let mut pairs = Vec::new();
+        if self.render_api {
+            pairs.push(("vo", "libmpv".to_string()));
+        }
         if let Some(window) = self.video_window {
             pairs.push(("wid", window.id().to_string()));
         }

@@ -20,7 +20,7 @@ use std::ffi::{CStr, c_void};
 
 /// Where to find a GL entry point. Mirrors what Slint's
 /// `GraphicsAPI::NativeOpenGL` provides.
-pub type GlProcAddress = dyn Fn(&CStr) -> *const c_void;
+pub type GlProcAddress<'a> = dyn Fn(&CStr) -> *const c_void + 'a;
 
 /// A GL problem worth reporting rather than panicking on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +47,10 @@ impl std::error::Error for GlError {}
 /// Every one is looked up through the caller's loader rather than linked, because
 /// the loader belongs to whichever context is current -- on Linux that is EGL, on
 /// macOS it is NSOpenGL, and neither is a link-time dependency of this crate.
+#[derive(Clone, Copy)]
 pub struct GlFunctions {
+    get_integer: unsafe extern "C" fn(u32, *mut i32),
+    active_texture: unsafe extern "C" fn(u32),
     gen_textures: unsafe extern "C" fn(i32, *mut u32),
     delete_textures: unsafe extern "C" fn(i32, *const u32),
     bind_texture: unsafe extern "C" fn(u32, u32),
@@ -83,7 +86,7 @@ impl GlFunctions {
     ///
     /// The loader must belong to a context that is current on the calling thread,
     /// and that context must stay current whenever these pointers are used.
-    pub unsafe fn load(loader: &GlProcAddress) -> Result<Self, GlError> {
+    pub unsafe fn load(loader: &GlProcAddress<'_>) -> Result<Self, GlError> {
         fn name(symbol: &str) -> Result<std::ffi::CString, GlError> {
             std::ffi::CString::new(symbol)
                 .map_err(|_| GlError::new(format!("GL symbol name has an interior NUL: {symbol}")))
@@ -93,7 +96,7 @@ impl GlFunctions {
         // guarantees belongs to a current context, and each pointer is transmuted
         // to the signature OpenGL defines for that symbol.
         unsafe {
-            let mut lookup = |symbol: &str| -> Result<*const c_void, GlError> {
+            let lookup = |symbol: &str| -> Result<*const c_void, GlError> {
                 let name = name(symbol)?;
                 let pointer = loader(&name);
                 if pointer.is_null() {
@@ -135,15 +138,74 @@ impl GlFunctions {
                     unsafe extern "C" fn(u32) -> u32
                 ),
                 viewport: fetch!("glViewport", unsafe extern "C" fn(i32, i32, i32, i32)),
+                get_integer: fetch!("glGetIntegerv", unsafe extern "C" fn(u32, *mut i32)),
+                active_texture: fetch!("glActiveTexture", unsafe extern "C" fn(u32)),
             })
         }
     }
 }
 
+/// The bindings we disturb when rendering into the texture. This is not a full
+/// GL state snapshot: libmpv's remaining state follows its standard-defaults
+/// contract, and the UI renderer sets its own drawing state after the notifier.
+struct SavedBindings<'a> {
+    gl: &'a GlFunctions,
+    framebuffer: i32,
+    texture: i32,
+    texture0: i32,
+    active_texture: i32,
+    viewport: [i32; 4],
+}
+
+impl Drop for SavedBindings<'_> {
+    fn drop(&mut self) {
+        // SAFETY: only constructed within with_saved_bindings; the caller keeps
+        // the same context current throughout the operation and restoration.
+        unsafe {
+            (self.gl.bind_framebuffer)(GL_FRAMEBUFFER, self.framebuffer as u32);
+            (self.gl.active_texture)(0x84C0); // GL_TEXTURE0
+            (self.gl.bind_texture)(GL_TEXTURE_2D, self.texture0 as u32);
+            (self.gl.active_texture)(self.active_texture as u32);
+            (self.gl.bind_texture)(GL_TEXTURE_2D, self.texture as u32);
+            let [x, y, w, h] = self.viewport;
+            (self.gl.viewport)(x, y, w, h);
+        }
+    }
+}
+
+impl GlFunctions {
+    /// Saves framebuffer, viewport, active texture unit and 2D texture bindings,
+    /// runs `draw`, and restores them even if `draw` returns an error or unwinds.
+    ///
+    /// # Safety
+    /// The owning context must stay current throughout `draw` and restoration.
+    pub unsafe fn with_saved_bindings<T>(&self, draw: impl FnOnce() -> T) -> T {
+        let mut saved = SavedBindings {
+            gl: self,
+            framebuffer: 0,
+            texture: 0,
+            texture0: 0,
+            active_texture: 0,
+            viewport: [0; 4],
+        };
+        unsafe {
+            (self.get_integer)(0x8CA6, &mut saved.framebuffer); // GL_FRAMEBUFFER_BINDING
+            (self.get_integer)(0x8069, &mut saved.texture); // GL_TEXTURE_BINDING_2D
+            (self.get_integer)(0x84E0, &mut saved.active_texture); // GL_ACTIVE_TEXTURE
+            (self.get_integer)(0x0BA2, saved.viewport.as_mut_ptr()); // GL_VIEWPORT
+            (self.active_texture)(0x84C0);
+            (self.get_integer)(0x8069, &mut saved.texture0);
+        }
+        let result = draw();
+        drop(saved);
+        result
+    }
+}
+
 /// A texture and the framebuffer that renders into it.
 ///
-/// Owns both GL objects and deletes them on drop, so it must be dropped while the
-/// context that created it is current.
+/// Owns both GL objects. Call `destroy` while the creating context is current;
+/// dropping the Rust value alone does not call OpenGL.
 pub struct TextureTarget {
     texture: u32,
     framebuffer: u32,
@@ -355,5 +417,66 @@ mod tests {
     fn gl_error_carries_its_message() {
         let error = GlError::new("framebuffer is incomplete");
         assert_eq!(error.to_string(), "framebuffer is incomplete");
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    // GL is an external boundary. Model only state owned by the caller, so this
+    // test verifies our restoration contract rather than a real driver's code.
+    thread_local! {
+        static STATE: RefCell<[i32; 7]> = const { RefCell::new([41, 23, 0, 0, 800, 600, 0x84C0]) };
+    }
+    unsafe extern "C" fn get_integer(name: u32, out: *mut i32) {
+        STATE.with(|state| {
+            let state = state.borrow();
+            let values: &[i32] = match name {
+                0x8CA6 => &state[0..1],
+                0x8069 => &state[1..2],
+                0x0BA2 => &state[2..6],
+                0x84E0 => &state[6..7],
+                _ => panic!("unexpected GL query"),
+            };
+            unsafe { std::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len()) };
+        });
+    }
+    unsafe extern "C" fn bind_framebuffer(_: u32, id: u32) {
+        STATE.with(|s| s.borrow_mut()[0] = id as i32);
+    }
+    unsafe extern "C" fn bind_texture(_: u32, id: u32) {
+        STATE.with(|s| s.borrow_mut()[1] = id as i32);
+    }
+    unsafe extern "C" fn viewport(x: i32, y: i32, w: i32, h: i32) {
+        STATE.with(|s| s.borrow_mut()[2..6].copy_from_slice(&[x, y, w, h]));
+    }
+    unsafe extern "C" fn active_texture(unit: u32) {
+        STATE.with(|s| s.borrow_mut()[6] = unit as i32);
+    }
+    unsafe extern "C" fn unused() {}
+
+    #[test]
+    fn caller_gl_bindings_are_restored_even_when_drawing_fails() {
+        let loader = |name: &CStr| match name.to_bytes() {
+            b"glGetIntegerv" => get_integer as *const c_void,
+            b"glBindFramebuffer" => bind_framebuffer as *const c_void,
+            b"glBindTexture" => bind_texture as *const c_void,
+            b"glViewport" => viewport as *const c_void,
+            b"glActiveTexture" => active_texture as *const c_void,
+            _ => unused as *const c_void, // Never invoked by this test.
+        };
+        let gl = unsafe { GlFunctions::load(&loader) }.unwrap();
+        let result: Result<(), &str> = unsafe {
+            gl.with_saved_bindings(|| {
+                bind_framebuffer(GL_FRAMEBUFFER, 9);
+                bind_texture(GL_TEXTURE_2D, 10);
+                viewport(0, 0, 123, 456);
+                Err("draw failed")
+            })
+        };
+        assert_eq!(result, Err("draw failed"));
+        STATE.with(|state| assert_eq!(*state.borrow(), [41, 23, 0, 0, 800, 600, 0x84C0]));
     }
 }

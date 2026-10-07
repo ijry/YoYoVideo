@@ -1,3 +1,5 @@
+#![cfg(not(feature = "mpv-runtime"))]
+
 use yoyo_mpv::{MpvBackend, MpvError};
 
 #[test]

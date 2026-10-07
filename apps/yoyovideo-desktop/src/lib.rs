@@ -21,6 +21,8 @@ mod video_area_input;
 mod video_host;
 #[cfg(feature = "mpv-runtime")]
 mod video_host_winit;
+#[cfg(feature = "mpv-runtime")]
+mod video_surface_gl;
 mod video_texture;
 
 pub use app::{

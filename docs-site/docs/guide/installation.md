@@ -63,7 +63,7 @@ Get-FileHash -Algorithm SHA256 .\YoYoVideo-windows-x64.zip
 
 **两个需要说清楚的保留：**
 
-- **不支持 Wayland。** 没有经过验证的宿主路径，程序会明确报告这个限制，而不是假装可用。
+- **Wayland 仍属实验性。** 单视频已接入 Slint/OpenGL 合成，尚未经过 Wayland 实机验证；多宫格仍不支持。
 - **macOS 视频只通过了编译验证。** 渲染 API 这条路在两个架构上都能编译，但还没有在真机上跑过——
   CI runner 是无头的，根本不会创建窗口。在有人在真机上确认之前，请当作未验证。
 
