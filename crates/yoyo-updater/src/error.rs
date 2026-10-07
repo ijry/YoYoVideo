@@ -1,5 +1,9 @@
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {
+    #[error("update network request failed: {0}")]
+    Network(&'static str),
+    #[error("invalid update preferences")]
+    Preferences,
     #[error("invalid update signature or public key")]
     Signature,
     #[error("invalid update manifest: {0}")]

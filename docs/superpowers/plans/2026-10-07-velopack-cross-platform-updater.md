@@ -10,6 +10,18 @@
 
 **Spec:** docs/superpowers/specs/2026-10-07-velopack-cross-platform-updater-design.md
 
+## 当前实施状态（2026-10-07）
+
+- Task 1 已完成：签名清单、平台/版本策略和流式包校验，12 项契约测试通过；提交 f48e59f。
+- Task 2 已完成：加密密钥签名/验证 CLI、保护既有输出、公钥固定，8 项测试通过；提交 90dbd7d。
+- 已用实际存储的加密密钥验证新签名工具，确认签名/验签成功、篡改被拒绝；未发布测试包，临时签名产物已清理。
+- Task 3 部分完成：SignedSource 和偏好持久化已实现，5 项来源测试、4 项偏好测试通过。后台 service/actor、待安装缓存恢复、安装协调仍待实现，因此 Task 3 不能标为完成。
+- 本批整仓回归：276 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、两新增 crate 的 Clippy -D warnings、格式和 diff 检查通过。
+- 来源测试实际放在 src/source/tests.rs，以测试私有传输边界而不向正式应用暴露测试源配置。
+- Task 4–9 尚未实现；播放器界面没有接入自动升级，发布工作流未切换，0.0.1 未重发。
+- 适配发现：Velopack 的 UpdateSource 参数涉及 bundle::Manifest，需要开启官方 public-utils feature，SDK 版本仍固定 1.2.161。
+- 工具链核对：现有 Slint 1.17.0 自身已要求 Rust 1.92；新增 Velopack 的 zip 依赖要求 1.88。本地验证使用 1.94.1，未修改仓库既有 1.85 声明，也不宣称本仓库当前真的支持 1.85。
+
 ## Global Constraints
 
 - 应用版本起点 0.0.1；不做旧版迁移；不在实施测试中修改远端 tag 或覆盖公开 Release。
@@ -61,7 +73,7 @@ pub struct VerifiedManifest {
 
 UpdateError 分别表示签名、清单、平台、版本、哈希、大小、网络、持久化、安装和不支持环境错误；Display 不包含私钥/密码/响应原文。
 
-- [ ] **1.1 RED：** 添加 workspace member 和 crate 测试所需最小 Cargo 结构，不写协议实现。真实 minisign 测试辅助函数按下列代码生成测试签名：
+- [x] **1.1 RED：** 添加 workspace member 和 crate 测试所需最小 Cargo 结构，不写协议实现。真实 minisign 测试辅助函数按下列代码生成测试签名：
 
 ```rust
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -81,7 +93,7 @@ cargo test -p yoyo-updater --test manifest_contract
 
 预期首次失败是缺少协议能力；修复测试编译问题后，确认拒绝测试真的失败，不能把编译错误当完成 RED。
 
-- [ ] **1.2 GREEN：** 实现 base64 外层解码、UTF-8 边界、minisign-verify 的 PublicKey/Signature::decode 与 verify(raw, &signature, false)，再解析 serde JSON。严格检查规格所有上下文字段和 full 包；用 semver 而非字符串比较版本。构建 VerifiedManifest 时缓存 raw/signature，以便重启后重新验证，字段不对外开放修改。
+- [x] **1.2 GREEN：** 实现 base64 外层解码、UTF-8 边界、minisign-verify 的 PublicKey/Signature::decode 与 verify(raw, &signature, false)，再解析 serde JSON。严格检查规格所有上下文字段和 full 包；用 semver 而非字符串比较版本。构建 VerifiedManifest 时缓存 raw/signature，以便重启后重新验证，字段不对外开放修改。
 
 ```rust
 use std::io::{Read, BufReader};
@@ -100,8 +112,8 @@ loop {
 
 把 total 与签名 Size、最终摘要与签名 SHA256 比较；不先把大包整体读进内存。
 
-- [ ] **1.3 测试策略：** 添加 as_str/channel/current 映射、0.0.1→0.0.2、0.0.2→0.0.2、0.0.3→0.0.2、预发布排除和所有版本字段不一致测试。
-- [ ] **1.4 验证并提交：**
+- [x] **1.3 测试策略：** 添加 as_str/channel/current 映射、0.0.1→0.0.2、0.0.2→0.0.2、0.0.3→0.0.2、预发布排除和所有版本字段不一致测试。
+- [x] **1.4 验证并提交：**
 
 ```powershell
 cargo test -p yoyo-updater
@@ -124,8 +136,8 @@ cargo run -p yoyo-update-sign -- verify --manifest dist/velopack/windows-x64/yoy
 
 sign 从环境 YOYOVIDEO_UPDATER_PRIVATE_KEY 与 YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD 读取现有加密格式，不接受命令行私钥参数。输出 JSON 和同名 .sig；verify 不需要私钥。
 
-- [ ] **2.1 RED：** tests/sign_contract.rs 生成一次性测试密钥，在临时目录用 abc fixture 构造原生 feed。调用库 sign 后，用 Task 1 独立验证签名和包；错误密码、与输入 feed 不符的文件、错误平台/public key、缺文件都必须失败且不留下可发布 JSON。再用 std::process::Command 运行二进制验证退出码，不将测试密钥打印出来。
-- [ ] **2.2 GREEN：** 在 CLI 外部先验证所有 full 资源的真实大小/哈希和上下文，然后生成唯一 envelope；按原始 JSON 字节签名，再本地验证，最后原子写入 JSON/.sig。关键加密 API 为：
+- [x] **2.1 RED：** tests/sign_contract.rs 生成一次性测试密钥，在临时目录用 abc fixture 构造原生 feed。调用库 sign 后，用 Task 1 独立验证签名和包；错误密码、与输入 feed 不符的文件、错误平台/public key、缺文件都必须失败且不留下可发布 JSON。再用 std::process::Command 运行二进制验证退出码，不将测试密钥打印出来。
+- [x] **2.2 GREEN：** 在 CLI 外部先验证所有 full 资源的真实大小/哈希和上下文，然后生成唯一 envelope；按原始 JSON 字节签名，再本地验证，最后原子写入 JSON/.sig。关键加密 API 为：
 
 ```rust
 let secret = minisign::SecretKeyBox::from_string(&decoded_private_key)?
@@ -137,8 +149,8 @@ let signature = minisign::sign(
 ```
 
 敏感值不进入 Debug 派生结构；错误转换只输出类别。CLI flags 解析拒绝重复、缺值或未知参数。
-- [ ] **2.3 固定公钥：** 仅复制 D:/Repos/xyito/config/yoyovideo/updater.key.pub 到 apps/yoyovideo-desktop/assets/updater.pub；比较字节/去除末尾换行后的内容，绝不读取私钥并复制进项目。
-- [ ] **2.4 验证提交：**
+- [x] **2.3 固定公钥：** 仅复制 D:/Repos/xyito/config/yoyovideo/updater.key.pub 到 apps/yoyovideo-desktop/assets/updater.pub；比较字节/去除末尾换行后的内容，绝不读取私钥并复制进项目。
+- [x] **2.4 验证提交：**
 
 ```powershell
 cargo test -p yoyo-update-sign -p yoyo-updater
@@ -175,7 +187,7 @@ UpdatePreferences::should_check(now: i64, manual: bool) -> bool；load(path: &Pa
 服务内部保留候选 UpdateInfo 和冻结的 VerifiedManifest，不允许 UI 构造或替换候选包。安装未发现 Velopack context 时返回 Unsupported，不在构造窗口时 panic。
 
 - [ ] **3.1 RED：** 测试 source 的实际验签分支；只替换网络 I/O（用私有 Transport trait 提供 signed bytes/包），不替换 verifier。覆盖响应限额、HTTPS 降级、过期快照、错包、不再访问变化后的 latest。测试实际缓存文件先验证成功再篡改，要求 verify_for_install 失败。
-- [ ] **3.2 GREEN：** 实现正式 HTTPS 客户端，固定源 https://github.com/ijry/YoYoVideo，给所有请求设定上限、截止时间及 HTTPS 重定向检查。manifest URL 为 releases/latest/download/yoyovideo-update.<platform>.json，包 URL 从已验证 release_tag 与安全文件名构造。实现 UpdateSource 的真实签名：
+- [x] **3.2 GREEN：** 实现正式 HTTPS 客户端，固定源 https://github.com/ijry/YoYoVideo，给所有请求设定上限、截止时间及 HTTPS 重定向检查。manifest URL 为 releases/latest/download/yoyovideo-update.<platform>.json，包 URL 从已验证 release_tag 与安全文件名构造。实现 UpdateSource 的真实签名：
 
 ```rust
 fn get_release_feed(

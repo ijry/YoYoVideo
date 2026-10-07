@@ -9,3 +9,8 @@ pub use manifest::{
     verify_package_file,
 };
 pub use policy::Platform;
+
+mod preferences;
+mod source;
+pub use preferences::UpdatePreferences;
+pub use source::SignedSource;
