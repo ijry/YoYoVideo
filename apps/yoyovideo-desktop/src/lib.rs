@@ -84,3 +84,6 @@ pub use video_host::{
     LogicalVideoRect, NativeVideoWindowId, SuppressionAction, UnsupportedVideoHost, VideoHost,
     VideoHostBounds, VideoHostError, VideoHostSuppression,
 };
+
+mod startup_report;
+pub use startup_report::startup_report;

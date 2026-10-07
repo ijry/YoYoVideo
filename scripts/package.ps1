@@ -17,7 +17,9 @@ param(
 
     [switch]$AllowMissingRuntimeLicenseFiles,
 
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+
+    [switch]$StageOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -333,6 +335,12 @@ if ($Platform -eq "windows-x64") {
 }
 
 
+# Validate the exact generated staging directory before the existing replacement step.
+if ((Test-Path -LiteralPath $distRoot) -and (Get-Item -LiteralPath $distRoot).LinkType) { Fail "dist must not be a directory link" }
+$packageAbsolute = [IO.Path]::GetFullPath($packageDir)
+$distAbsolute = [IO.Path]::GetFullPath($distRoot).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+if (-not $packageAbsolute.StartsWith($distAbsolute,[StringComparison]::OrdinalIgnoreCase)) { Fail "Staging path is outside dist" }
+if ((Test-Path -LiteralPath $packageDir) -and (Get-Item -LiteralPath $packageDir).LinkType) { Fail "Staging directory must not be a link" }
 if (Test-Path -LiteralPath $packageDir) {
     Remove-Item -LiteralPath $packageDir -Recurse -Force
 }
@@ -365,6 +373,8 @@ if ($RequireRuntime) {
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
+
+if ($StageOnly) { Write-Host "Staged package directory: $packageDir"; return }
 
 $zipPath = Join-Path $distRoot "$packageName.zip"
 $tarPath = Join-Path $distRoot "$packageName.tar.gz"

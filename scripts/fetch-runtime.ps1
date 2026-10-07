@@ -280,15 +280,10 @@ function Assert-RequiredFiles([string]$Destination, [object[]]$RequiredFiles) {
 }
 
 function Resolve-LinuxLibmpv {
-    # `ldconfig -p` is the authoritative list of what the loader will actually
-    # find, which beats guessing at the multiarch triplet directory.
-    $lines = & ldconfig -p 2>$null | Where-Object { $_ -match 'libmpv\.so\.2\s' }
-    foreach ($line in $lines) {
-        if ($line -match '=>\s*(\S+)') {
-            return $matches[1]
-        }
-    }
-    Fail "libmpv.so.2 not found. Install it first: apt-get install -y libmpv-dev"
+    . (Join-Path $PSScriptRoot 'appimage-common.ps1')
+    $lines = @(& ldconfig -p 2>$null)
+    if ($LASTEXITCODE -ne 0) { Fail "Could not query the Linux loader cache" }
+    return (Resolve-AppImageLibmpv $lines).Path
 }
 
 function Resolve-LinuxDependencyPackages([string]$LibraryPath) {
@@ -535,12 +530,13 @@ if ($strategy -eq "system-library") {
         $dependencies = @(Resolve-LinuxDependencyPackages $library)
         Write-Host "Resolved $($dependencies.Count) distribution package(s) providing the runtime"
 
-        $version = (& dpkg-query -W -f='${Version}' libmpv2 2>$null)
+        $package = if ($soname -eq 'libmpv.so.1') { 'libmpv1' } else { 'libmpv2' }
+        $version = (& dpkg-query -W -f='${Version}' $package 2>$null)
         Write-RuntimeSourceRecord $destination ([ordered]@{
             strategy     = "system-library"
             platform     = $Platform
             library      = $soname
-            package      = "libmpv2"
+            package      = $package
             version      = if ($version) { $version.Trim() } else { "unknown" }
             sha256       = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $libDir $soname)).Hash.ToLowerInvariant()
             depends      = $dependencies

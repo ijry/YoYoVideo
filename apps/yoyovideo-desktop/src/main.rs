@@ -4,6 +4,12 @@
 
 fn main() -> std::process::ExitCode {
     velopack::VelopackApp::build().set_auto_apply_on_startup(false).run();
+    if let Some(report) =
+        yoyovideo_desktop::startup_report(&std::env::args_os().skip(1).collect::<Vec<_>>())
+    {
+        println!("{report}");
+        return std::process::ExitCode::SUCCESS;
+    }
     match yoyovideo_desktop::run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
