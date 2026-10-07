@@ -111,6 +111,15 @@ jobs:
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           pwsh -NoProfile -File scripts/test-windows-installer.ps1 -PackageDir dist/YoYoVideo-windows-x64
 
+      - name: Verify restored Windows main window is visible
+        if: env.WANTED == 'true' && matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          $runtime = (Resolve-Path "third_party/mpv/windows-x64").Path
+          $env:PATH = "$(Join-Path $runtime 'bin');$env:PATH"
+          $env:RUSTFLAGS = "-L native=$(Join-Path $runtime 'lib')"
+          cargo test -p yoyovideo-desktop --release --features mpv-runtime --test window_restore_smoke -- --ignored
+
       - name: List the produced artifacts
         if: env.WANTED == 'true'
         shell: pwsh

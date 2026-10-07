@@ -6,6 +6,7 @@ mod media_scan;
 mod paths;
 mod recent;
 mod screenshot;
+mod window_restore;
 mod window_state;
 
 pub use dialogs::{DialogService, RfdDialogService};
@@ -26,6 +27,8 @@ pub use screenshot::{
     prepare_screenshot_path_in_dir, screenshot_timestamp_now,
 };
 pub use window_state::{
-    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, WindowState, load_window_state, save_window_state,
-    window_state_path,
+    DisplayBounds, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, WindowState, load_window_state,
+    save_window_state, window_state_path,
 };
+
+pub use window_restore::PendingWindowRestore;

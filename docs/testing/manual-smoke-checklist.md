@@ -138,3 +138,21 @@
   resolve inside the installed application, never a repository or CI runner path.
 - Launch from the Start Menu and by opening the installed EXE in Explorer. No
   console/terminal window should appear; fatal startup errors remain in the diagnostic log.
+
+
+## Restored-window visibility
+
+- With the app closed, test a saved geometry from a disconnected display or a
+  far-offscreen position (for example x=11830, y=1001, 2910x1650). On next launch,
+  the main window must be reachable on a connected monitor, not merely present
+  on the taskbar. Back up the window-state file before any manual edits.
+- Valid negative-coordinate secondary displays must retain the saved position;
+  gaps between monitors must not count as visible desktop space.
+- Oversized dimensions and a title bar above the screen must be brought inside
+  the selected display. Later user moves must not be overridden by restoration.
+- Run `cargo test -p yoyovideo-desktop --test window_restore_smoke -- --ignored`
+  on Windows. This creates a fresh MainWindow without reading/writing user data,
+  exercises the real deferred native-window restoration, checks monitor overlap,
+  visibility and nonblank rendered content, then verifies a later move is retained.
+- The package/release workflows run that same test for Windows. Merely keeping a
+  process alive, or using `Start-Process -WindowStyle Hidden`, is not a visibility test.

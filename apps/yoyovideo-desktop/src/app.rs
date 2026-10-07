@@ -1254,13 +1254,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app = MainWindow::new()?;
     #[cfg(feature = "mpv-runtime")]
     install_composited_video_notifier(&app, Rc::clone(&runtime));
-    if let Ok(Some(state)) = crate::platform::load_window_state(window_state_path) {
-        app.window().set_size(slint::PhysicalSize::new(state.width, state.height));
-        if let (Some(x), Some(y)) = (state.x, state.y) {
-            app.window().set_position(slint::PhysicalPosition::new(x, y));
-        }
-        app.window().set_maximized(state.maximized);
-    }
+    let saved_window_state = crate::platform::load_window_state(window_state_path).ok().flatten();
     {
         let mut runtime = runtime.borrow_mut();
         runtime.app_handle = Some(app.as_weak());
@@ -2509,6 +2503,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dropped_paths = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
     let drop_timer = Rc::new(slint::Timer::default());
     app.window().on_winit_window_event({
+        let mut window_restore = crate::platform::PendingWindowRestore::new(saved_window_state);
         let app_handle = app.as_weak();
         let runtime = Rc::clone(&runtime);
         let keyboard_state = Rc::clone(&keyboard_state);
@@ -2516,10 +2511,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let dropped_paths = Rc::clone(&dropped_paths);
         let drop_timer = Rc::clone(&drop_timer);
         move |window, event| {
+            // Restore once native creation has completed, before persisting any
+            // startup Moved/Resized events. Never replay the saved geometry on
+            // subsequent user moves, focus changes or taskbar activations.
+            let geometry_ready = window_restore.apply(window);
             match event {
                 slint::winit_030::winit::event::WindowEvent::Moved(_)
                 | slint::winit_030::winit::event::WindowEvent::Resized(_)
-                | slint::winit_030::winit::event::WindowEvent::CloseRequested => {
+                | slint::winit_030::winit::event::WindowEvent::CloseRequested
+                    if geometry_ready =>
+                {
                     save_current_window_state(&runtime, window);
                 }
                 _ => {}
