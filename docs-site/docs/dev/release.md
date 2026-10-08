@@ -15,7 +15,8 @@ description: 四平台 Velopack 构建、更新认证和 draft 复验门禁。
    macOS 两种架构分别原生构建；Linux AppImage 固定 Ubuntu 22.04 基线。
 3. 各平台拉取 libmpv、构建真实播放内核、解码冒烟、用固定 **vpk 1.2.161** 包装并原生验证。
    这里没有生产签名私钥。正式 Windows 安装包不再使用旧 NSIS 流程。
-4. 四个平台都成功后，发布 job 无覆盖合并资源并校验，独立签名步骤签署四份更新清单。
+4. 四个平台包装、Windows 首次 Setup 安装，以及 Windows/macOS/Linux 真实升级均成功后，
+   发布 job 无覆盖合并资源并校验，独立签名步骤签署四份更新清单。
 5. 完整验签与资产校验 → 上传到新 draft → 下载全部 draft 资源 → 再次验签、校验包内容及所有文件哈希 →
    再核对 tag commit → 公开 Release。任一步失败都不会公开。
 6. 成功后通知文档站重新部署。
@@ -40,7 +41,14 @@ Variable `YOYOVIDEO_UPDATER_PUBLIC_KEY` 必须与客户端 `assets/updater.pub` 
 
 ## 验收状态
 
-`updater-smoke.yml` 运行原生包装/解码，以及 Windows portable-layout 的真实升级回归。
-正式发布也依赖 `updater-upgrade-windows.yml`；它不替代首次 Setup 安装或 macOS/Linux 原生升级验收。
-Windows 本机包装与验签通过不能代替 macOS/Linux 原生验证，也不能代替真实升级。
+2026-10-08，提交 `81d7f06` 的[完整原生 CI](https://github.com/ijry/YoYoVideo/actions/runs/37736646064) **9/9 通过**，
+[普通 CI](https://github.com/ijry/YoYoVideo/actions/runs/37736645755) 通过。macOS 两种架构各连续 3 次升级必过，
+Linux 四种组合全部通过；本轮未重发 0.0.1，未使用生产私钥做测试。
+
+`updater-smoke.yml` 同时覆盖四平台原生包装/解码、Windows Setup 首次安装/快捷方式/卸载，
+以及真实 `0.0.1 → 0.0.2` 升级：Windows portable-layout、macOS ARM64/Intel、
+Linux 22.04/24.04 × FUSE/解压运行（容器无系统 libmpv）。
+每个升级案例检查坏签名/坏包/缓存篡改拒绝、稍后不安装、占用保护、新进程版本和历史恢复。
+另外用一次性密钥签署四平台实际产物，验证完整发布集合；测试私钥和 QA 包不上传 Release。
+正式发布依赖同样的包装与 `updater-upgrade-windows.yml`、`updater-upgrade-unix.yml` 门禁。
 精确命令、密钥备份和当前验收状态见[更新机制文档](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md)。

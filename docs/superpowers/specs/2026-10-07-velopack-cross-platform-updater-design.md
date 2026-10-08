@@ -125,7 +125,7 @@ Windows 的 Velopack 助手可能结束同一版本目录中的占用进程。�
 
 ### Windows x64
 
-新正式安装器使用 Velopack 的版本目录、启动 stub 和 Update.exe；不继续由 NSIS 覆盖安装。携带同一构建的 mpv-2.dll 与实际运行依赖，保留图标、许可和发行说明。快捷方式指向 Velopack 稳定启动入口，而非 current 下的易变路径。首期不承诺普通 zip 具有自更新能力。
+新正式安装器使用 Velopack 的版本目录、启动 stub 和 Update.exe；不继续由 NSIS 覆盖安装。携带同一构建的 mpv-2.dll 与实际运行依赖，保留图标、许可和发行说明。快捷方式指向 Velopack 稳定启动入口；vpk 1.2.161 原生安装验收确认实际目标为 `current/yoyovideo-desktop.exe`，不是版本号目录或根目录 stub。首期不承诺普通 zip 具有自更新能力。
 
 ### macOS ARM64 / x86_64
 

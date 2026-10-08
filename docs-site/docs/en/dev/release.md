@@ -15,7 +15,8 @@ Only matching stable `vX.Y.Z` **annotated tags** are accepted. Release notes com
    macOS architectures build natively; Linux AppImages use the Ubuntu 22.04 baseline.
 3. Stage libmpv, build real playback, decode a test file, package with pinned **vpk 1.2.161**, and validate native artifacts.
    These jobs have no production signing keys. The release installer no longer uses the legacy NSIS flow.
-4. Only after all four targets succeed: merge without overwrites, validate, then sign four manifests in an isolated step.
+4. Only after all four package targets, clean Windows Setup acceptance, and Windows/macOS/Linux native upgrades succeed:
+   merge without overwrites, validate, then sign four manifests in an isolated step.
 5. Verify the complete signed release, upload a new draft, download every draft asset, reverify signatures/package contents/all file hashes,
    recheck the tag commit, then publish. Any failure prevents publication.
 6. Notify the documentation deployment after success.
@@ -38,7 +39,16 @@ Reissuing the old 0.0.1 requires an explicit separate operator action.
 
 ## Verification status
 
-`updater-smoke.yml` tests native packaging/playback and a real Windows portable-layout upgrade.
-Release publishing also depends on `updater-upgrade-windows.yml`; this does not cover first-time Setup registration or native macOS/Linux upgrades.
-Local Windows package/signature success does not prove native macOS/Linux success or end-to-end upgrades.
+On 2026-10-08, commit `81d7f06` passed all **9/9 [native CI jobs](https://github.com/ijry/YoYoVideo/actions/runs/37736646064)**
+and [regular CI](https://github.com/ijry/YoYoVideo/actions/runs/37736645755). Each macOS architecture passed three consecutive full upgrades,
+and all four Linux cases passed. This work did not republish 0.0.1 or use production private keys for tests.
+
+`updater-smoke.yml` covers native packaging/playback on all four targets, clean Windows Setup installation/shortcuts/uninstallation,
+and real `0.0.1 → 0.0.2` upgrades: Windows portable layout, macOS ARM64/Intel,
+and Linux 22.04/24.04 using both FUSE and extraction (containers have no system libmpv).
+Every upgrade checks rejection of bad signatures/packages/cache tampering, postponement, instance protection,
+the restarted process version, and playback-history restoration.
+A separate job signs all four actual artifacts with disposable keys and verifies the complete release set;
+test private keys and QA packages are never uploaded to a Release.
+Publishing depends on the same package checks and both `updater-upgrade-windows.yml` and `updater-upgrade-unix.yml` gates.
 See the [updater notes](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md) for commands, backups and current verification status.

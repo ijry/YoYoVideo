@@ -12,47 +12,20 @@
 
 ## 当前实施状态
 
-- Task 1、2 已完成：签名协议、包校验与发布签名工具；原提交 f48e59f、90dbd7d。
-- Task 3 已实现并通过契约测试：后台 worker、请求编号过滤、冻结候选、缓存重验、双阶段安装授权、Windows 同目录进程检查。下载进度单独发送，避免反复复制更新说明。
-- Task 4 已实现并验证渲染：独立中英文更新窗口、菜单入口、标题栏提示、下载进度、自动检查设置、稍后操作，以及复选框的鼠标/键盘焦点行为。
-- Task 5 已接线：启动关闭 SDK 自动应用；后台复验后先保存播放器状态，确认安装助手启动后正常退出。保存失败、未应用设置、过期回调和无效缓存不触发退出。标记尚未恢复或未改变时不覆盖/制造空记录。
-- 本轮整仓验证：cargo test --workspace -j 2，306 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
-- 高并行整仓链接曾出现 MSVC LNK1123；失败目标单独运行以及低并行整仓重试通过，没有删除测试或修改业务逻辑绕过该链接失败。
-- Task 6 包装实现已提交（5554dd0）：真实 Windows vpk 打包与一次性密钥验签通过；macOS/Linux 格式契约和脚本已实现，但对应原生构建/运行未执行，6.4/6.5 仍未验收。
-- Task 7 发布工作流与文档已实现：四目标无私钥构建、独立签名、完整集合检查、draft 上传后下载复验、tag commit 双重核对，拒绝已有同 tag Release/draft。尚未推送/触发此次四目标 CI。
-- Task 8 Windows 部分已实现并实际通过：两个真实编译版本、一次性签名、本地 fixture 源、真实 SDK 替换/重启、内核进程终止与历史恢复。使用隔离 portable 布局，不触及真实用户安装。macOS/Linux 原生升级、正式 Windows Setup 注册项与四目标 CI 尚未验收；0.0.1 未重发。
-- 新界面的本地渲染图：.cache/update-window-verified.png（不提交生成图片）。
-- 生产私钥和密码仍只在用户指定目录与 GitHub Secrets 中；本轮没有复制进源码、日志或产物。
-- 工具链：Slint 1.17.0 本身要求 Rust 1.92，本地使用 1.94.1；保留了仓库既有 1.85 声明，不据此宣称真实支持 1.85。Velopack 固定 1.2.161 并启用 public-utils。
-
-
-### 2026-10-08 本轮验证记录
-
-- `scripts/test-velopack-package-integration.ps1`：实际 Windows vpk 1.2.161，已有空输出目录、一次性加密密钥签名、独立验签；坏签名、PrepareOnly 未签名资产、包篡改均拒绝；未执行安装器。诊断在 `.cache/velopack-integration-23a365f22e104235adf692bc89b12349`。
-- `scripts/test-velopack-package.ps1`：13 项通过（在 runtime-enabled debug EXE 构建后执行）；涵盖目标/RID/channel、无 delta、ad-hoc 参数、秘密环境隔离、架构、ZIP 路径/XML、资源布局、sq.version、实际 build-info、AppImage 来源哈希。
-- `scripts/test-appimage-runtime.ps1`：策略/解析器/22.04 基线/AppRun 参数测试通过；libmpv1 与 libmpv2 的依赖式 staging 验证都通过。原生 AppImage 仍待 CI；不将 fixture 当原生结果。
-- Linux 修正原 fetch/verifier 的 libmpv2 写死假设。按实际 .so.1/.so.2 SONAME 使用，不伪装 ABI；.deb 依赖式 staging 不变，AppImage 单独收集非宿主闭包并记录许可证。
-- `node --test scripts/test-updater-release.mjs`：8 项通过，覆盖缺平台/签名、版本混杂、哈希损坏，以及 fake gh 上传/下载/复验失败、已有 Release、上传后 tag 移动均不 publish。
-- `cargo test --workspace -j 2`：305 passed，0 failed，1 ignored；日志 `.cache/updater-final-workspace-tests.log`。
-- `cargo fmt --all --check`、mpv-runtime check、updater/signer all-targets Clippy `-D warnings`、12 个 PowerShell 文件 AST 检查通过。
-- Actionlint 1.7.12 校验 4 个工作流通过（`-shellcheck= -pyflakes=`）；文档站 `npm run docs:build` 通过。
-- GitHub 公钥 Variable 与客户端 pin 再次核对相同；没有读取远端私钥。生产签名密钥未用于本机测试。
-- 新增 `updater-build.yml` 复用无私钥矩阵，`updater-smoke.yml` 明确只做包装/解码，不伪装 Task 8。修正中英文 README 和文档站的旧 NSIS/自动覆盖/“没有网络请求”说明。
-- Task 6.1 的剩余模拟工具负例可继续补充；Task 6.4/6.5 原生验收、完整 CI、Task 8 真实升级仍未执行。不推送、不移动 tag、不覆盖旧 0.0.1。
-
-
-### 2026-10-08 真实升级测试续记
-
-- 增加非默认 `updater-qa`/`qa-fixture` feature、带标记的隔离目录、PID/序号绑定控制文件；开媒体路径限定在测试根目录。网络边界换为本地文件，但签名/包哈希/SDK/状态保存/退出全部复用正式实现。
-- QA 包标题为 `YoYoVideo QA ONLY`，build-info 有 `updater_qa=true`；默认包装与全平台外层 archive 校验拒绝 QA 包。Windows QA 禁用快捷方式，原生布局有 `.portable` 标记，不执行 Setup、不写用户卸载信息。
-- 真实执行中发现 Windows 退出码/HasExited 可以先于内核进程完成终止，原 Winit TLS 持有的播放后端在进程退出阶段释放可能阻塞。已在 `app.run` 返回并保存状态后显式释放 Windows 播放对象；Windows 网格 session 在 HWND 之前释放，macOS 原顺序不变。测试以零超时内核等待为准，不能靠强杀或退出码 0 算成功。
-- 进程占用预检查也用只读 SYNCHRONIZE 句柄判断存活；已退出的记录不误拦截，无法检查的潜在冲突仍失败关闭。新增保留已退出子进程句柄的回归测试。
-- 最新通过记录：`.cache/updater-upgrade-build-f0488a90ce8a4870b3c818a85e0d7529/run-c47db99e94954fd095e7a371c46033b9/SUCCESS.json`。初始 PID 39704，未确认更新重启 PID 15220，新版 PID 36244 报告 0.0.2；恢复位置约 20.53 秒，恢复限时 8 秒且旧目标至少 15 秒，不能靠从头播放冒充恢复。
-- 坏签名、坏包、缓存篡改、稍后/重启不偷偷安装、同目录多实例拒绝且不杀其他实例、新版不自动播放、偏好和历史保留、同版不提示全部通过。默认与 software 渲染环境均运行；这不等于真实视频/网格跨平台验收。
-- 失败测试进程清理核对打开句柄对应的实际映像路径后才终止，仅限本次隔离目录。先前失败用例的残留已按此方式清理，没有处理用户正常安装目录中的播放器。
-- 默认 workspace：306 passed / 1 ignored；QA core：43 passed；QA 控制解析器：1 passed；核心 QA all-targets Clippy -D warnings 通过。普通 mpv-runtime 二进制已重建，QA 环境入口字符串不存在。
-- 新增 `updater-upgrade-windows.yml`；普通 smoke 和正式 release 发布都依赖该 Windows 回归，CI 只上传事件/日志，不上传测试私钥或 QA 包。工作流尚未在 GitHub 实际运行。
-- Windows 本机 8.1/8.2 的实现与验收完成；8.3 的 macOS ARM/Intel、Linux 22.04/24.04（FUSE/extract-and-run）仍待实现/执行。不得据此标记全平台交付完成。
+- Task 1–5 已完成：签名协议、发布签名器、后台状态机、独立中英文更新窗口、正常退出及状态保存。
+- Task 6 已完成原生包装：Windows、macOS ARM64/Intel、Ubuntu 22.04 基线 AppImage，全部已有真实 GitHub 构建、解码和原生包验证记录。
+- Task 7 已实现发布门禁：包装、Windows Setup、各平台真实升级完成后才能签名/发布；四平台实际产物的一次性签名汇总校验已通过。
+- Task 8 已验收：Windows portable-layout 真实升级及独立 Setup 首次安装/快捷方式/卸载通过；macOS ARM64/Intel 各连续 3/3 完整升级通过；Linux 22.04/24.04 × FUSE/解压四种组合 4/4 通过。共核对 11 次升级及 Setup 的成功记录。
+- `dbfda5a` 的实际 CI（run `37734142130`，job `113169757243`）捕获新进程 30804 的 SIGABRT：`WinitVideoHost::set_bounds → window_did_move` 同步回调重入。`81d7f06` 将 macOS 位置/尺寸/可见性操作排入事件循环，撤掉无效 App Nap 假设，并要求 ARM/Intel 各连续通过 3 次完整升级。
+- Task 9 已完成审查。修复提交 `81d7f062a412ee04687f10ea0c53b03e385f6759` 的[完整原生烟测 37736646064](https://github.com/ijry/YoYoVideo/actions/runs/37736646064) **9/9 作业成功**，[普通 CI 37736645755](https://github.com/ijry/YoYoVideo/actions/runs/37736645755) 成功。四平台真实生产资产的一次性签名汇总校验也通过；不是未经执行的工作流。
+- 本机整仓测试 `cargo test --workspace -j 2`：308 通过、1 项既有忽略；QA 专用启动诊断测试先 RED 后 GREEN（3 项 QA 测试通过）。
+- 发布集合 Node 测试 10 通过；AppImage/QA 布局测试、actionlint、fmt、更新核心 Clippy、文档站 4 项测试和构建通过。打包契约 20 项通过，包含实际脚本 PlanOnly、缺运行库/公钥/签名凭据、错误 CLI 版本边界。
+- Windows 实际打包及一次性签名集成最新证据：`.cache/velopack-integration-726f2f041bba45d99e57cd07b92d6fd1`。没有在开发者用户目录运行 Setup。
+- GitHub 公钥 Variable 已与仓库 pinned key 再次比对一致，两个 Secret 名称存在；没有读取其值。生产私钥未用于测试，也未复制进仓库、日志或产物。
+- 本轮经用户授权推送工作分支以运行 CI；未改 tag、未公开 Release、未重新发布 0.0.1，测试 0.0.2 不进入 stable Release。
+- 原有安装器关闭进程相关未提交改动保持不动。隐私模式和空态按钮/标题提示未混入本次升级改动，尚未实施。
+- 完整证据表及限制见 [updater.md](../../development/updater.md#已完成的原生验收2026-10-08)；本机复核数据位于 `.cache/native-acceptance-81d7f06/verified-summary.json`。实现与原生验收完成，不等于已公开重新发布 0.0.1。
+- 工具链：Velopack/vpk 固定 1.2.161；本地 .NET 8.0.425 位于 `.cache/tools`；Slint 1.17 本身要求 Rust 1.92，本机 1.94.1。保留既有 rust-version 1.85 声明不等于声称可在 1.85 构建。
 
 ## Global Constraints
 
@@ -330,7 +303,7 @@ pwsh -NoProfile -File scripts/package-velopack.ps1 -Platform windows-x64 -Packag
 pwsh -NoProfile -File scripts/verify-velopack-package.ps1 -Platform windows-x64 -PackageDir dist/YoYoVideo-windows-x64 -ReleaseDir dist/velopack/windows-x64 -Version 0.0.1
 ```
 
-- [ ] **6.1 RED：** fixture 目录模拟 staging 和 vpk 可执行程序边界；实际运行脚本，断言生成调用的 packId、version、channel、主程序路径、无 delta、macOS ad-hoc 参数，以及缺 libmpv/错误 vpk 版本/缺公钥/缺签名配置时在发布前失败。fixture 只替代 vpk 子进程，不替代本仓库参数与资源验证。
+- [x] **6.1 契约与负例：** fixture staging 实际运行打包脚本 PlanOnly，断言 packId、version、channel、RID、主程序、无 delta、ad-hoc 参数。缺运行库/公钥/签名凭据在发布前拒绝；只替换 CLI 帮助子进程边界测试错误 vpk 版本。真实 vpk 集成另行验证打包、签名和资源拒绝，不用 fixture 冒充原生产物。
 - [x] **6.2 GREEN：** 查找 dotnet/vpk，验证 1.2.161；缺失时给出明确安装命令，不静默使用最新版。执行基本打包命令：
 
 ```powershell
@@ -339,9 +312,9 @@ dotnet tool install vpk --version 1.2.161 --tool-path .cache/tools/vpk
 ```
 
 不同平台参数从 vpk 1.2.161 help/源码验证后按目标追加，不能用错误参数吞掉退出码；不下载前一版本、不提供 delta 基包。打包前只在验证过的临时 packroot 复制 staging，绝不移动原始 staging 或用户安装目录。
-- [x] **6.3 Windows：** staging 的 bin 内容成为版本目录主程序/运行库，docs/LICENSES/发行说明一起带入；用 Velopack 默认稳定 stub 建立快捷方式。验证 PE 无 console 子系统、正确图标及相邻 DLL，不执行真实用户安装。
-- [ ] **6.4 macOS：** 提供 .icns，构造并检查 .app，调整 dylib @loader_path/@rpath 后，vpk 使用 --signAppIdentity - 且不传 notaryProfile。对主程序、更新助手、dylib 与最终 bundle 执行 codesign --verify；otool -L 不得留下 Cellar 或 runner 临时目录依赖。ARM/Intel 分别原生构建。
-- [ ] **6.5 Linux：** 独立脚本以 Ubuntu 22.04 runtime 为基线用 ldd/依赖解析组成 AppDir，复制可分发依赖与许可证；排除 glibc 和硬件驱动宿主组件，验证没有缺失依赖。必须包含 libmpv，不复用 .deb 的“依赖系统安装”假设。生成 PNG/.desktop，再由 vpk 生成 AppImage。
+- [x] **6.3 Windows：** staging 的 bin 内容成为版本目录主程序/运行库，docs/LICENSES/发行说明一起带入；使用 Velopack 默认稳定快捷方式目标；实际 Setup 验证为 `current/yoyovideo-desktop.exe`，非版本号目录或根目录 stub。验证 PE 无 console 子系统、正确图标及相邻 DLL，不执行真实用户安装。
+- [x] **6.4 macOS：** 提供 .icns，构造并检查 .app，调整 dylib @loader_path/@rpath 后，vpk 使用 --signAppIdentity - 且不传 notaryProfile。对主程序、更新助手、dylib 与最终 bundle 执行 codesign --verify；otool -L 不得留下 Cellar 或 runner 临时目录依赖。ARM/Intel 分别原生构建。
+- [x] **6.5 Linux：** 独立脚本以 Ubuntu 22.04 runtime 为基线用 ldd/依赖解析组成 AppDir，复制可分发依赖与许可证；排除 glibc 和硬件驱动宿主组件，验证没有缺失依赖。必须包含 libmpv，不复用 .deb 的“依赖系统安装”假设。生成 PNG/.desktop，再由 vpk 生成 AppImage。
 - [x] **6.6 发布签名与验证：** 对 vpk 产出的原生 feed 调用 Task 2 sign/verify；验证只有本平台 full 包、版本一致和实际资源哈希一致。外部工具退出码非零立即失败，不生成假成功标志。
 - [x] **6.7 验证提交：**
 
@@ -379,41 +352,41 @@ git commit -m "ci: verify and publish authenticated desktop updates"
 
 ## Task 8: 实际播放器的版本升级测试
 
-**Files:** scripts/test-velopack-upgrade.ps1、desktop/src/update_qa.rs、desktop Cargo.toml 的专用测试 feature、tests/fixtures/updater/。
+**Files:** scripts/{test-velopack-upgrade.ps1,run-velopack-upgrade-fixture.ps1,velopack-qa-common.ps1,test-velopack-setup.ps1,qa-linux/}、desktop/src/update_qa.rs、desktop Cargo.toml 的专用测试 feature、updater-upgrade-{windows,unix}.yml。测试密钥/媒体在隔离 .cache 中实时生成。
 **Produces:** 仅测试编译接受 fixture endpoint/public key/user-data-dir；正式编译不接受相关环境变量或 CLI 开关。
 
 - [x] **8.1 RED：** 实际构建两份独立 fixture 源码/产物版本 0.0.1、0.0.2，使用公开测试密钥和临时用户目录。fixture 的任务消息分别请求 check/download/later/install 并把实际应用版本和播放状态写入测试事件文件。先运行拒绝坏签名/坏包、禁止启动自动应用案例，证明没有验证时会失败。
 - [x] **8.2 GREEN：** 测试专用 feature 实现控制输入但复用 Task 3/5 的正式校验和生命周期；仅替换源、固定测试公钥与目录。脚本启动真实播放器、解码样例媒体、执行下载及稍后、再确认更新；独立助手更新后重启应用，由新进程报告 0.0.2 和历史/偏好保留。脚本设置总超时，失败留证据且清理仅限已核对的测试绝对目录。不得安装到真实用户配置/应用目录。
-- [ ] **8.3 平台执行：**
+- [x] **8.3 平台执行：**
 
 ```powershell
 pwsh -NoProfile -File scripts/test-velopack-upgrade.ps1 -Platform windows-x64 -FromVersion 0.0.1 -ToVersion 0.0.2
 ```
 
 相同脚本的三个其他 Platform 分支在各自原生 CI runner 执行；Linux 22.04 与 24.04 的干净测试容器不预装 libmpv，AppImage 使用 FUSE 与 extract-and-run 两种路径。macOS 分别验证 ARM64/Intel，单独记录未公证的正常系统提示。检查同版不提示、占用时不静默杀其他实例、签名/包/缓存篡改不安装。
-- [ ] **8.4 正式包检查：** 对非测试 feature 重新构建，证明测试源/公钥/目录开关不可用。测试 0.0.2 包不得上传 stable Release。
-- [ ] **8.5 验证提交：**
+- [x] **8.4 正式包检查：** 对非测试 feature 重新构建，证明测试源/公钥/目录开关不可用。测试 0.0.2 包不得上传 stable Release。
+- [x] **8.5 验证提交：**
 
 ```powershell
 cargo fmt --check
 cargo test --workspace
 cargo check -p yoyovideo-desktop --features mpv-runtime
 git diff --check
-git add -- scripts/test-velopack-upgrade.ps1 apps/yoyovideo-desktop/src/update_qa.rs apps/yoyovideo-desktop/Cargo.toml tests/fixtures/updater
+git add -- scripts/test-velopack-upgrade.ps1 scripts/run-velopack-upgrade-fixture.ps1 scripts/velopack-qa-common.ps1 scripts/test-velopack-setup.ps1 scripts/qa-linux apps/yoyovideo-desktop/src/update_qa.rs apps/yoyovideo-desktop/Cargo.toml
 git commit -m "test: exercise native player upgrades and preserved state"
 ```
 
 ## Task 9: 最终审查和交付状态
 
-- [ ] 核对每个 spec 章节：1/2/4→Task 1–3；3→全体边界；5/6→Task 3–5；7→Task 6/8；8→Task 2/7；9→Task 1–8；10→范围检查。
-- [ ] 检查公钥与已配置 GitHub Variable 一致，不读取/打印远端 Secrets 值；检查 git diff 不含 private key 或密码。
-- [ ] 复跑所有本机可运行测试，记录精确命令、通过/忽略/失败数量及平台；未运行的 macOS/Linux 原生测试必须标记未验证。
-- [ ] 核对其他工作区改动仍保留；只提交本功能文件。没有用户发布授权时不 push、不改 tag、不覆盖 0.0.1。
-- [ ] 报告“本机验证完成”“四目标 CI 完成”“公开 0.0.1 已重发”三个独立状态。不能把前者代替后两者。
+- [x] 核对每个 spec 章节：1/2/4→Task 1–3；3→全体边界；5/6→Task 3–5；7→Task 6/8；8→Task 2/7；9→Task 1–8；10→范围检查。
+- [x] 检查公钥与已配置 GitHub Variable 一致，不读取/打印远端 Secrets 值；检查 git diff 不含 private key 或密码。
+- [x] 复跑所有本机可运行测试，记录精确命令、通过/忽略/失败数量及平台；未运行的 macOS/Linux 原生测试必须标记未验证。
+- [x] 核对其他工作区改动仍保留；只提交本功能文件。本轮已授权推送工作分支运行 CI；没有另行发布授权时不改 tag、不覆盖 0.0.1。
+- [x] 报告“本机验证完成”“四目标 CI 完成”“公开 0.0.1 已重发”三个独立状态。不能把前者代替后两者。
 
 ## 执行环境注意
 
-本机 rustc 1.94.1，已能访问 crates.io，尚无 dotnet 命令。原生 Windows 打包验证前可在工作区 .cache 下安装 .NET 8 工具链，不修改用户系统环境；随后固定安装 vpk 1.2.161。GitHub CLI 需给工具进程补 APPDATA=C:/Users/Admin/AppData/Roaming，使用既有 keyring 登录；不得再次要求用户上传 token。
+本机 rustc 1.94.1，已能访问 crates.io；.NET 8.0.425 与 vpk 1.2.161 已安装到工作区 .cache/tools，不修改用户系统环境。GitHub CLI 需给工具进程补 APPDATA=C:/Users/Admin/AppData/Roaming，使用既有 keyring 登录；不得再次要求用户上传 token。
 
 若使用并行代理，主代理负责 Task 1–3 和 Cargo manifests；UI 代理只写 Task 4 文件；打包代理只写 Task 6 文件。主代理继续本地阻塞链工作，不重复代理实现。Task 5/7/8 整合后顺序验证。
 
@@ -515,4 +488,4 @@ fixture events.jsonl 记录 PID、真实编译版本、历史位置；区分旧�
 - 协议、安全、UI、退出、打包、CI、原生测试均已映射 Task 1–9。
 - Task 4 仅写 UI，不与 Task 5 Rust 接线冲突；Task 6 不改 Cargo manifests。
 - 接口生产者与消费者名称一致，测试用真实验签、文件和状态决策。
-- Windows 本机缺 dotnet 属于工具准备；macOS/Linux 原生验证必须在对应环境执行，未执行不得标为通过。
+- Windows .NET/vpk 已隔离安装；macOS/Linux 原生验证已在对应 GitHub runner/干净容器完成，不以跨编译或 fixture 代替。

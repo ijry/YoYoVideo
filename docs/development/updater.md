@@ -84,10 +84,15 @@ glibc、动态加载器、C++ 宿主 ABI 与图形驱动/dispatch 不打包。�
 
 ## 发布门禁
 
-- `updater-build.yml`：四平台无私钥构建、解码冒烟、原生包验证，输出未签名资产。
-- `updater-smoke.yml`：PR/push/手动运行上述包装验证，**不是安装升级端到端测试**。
+- `updater-build.yml`：四平台无私钥构建、解码冒烟、原生包验证，输出未签名资产；
+  Windows job 还在一次性 GitHub-hosted runner 上执行首次 Setup 安装和卸载验收。
+- `updater-upgrade-windows.yml`、`updater-upgrade-unix.yml`：运行真实两个编译版本的
+  验签、下载、拒绝篡改、稍后、占用保护、正常退出、原生替换、重启和历史恢复。
+- `updater-smoke.yml`：PR/push/手动运行上述包装、安装和升级回归；另用一次性测试密钥
+  签署本次构建的四平台资产，通过与正式发布相同的完整集合验证器。
 - `release.yml`：只接受版本与 Cargo.toml 一致的稳定 annotated tag，构建精确 commit。
-  四平台完成后，独立构建签名器、无覆盖合并、校验原生产物，再签署全部清单。
+  四平台包装、Windows Setup、Windows/macOS/Linux 真实升级全部成功后，
+  独立构建签名器、无覆盖合并、校验原生产物，再签署全部清单。
 - `verify-updater-release.mjs`：检查精确四平台集合、签名、原生 feed 一致性、包内容和哈希；
   未列出的文件/缺失文件/混合版本/重复资源名全部拒绝。
 - 发布顺序：完整本地验证 → 新建 draft → 上传 → 下载 draft 全资产 → 再次验签及内容校验 →
@@ -109,10 +114,13 @@ glibc、动态加载器、C++ 宿主 ABI 与图形驱动/dispatch 不打包。�
 - 文件占用：先正常关闭同安装目录的其他实例，再重试。预检查不能消除所有占用竞态。
 - 更新后异常：从可信发布页重新安装正确平台包；不要删除用户数据目录来“修复升级”。
 
-## 真实 Windows 升级回归
+## 真实跨平台升级回归
 
 ```powershell
 pwsh -NoProfile -File scripts/test-velopack-upgrade.ps1 -Platform windows-x64 -FromVersion 0.0.1 -ToVersion 0.0.2
+# 以下命令分别在对应架构的 macOS 原生运行
+pwsh -NoProfile -File scripts/test-velopack-upgrade.ps1 -Platform macos-aarch64
+pwsh -NoProfile -File scripts/test-velopack-upgrade.ps1 -Platform macos-x86_64
 ```
 
 脚本在 `.cache/updater-upgrade-build-*` 中复制源码，分别编译两个真实版本，生成一次性密钥，
@@ -121,7 +129,8 @@ Rust 实现变更后应重新构建，不要用旧目录当作新代码的证据
 
 测试 feature 是桌面的 `updater-qa` 与核心的 `qa-fixture`，均非默认。
 只有这些构建接受带 `TEST-ONLY` 标记的 `YOYOVIDEO_UPDATER_QA_ROOT`，其中存放测试公钥、
-本地更新源、控制请求、独立用户目录和事件记录。正式构建不接受该环境入口。
+本地更新源、控制请求、独立用户目录和事件记录；SDK 包缓存也限定在该次运行的
+`sdk-packages` 中，不污染 macOS 用户缓存或 Linux `/var/tmp/velopack`。正式构建不接受该环境入口。
 QA 请求绑定 PID 和递增序号，打开的媒体必须位于测试目录内；实际执行复用 UI 回调和正式验签/下载/安装状态机。
 
 QA 包使用独立标题 `YoYoVideo QA ONLY`，build-info 标记 `updater_qa=true`，禁用快捷方式。
@@ -138,7 +147,7 @@ Windows 测试使用 SDK 认可的 `.portable` 布局和真实 `Update.exe`，�
 - 真正退出旧进程、由更新助手替换并启动新版，新 PID 报告编译版本 0.0.2；
 - 新版不自动播放，保留自动检查偏好及历史，并在 8 秒内恢复到至少 15 秒的历史位置，
   不能靠从头播放来冒充恢复；
-- 同版本检查为最新，最后确认所有播放器的内核进程对象已终止。
+- 同版本检查为最新，最后确认所有播放器正常终止（Windows 检查内核进程对象；Unix 同时核对正常关闭事件）。
 
 `events.jsonl`、`SUCCESS.json` 和日志保留在该次 `run-*` 目录；成功以新版进程的报告为准，
 不是以安装助手返回 0 为准。失败清理先核对已打开进程的实际映像路径，只处理隔离安装目录，
@@ -152,13 +161,72 @@ Windows 测试使用 SDK 认可的 `.portable` 布局和真实 `Update.exe`，�
 并让 Windows 网格先释放 mpv session、再释放嵌入 HWND；macOS 的 render-context 优先顺序不变。
 占用预检查使用零超时内核等待核对存活状态，无法检查的潜在冲突仍拒绝安装。
 
-## 当前验证状态（2026-10-08）
+### macOS 与 Linux
 
-- Windows 本机真实 `0.0.1 → 0.0.2` portable-layout 替换、重启、状态恢复及负例已通过，
-  默认与 CI 指定的 software 渲染环境均运行过。非 QA 的 runtime-enabled 二进制也已重新构建，
-  build-info 为非 QA，且不包含 QA 环境入口字符串。
-- `updater-upgrade-windows.yml` 将上述回归接入普通 smoke 及正式发布依赖。
-  本次 GitHub 工作流尚未实际运行，未推送，不等于四目标 CI 已通过。
-- 未验证正式 Windows Setup 的首次安装/注册项流程；未完成 macOS ARM/Intel 和 Linux
-  AppImage 的原生安装升级回归（包括 Linux 22.04/24.04、FUSE/extract-and-run）。
-- 0.0.1 尚未重新发布；测试 0.0.2 没有上传 stable Release。
+macOS 在 ARM64/Intel 原生 runner 上，通过真实 `UpdateMac` 替换 .app 并由 LaunchServices
+重启。验证与目标架构匹配的 Mach-O、依赖和 ad-hoc 签名；更新助手本身允许是包含目标架构的
+universal binary。每个架构连续执行三次完整升级，任意一次失败都会令 job 失败，
+不是重试直到成功。超时保留 QA 启动阶段、限定到测试安装路径的进程栈和相关崩溃/系统日志。
+
+原生 Intel CI 曾捕获更新后新进程的 AppKit 回调重入崩溃：Slint display-link 定时器调整
+视频窗口时同步产生 Moved/Resized 等事件，重入仍持有借用的运行状态。现在将 macOS 的
+视频窗口位置、尺寸和可见性变更排入事件循环，不丢弃窗口事件，也不靠延长超时或禁止 App Nap
+掩盖问题。排队操作仅持有弱引用，不延长已关闭视频窗口的生命周期。
+
+Linux 从 Ubuntu 22.04 原生构建 AppImage，再在 **22.04 和 24.04** 两套干净容器中，
+分别执行 `extract` 与 `fuse` 四种组合。容器无系统 libmpv，只有声明的宿主字体、桌面和
+图形 ABI 库。FUSE 案例检查真实挂载而非悄悄降级为解压；每种组合都执行完整升级负例和历史恢复。
+复现入口及容器参数见 `updater-upgrade-unix.yml` 与 `scripts/qa-linux/`。
+Docker 使用 `--init` 并设置总超时，避免 Xvfb 的就绪信号在 PID 1 被吞掉。
+
+Linux 进程占用检测明确排除 sysinfo 的 task/thread 条目，防止把自身工作线程误判为另一个实例。
+AppImage 的 build-info 探测允许运行时通知行，但必须且只能包含一份有效应用报告；
+错误通知不能伪装成成功报告。
+
+### Windows Setup 首次安装
+
+`scripts/test-velopack-setup.ps1` 只允许在一次性 GitHub-hosted Windows runner 运行，
+拒绝开发者本机；发现已有安装注册项或快捷方式时也拒绝覆盖。它用真实 Setup 静默安装，
+核对 HKCU 的名称/版本/安装路径/卸载命令，以及桌面和开始菜单快捷方式指向
+`current/yoyovideo-desktop.exe`，运行已安装程序的 build-info，随后实际卸载，
+检查注册项、快捷方式和程序移除、用户数据哨兵保留。证据为 `setup-windows-diagnostics`。
+
+## 已完成的原生验收（2026-10-08）
+
+实现提交：`81d7f062a412ee04687f10ea0c53b03e385f6759`。
+[完整原生烟测 37736646064](https://github.com/ijry/YoYoVideo/actions/runs/37736646064)
+**9/9 作业成功**；[普通 CI 37736645755](https://github.com/ijry/YoYoVideo/actions/runs/37736645755) 也已通过。
+不是仅生成工作流或只做 Windows 本机模拟。
+
+| 验收项目 | 实际结果 |
+| --- | --- |
+| Windows x64 | 真实 `0.0.1 → 0.0.2` portable-layout 替换、重启、历史恢复通过；另在干净 runner 上通过 Setup 首次安装、HKCU/两处快捷方式、卸载及用户数据保留 |
+| macOS ARM64 | 原生 .app 替换/LaunchServices 重启，连续 **3/3** 完整升级通过 |
+| macOS Intel | 修复窗口回调重入崩溃后，原生 .app 替换/重启连续 **3/3** 通过 |
+| Linux x64 | 无系统 libmpv 的 Ubuntu 22.04/24.04 × FUSE/解压运行，**4/4** 完整升级通过，FUSE 检查真实挂载 |
+| 四平台发布集合 | 全部原生生产包构建/解码/内容检查通过；一次性密钥签署四份清单，再由正式发布验证器独立验签及校验完整资产集合 |
+
+共核对 **11 次真实升级**及独立 Windows Setup 的 `SUCCESS.json`。每次升级覆盖坏签名、坏包、
+缓存篡改、稍后不安装、另一实例占用保护，要求新 PID 报告真实编译版本 0.0.2，且在 8 秒内
+恢复至少 15 秒的历史位置。macOS 的三次均为必过用例，不是失败重试取一次成功。
+事件和诊断保存在上述 workflow 的 `windows-upgrade-diagnostics`、
+`upgrade-<platform>-diagnostics`、`setup-windows-diagnostics` 产物中；本机复核汇总位于
+`.cache/native-acceptance-81d7f06/verified-summary.json`。测试私钥和 QA 包不上传。
+
+本机回归（Windows，同一实现提交）：
+
+- `cargo test --workspace -j 2`：**308 通过、0 失败、1 项既有忽略**。
+- `cargo test -p yoyo-updater --features qa-fixture -j 2`：45 通过；
+  桌面 `updater-qa` 专用控制/事件测试 3 通过，`mpv-runtime` 视频宿主契约 5 通过。
+- `node --test scripts/test-updater-release.mjs`：10 通过；
+  `scripts/test-velopack-package.ps1`：20 通过（含真实 Windows build-info 探测）。
+- AppImage 策略/两种 SONAME staging、QA 布局/事件解析、真实 Windows vpk 一次性签名集成、
+  fmt、更新核心 Clippy、actionlint、文档站 4 项测试及构建通过。
+- 非 QA 的 runtime-enabled 程序已重建、报告非 QA，二进制不含 QA 环境入口。
+  GitHub 公钥 Variable 与 pinned key 一致，Secret 仅核对名称而未读取值。
+
+**公开发布是独立状态：0.0.1 尚未重新发布。** 本轮只推送工作分支执行 CI，未移动 tag，
+未用生产私钥做测试，测试 0.0.2 没有进入 stable Release。重新发布需另行明确操作。
+macOS 仍为 ad-hoc、未公证；Windows 仍无受信任 Authenticode 证书。原生回归验证真实 WAV
+解码及升级/状态生命周期，不替代所有 GPU、视频、Wayland、多宫格兼容性测试，
+也不证明 Gatekeeper/SmartScreen 提示已消失。
