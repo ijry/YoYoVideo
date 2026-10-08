@@ -11,12 +11,13 @@ function Assert-VelopackZipPaths([IO.Compression.ZipArchive]$Archive,[string]$Pl
     foreach($entry in $Archive.Entries) {
         $name=$entry.FullName
         if($name -match '(^/|\\|:|[\x00-\x1f])' -or ($name.TrimEnd('/').Split('/') | Where-Object {$_ -in @('','..','.')})){throw 'Unsafe archive path'}
-        if(-not $seen.Add($name.TrimEnd('/'))){throw 'Duplicate archive path'}
+        $logicalName=if($name.EndsWith('.__symlink')){$name.Substring(0,$name.Length-'.__symlink'.Length)}else{$name}
+        if(-not $seen.Add($logicalName.TrimEnd('/'))){throw 'Duplicate archive path'}
         $total+=$entry.Length
         if($entry.Length -gt 2147483648 -or $total -gt 4294967296){throw 'Uncompressed archive exceeds limits'}
         $kind=($entry.ExternalAttributes -shr 16) -band 0xf000
-        if($kind -eq 0xa000) {
-            if($Platform -notlike 'macos-*' -or $name -notmatch '(^|/)Contents/MacOS/sq\.version$'){throw 'Unexpected symbolic link in package'}
+        if($kind -eq 0xa000 -or $name.EndsWith('.__symlink')) {
+            if($Platform -notlike 'macos-*' -or $logicalName -notmatch '(^|/)Contents/MacOS/sq\.version$'){throw 'Unexpected symbolic link in package'}
             $target=[Text.Encoding]::UTF8.GetString((Read-VelopackEntry $entry 1024))
             if($target -cne '../Resources/sq.version'){throw 'Unsafe symbolic link target'}
         }

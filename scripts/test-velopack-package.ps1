@@ -176,6 +176,14 @@ Case 'native Linux nuspec names the AppDir executable' {
     $linux=@{'YoYoVideo.nuspec'=$xml;'lib/app/YoYoVideo.AppImage'=(Header 'linux-x64')}
     $null=Assert-VelopackArchive -Path (Zip-Fixture $linux) -Platform linux-x64 -Version 0.0.1
 }
+Case 'Velopack encoded symlinks cannot escape the bundle' {
+    $entries=@{'lib/app/Contents/MacOS/sq.version.__symlink'='../../../../outside'}
+    $path=Zip-Fixture $entries;$zip=[IO.Compression.ZipFile]::OpenRead($path)
+    try {Reject {Assert-VelopackZipPaths $zip 'macos-aarch64'}}finally{$zip.Dispose()}
+    $entries['lib/app/Contents/MacOS/sq.version.__symlink']='../Resources/sq.version'
+    $path=Zip-Fixture $entries;$zip=[IO.Compression.ZipFile]::OpenRead($path)
+    try {Assert-VelopackZipPaths $zip 'macos-aarch64'}finally{$zip.Dispose()}
+}
 Write-Host "Fixture diagnostics retained under $root"
 if($failures.Count){ throw ($failures -join [Environment]::NewLine) }
 Write-Host 'Velopack packaging contracts passed.'

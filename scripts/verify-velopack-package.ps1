@@ -36,9 +36,10 @@ elseif($Platform -eq 'linux-x64') {
             if($entry.FullName.EndsWith('/') -or $entry.FullName.StartsWith('__MACOSX/')){continue}
             if(-not $entry.FullName.StartsWith($bundleName+'/')){throw 'Unexpected file outside the app bundle'}
             $relative=$entry.FullName.Substring(($bundleName+'/').Length);$other=$package.GetEntry('lib/app/'+$relative)
-            if($null -eq $other -or $other.Length -ne $entry.Length){throw 'Portable app differs from full package'}
+            if($null -eq $other -and (($entry.ExternalAttributes -shr 16) -band 0xf000) -eq 0xa000){$other=$package.GetEntry('lib/app/'+$relative+'.__symlink')}
+            if($null -eq $other -or $other.Length -ne $entry.Length){throw ('Portable app differs from full package: '+$relative)}
             $sha=[Security.Cryptography.SHA256]::Create();$left=$entry.Open();$right=$other.Open()
-            try {if([Convert]::ToHexString($sha.ComputeHash($left)) -ne [Convert]::ToHexString($sha.ComputeHash($right))){throw 'Portable app content differs from full package'}}finally{$left.Dispose();$right.Dispose();$sha.Dispose()}
+            try {if([Convert]::ToHexString($sha.ComputeHash($left)) -ne [Convert]::ToHexString($sha.ComputeHash($right))){throw ('Portable app content differs from full package: '+$relative)}}finally{$left.Dispose();$right.Dispose();$sha.Dispose()}
         }
     } finally {$zip.Dispose();$package.Dispose()}
 }
