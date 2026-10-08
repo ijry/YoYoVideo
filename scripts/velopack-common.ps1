@@ -105,7 +105,10 @@ function Get-VelopackBuildInfo {
     try {
         $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
         if(-not $process.WaitForExit(30000)){$process.Kill();$process.WaitForExit();throw 'Build-info probe timed out'}
-        if($process.ExitCode -ne 0){throw "Build-info probe failed (exit $($process.ExitCode))"}
+        if($process.ExitCode -ne 0){
+            $diagnostic=$stderr.GetAwaiter().GetResult(); if($diagnostic){Write-Host $diagnostic.Substring(0,[Math]::Min(4096,$diagnostic.Length))}
+            throw "Build-info probe failed (exit $($process.ExitCode))"
+        }
         $text=$stdout.GetAwaiter().GetResult();$null=$stderr.GetAwaiter().GetResult()
         if($text.Length -gt 65536){throw 'Oversized build-info response'}
         $info=$text | ConvertFrom-Json
