@@ -63,7 +63,6 @@ import { withBase } from "vitepress";
       "simple". YoYoVideo takes a different route: keep the complexity in the engine, and reduce
       the interface to the picture plus the controls that matter.
     </p>
-
     <div class="yv-grid">
       <div class="yv-card">
         <span class="yv-icon">▶</span>
@@ -93,7 +92,6 @@ import { withBase } from "vitepress";
   <div class="yv-section-inner">
     <h2>Where it stands</h2>
     <p class="yv-lede">v0.0.1 is the first public release. The states below reflect the repository as it is, not a promise.</p>
-
     <div class="yv-roadmap">
       <div class="yv-step">
         <h4>Playback core and batch mode <span class="yv-tag">available</span></h4>

@@ -62,7 +62,6 @@ import { withBase } from "vitepress";
       市面上的播放器要么功能臃肿，要么在“简洁”的名义下牺牲了专业播放能力。YoYoVideo
       想要的是另一条路：把复杂度放在内核里，把界面收敛到只剩下画面和必要控件。
     </p>
-
     <div class="yv-grid">
       <div class="yv-card">
         <span class="yv-icon">▶</span>
@@ -92,7 +91,6 @@ import { withBase } from "vitepress";
   <div class="yv-section-inner">
     <h2>当前进度</h2>
     <p class="yv-lede">v0.0.1 是首个公开版本。以下状态如实反映仓库现状，而不是路线图式承诺。</p>
-
     <div class="yv-roadmap">
       <div class="yv-step">
         <h4>播放内核与批量播放 <span class="yv-tag">已支持</span></h4>

@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "docs:dev": "vitepress dev docs",
+    "docs:test": "node --test tests/*.test.mjs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs --port 4173"
   },
