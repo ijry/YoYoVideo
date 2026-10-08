@@ -59,7 +59,7 @@ if($Native) {
         foreach($file in Get-ChildItem -LiteralPath $bin -File | Where-Object {$_.Name -eq 'yoyovideo-desktop' -or $_.Name -eq 'UpdateMac' -or $_.Name -like '*.dylib'}) {
             # UpdateMac is a universal binary; lipo validates the selected slice instead of rejecting FAT headers.
             $arch=if($Platform -eq 'macos-aarch64'){'arm64'}else{'x86_64'}
-            Invoke-VelopackTool '/usr/bin/lipo' @('-verify_arch',$arch,$file.FullName) | Out-Null
+            Invoke-VelopackTool '/usr/bin/lipo' @($file.FullName,'-verify_arch',$arch) | Out-Null
             Invoke-VelopackTool '/usr/bin/codesign' @('--verify','--strict',$file.FullName) | Out-Null
             $dependencies=@(Invoke-VelopackTool '/usr/bin/otool' @('-arch',$arch,'-L',$file.FullName)) | Select-Object -Skip 1
             foreach($line in $dependencies) {
