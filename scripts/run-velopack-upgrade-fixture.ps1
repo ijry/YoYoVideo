@@ -91,6 +91,10 @@ function Start-Qa {
     if($IsWindows){$null=$launcher.Handle;$null=Wait-Qa {param($s) $s.playback.ready} 'player initialization' $launcher.Id;return $launcher}
     $state=Wait-Qa {param($s) $s.playback.ready} 'native player initialization' -ExcludePids $known
     if($IsLinux -and (Normalize-QaPath $state.appimage) -ne $main){throw 'Unexpected AppImage launched'}
+    if($IsLinux -and $LinuxMode -eq 'fuse') {
+        $mounts=[IO.File]::ReadAllText("/proc/$($state.pid)/mountinfo")
+        if($state.executable.Contains('appimage_extracted_') -or $mounts -notmatch ' - fuse(?:\.| )'){throw 'FUSE case did not run from a real FUSE mount'}
+    }
     if($state.pid -eq $launcher.Id){return $launcher}
     return Get-Process -Id $state.pid
 }

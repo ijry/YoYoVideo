@@ -86,6 +86,15 @@ function Assert-VelopackCli([string]$VpkPath) {
     $help=(Invoke-VelopackTool $VpkPath @('--legacyConsole','--skip-updates','--help')) -join [Environment]::NewLine
     if($help -notmatch 'Velopack CLI 1\.2\.161(?:,|\s)'){throw 'vpk 1.2.161 is required; do not use an unpinned tool'}
 }
+function ConvertFrom-VelopackBuildInfoText([string]$Text,[switch]$AppImage) {
+    if(-not $AppImage){return ($Text | ConvertFrom-Json)}
+    $reports=@(foreach($line in $Text.Split([char]10)) {
+        try {$item=ConvertFrom-Json -InputObject $line -NoEnumerate -ErrorAction Stop}catch{continue}
+        if($item -is [pscustomobject] -and $null -ne $item.PSObject.Properties['schema'] -and $item.schema -ceq 'yoyovideo-build-info-v1'){$item}
+    })
+    if($reports.Count -ne 1){throw ('Expected exactly one app build report; AppImage output: '+$Text.Substring(0,[Math]::Min($Text.Length,4096)))}
+    return $reports[0]
+}
 function Get-VelopackBuildInfo {
     param([string]$Executable,[string]$Version,[switch]$QaFixture,[switch]$AppImage)
     Assert-VelopackVersion $Version
@@ -111,7 +120,7 @@ function Get-VelopackBuildInfo {
         }
         $text=$stdout.GetAwaiter().GetResult();$null=$stderr.GetAwaiter().GetResult()
         if($text.Length -gt 65536){throw 'Oversized build-info response'}
-        $info=$text | ConvertFrom-Json
+        $info=ConvertFrom-VelopackBuildInfoText $text -AppImage:$AppImage
         if($info.schema -cne 'yoyovideo-build-info-v1' -or $info.version -cne $Version -or $info.mpv_runtime -ne $true -or $info.updater -ne $true){throw 'Player version/runtime/updater does not match requested package'}
         $isQa=($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true
         if($isQa -ne [bool]$QaFixture){throw 'QA and production player builds must not be mixed'}

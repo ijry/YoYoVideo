@@ -184,6 +184,14 @@ Case 'Velopack encoded symlinks cannot escape the bundle' {
     $path=Zip-Fixture $entries;$zip=[IO.Compression.ZipFile]::OpenRead($path)
     try {Assert-VelopackZipPaths $zip 'macos-aarch64'}finally{$zip.Dispose()}
 }
+Case 'AppImage runtime output cannot replace or duplicate build metadata' {
+    $json='{"schema":"yoyovideo-build-info-v1","version":"0.0.1","mpv_runtime":true,"updater":true}'
+    $info=ConvertFrom-VelopackBuildInfoText ("Environment runtime notice`n"+$json+"`n") -AppImage
+    Check ($info.version -eq '0.0.1') 'Did not read the app report'
+    Reject {ConvertFrom-VelopackBuildInfoText "Error: unable to mount AppImage" -AppImage}
+    Reject {ConvertFrom-VelopackBuildInfoText ($json+"`n"+$json) -AppImage}
+    Reject {ConvertFrom-VelopackBuildInfoText ("notice`n"+$json)}
+}
 Write-Host "Fixture diagnostics retained under $root"
 if($failures.Count){ throw ($failures -join [Environment]::NewLine) }
 Write-Host 'Velopack packaging contracts passed.'
