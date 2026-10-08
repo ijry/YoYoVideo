@@ -2,8 +2,12 @@
 use crate::UpdateError;
 use std::path::Path;
 
+fn process_refresh_kind() -> sysinfo::ProcessRefreshKind {
+    // Linux task IDs are threads, not other application instances.
+    sysinfo::ProcessRefreshKind::nothing().without_tasks().with_exe(sysinfo::UpdateKind::Always)
+}
 pub(crate) fn ensure_exclusive_installation(directory: &Path) -> Result<(), UpdateError> {
-    use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind, get_current_pid};
+    use sysinfo::{RefreshKind, System, get_current_pid};
     let directory = directory.canonicalize()?;
     let current_exe = std::env::current_exe()?;
     let current_name = current_exe
@@ -11,10 +15,8 @@ pub(crate) fn ensure_exclusive_installation(directory: &Path) -> Result<(), Upda
         .ok_or_else(|| UpdateError::Install("cannot identify current executable".into()))?;
     let current_pid =
         get_current_pid().map_err(|_| UpdateError::Install("cannot inspect processes".into()))?;
-    let system = System::new_with_specifics(
-        RefreshKind::nothing()
-            .with_processes(ProcessRefreshKind::nothing().with_exe(UpdateKind::Always)),
-    );
+    let system =
+        System::new_with_specifics(RefreshKind::nothing().with_processes(process_refresh_kind()));
     if system.process(current_pid).is_none() {
         return Err(UpdateError::Install("cannot inspect running player instances".into()));
     }
@@ -105,7 +107,7 @@ fn appimage_conflict(
     system.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
         true,
-        ProcessRefreshKind::nothing().with_environ(UpdateKind::Always),
+        ProcessRefreshKind::nothing().without_tasks().with_environ(UpdateKind::Always),
     );
     let Some(process) = system.process(pid) else {
         return Ok(false);
@@ -140,6 +142,10 @@ fn conflicts_with_installation(
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+    #[test]
+    fn preflight_lists_processes_not_the_players_own_threads() {
+        assert!(!process_refresh_kind().tasks());
+    }
     #[test]
     fn blocks_shared_version_directory_not_other_installations() {
         let dir = Path::new("C:/Apps/YoYo/current");
