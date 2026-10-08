@@ -12,6 +12,28 @@ fn encode_event(record: &serde_json::Value) -> Vec<u8> {
     bytes.push(b'\n');
     bytes
 }
+fn append_stage(root: &Path, stage: &str) -> io::Result<()> {
+    let event = serde_json::json!({
+        "kind": "stage",
+        "stage": stage,
+        "pid": std::process::id(),
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(root.join("events.jsonl"))?
+        .write_all(&encode_event(&event))
+}
+
+/// QA-only startup breadcrumbs, including processes restarted by LaunchServices.
+pub fn trace(stage: &str) {
+    // Probes and packaging hooks run before a fixture exists; never pollute their JSON output.
+    if let Ok(fixture) = yoyo_updater::QaFixture::from_env() {
+        let _ = append_stage(fixture.root(), stage);
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -169,6 +191,24 @@ impl Drop for QaSession {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_diagnostics_append_without_replacing_existing_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = dir.path().join("events.jsonl");
+        std::fs::write(&events, b"{}\n").unwrap();
+        super::append_stage(dir.path(), "before-window").unwrap();
+        super::append_stage(dir.path(), "after-window").unwrap();
+        let raw = std::fs::read_to_string(events).unwrap();
+        let records: Vec<serde_json::Value> =
+            raw.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(records.len(), 3, "Startup stages must be appended, not silently dropped");
+        assert_eq!(records[0], serde_json::json!({}));
+        assert_eq!(records[1]["stage"], "before-window");
+        assert_eq!(records[2]["stage"], "after-window");
+        assert_eq!(records[1]["kind"], "stage");
+        assert_eq!(records[1]["pid"], std::process::id());
+        assert_eq!(records[1]["version"], env!("CARGO_PKG_VERSION"));
+    }
     #[test]
     fn event_serialization_is_one_atomic_log_line() {
         let bytes = super::encode_event(&serde_json::json!({"pid":3,"text":"a\nb"}));

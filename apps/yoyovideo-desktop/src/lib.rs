@@ -90,3 +90,5 @@ pub use startup_report::startup_report;
 
 #[cfg(feature = "updater-qa")]
 mod update_qa;
+#[cfg(feature = "updater-qa")]
+pub use update_qa::trace as trace_updater_qa;

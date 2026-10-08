@@ -1233,6 +1233,8 @@ fn dispatch_dropped_paths(
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("app-run-entry");
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
     #[cfg(feature = "updater-qa")]
@@ -1261,7 +1263,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     )));
     configure_backend(Rc::clone(&runtime))?;
 
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-main-window");
     let app = MainWindow::new()?;
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("after-main-window");
     #[cfg(feature = "mpv-runtime")]
     install_composited_video_notifier(&app, Rc::clone(&runtime));
     let saved_window_state = crate::platform::load_window_state(window_state_path).ok().flatten();
@@ -2710,6 +2716,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-updater-ui");
     let _updates = match crate::update_runtime::UpdateRuntime::attach(
         &app,
         paths.clone(),
@@ -2788,6 +2796,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
 
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-event-loop");
     app.run()?;
     #[cfg(feature = "updater-qa")]
     eprintln!("QA: app.run returned");

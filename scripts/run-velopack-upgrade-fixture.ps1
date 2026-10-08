@@ -56,6 +56,35 @@ function Read-QaState([int]$TargetPid=0,[int[]]$ExcludePids=@()) {
     }
     return $null
 }
+function Save-QaMacDiagnostics {
+    if(-not $IsMacOS){return}
+    try {
+        $prefix=[IO.Path]::GetFullPath($install)+[IO.Path]::DirectorySeparatorChar
+        $owned=@(foreach($process in Get-Process -Name 'yoyovideo-desktop','UpdateMac' -ErrorAction SilentlyContinue) {
+            try {
+                if($process.Path -and $process.Path.StartsWith($prefix,[StringComparison]::Ordinal)) {
+                    [pscustomobject]@{Id=$process.Id;Path=$process.Path}
+                }
+            } catch {}
+        })
+        ConvertTo-Json -InputObject $owned | Set-Content -LiteralPath (Join-Path $Root 'timeout-processes.log')
+        foreach($process in $owned) {
+            try {
+                Invoke-VelopackTool '/usr/bin/sample' @([string]$process.Id,'3','1','-file',(Join-Path $Root ("sample-"+$process.Id+".log"))) | Out-Null
+            } catch { Write-Warning "Could not sample QA process $($process.Id)" }
+        }
+        $predicate='process == "yoyovideo-desktop" OR (process == "runningboardd" AND eventMessage CONTAINS[c] "yoyovideo") OR (process == "lsd" AND eventMessage CONTAINS[c] "yoyovideo")'
+        $osLog=Invoke-VelopackTool '/usr/bin/log' @('show','--last','5m','--style','compact','--predicate',$predicate)
+        $osLog | Set-Content -LiteralPath (Join-Path $Root 'launchservices.log')
+        foreach($crash in (Get-ChildItem -LiteralPath (Join-Path $HOME 'Library/Logs/DiagnosticReports') -Filter 'yoyovideo-desktop*' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 5)) {
+            Copy-Item -LiteralPath $crash.FullName -Destination (Join-Path $Root ('crash-'+$crash.Name+'.log'))
+        }
+        $startupLogs=Get-ChildItem -LiteralPath $Root -Filter 'yoyovideo.log' -File -Recurse -ErrorAction SilentlyContinue
+        foreach($file in $startupLogs) {
+            if(-not $file.LinkType){Get-Content -LiteralPath $file.FullName -Tail 60 | Add-Content -LiteralPath (Join-Path $Root 'startup-errors.log')}
+        }
+    } catch { Write-Warning "Could not complete macOS QA diagnostics: $($_.Exception.Message)" }
+}
 function Wait-Qa([scriptblock]$Predicate,[string]$Description,[int]$TargetPid=0,[int]$Seconds=$TimeoutSeconds,[int[]]$ExcludePids=@()) {
     $until=[DateTime]::UtcNow.AddSeconds($Seconds);$last=$null
     do {
@@ -63,6 +92,7 @@ function Wait-Qa([scriptblock]$Predicate,[string]$Description,[int]$TargetPid=0,
         if($last -and (& $Predicate $last)){return $last}
         Start-Sleep -Milliseconds 200
     } while([DateTime]::UtcNow -lt $until)
+    Save-QaMacDiagnostics
     Get-ChildItem -LiteralPath $Root -Filter '*.log' -File | ForEach-Object { Write-Host $_.Name; Get-Content -LiteralPath $_.FullName -Tail 30 | Out-Host }
     throw "Timeout: $Description. Last state: $($last | ConvertTo-Json -Depth 6 -Compress)"
 }
