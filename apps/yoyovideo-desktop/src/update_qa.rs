@@ -66,8 +66,33 @@ pub(crate) fn paths() -> io::Result<AppPaths> {
     }
     Ok(paths)
 }
+// File-driven tests are not mouse/keyboard activity. Keep only the QA process
+// responsive after LaunchServices restarts it, without changing user defaults.
+#[cfg(target_os = "macos")]
+struct QaActivity(
+    objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>,
+);
+#[cfg(target_os = "macos")]
+impl QaActivity {
+    fn new() -> Self {
+        use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+        Self(NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+            NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+            &NSString::from_str("YoYoVideo updater QA"),
+        ))
+    }
+}
+#[cfg(target_os = "macos")]
+impl Drop for QaActivity {
+    fn drop(&mut self) {
+        // This is the token returned by this process's beginActivity call.
+        unsafe { objc2_foundation::NSProcessInfo::processInfo().endActivity(&self.0) };
+    }
+}
 pub(crate) struct QaSession {
     timer: slint::Timer,
+    #[cfg(target_os = "macos")]
+    _activity: QaActivity,
 }
 impl QaSession {
     pub(crate) fn attach(
@@ -127,7 +152,11 @@ impl QaSession {
             let _ = events.write_all(&encode_event(&record));
             let _ = events.flush();
         });
-        Ok(Self { timer })
+        Ok(Self {
+            timer,
+            #[cfg(target_os = "macos")]
+            _activity: QaActivity::new(),
+        })
     }
 }
 impl Drop for QaSession {

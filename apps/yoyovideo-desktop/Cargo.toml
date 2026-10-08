@@ -52,4 +52,4 @@ objc2 = "0.6"
 # constructors in scope are the deprecated CGL ones. NSResponder is required by
 # ``setView:``.
 objc2-app-kit = { version = "0.3", features = ["NSOpenGL", "NSView", "NSResponder", "NSWindow", "objc2-open-gl"] }
-objc2-foundation = { version = "0.3", features = ["NSThread"] }
+objc2-foundation = { version = "0.3", features = ["NSThread", "NSProcessInfo", "NSString"] }
