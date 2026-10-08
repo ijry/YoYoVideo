@@ -57,13 +57,15 @@ if($Native) {
         $app=Join-Path $work $bundleName;$bin=Join-Path $app 'Contents/MacOS'
         Invoke-VelopackTool '/usr/bin/codesign' @('--verify','--deep','--strict',$app) | Out-Null
         foreach($file in Get-ChildItem -LiteralPath $bin -File | Where-Object {$_.Name -eq 'yoyovideo-desktop' -or $_.Name -eq 'UpdateMac' -or $_.Name -like '*.dylib'}) {
-            Assert-VelopackBinary -Path $file.FullName -Platform $Platform -Library
+            # UpdateMac is a universal binary; lipo validates the selected slice instead of rejecting FAT headers.
+            $arch=if($Platform -eq 'macos-aarch64'){'arm64'}else{'x86_64'}
+            Invoke-VelopackTool '/usr/bin/lipo' @('-verify_arch',$arch,$file.FullName) | Out-Null
             Invoke-VelopackTool '/usr/bin/codesign' @('--verify','--strict',$file.FullName) | Out-Null
-            $dependencies=@(Invoke-VelopackTool '/usr/bin/otool' @('-L',$file.FullName)) | Select-Object -Skip 1
+            $dependencies=@(Invoke-VelopackTool '/usr/bin/otool' @('-arch',$arch,'-L',$file.FullName)) | Select-Object -Skip 1
             foreach($line in $dependencies) {
                 if($line -match '^\s*(\S+)\s+\('){$dependency=$matches[1];if($dependency -like '/System/Library/*' -or $dependency -like '/usr/lib/*'){continue};if($dependency -match '^@(rpath|loader_path|executable_path)/(.+)$' -and (Test-Path -LiteralPath (Join-Path $bin $matches[2]))){continue};throw 'Non-relocatable or missing dylib dependency'}
             }
-            foreach($line in @(Invoke-VelopackTool '/usr/bin/otool' @('-l',$file.FullName))){if($line -match '^\s*path\s+/(opt|usr/local|Users)/'){throw 'Absolute build-host rpath in app bundle'}}
+            foreach($line in @(Invoke-VelopackTool '/usr/bin/otool' @('-arch',$arch,'-l',$file.FullName))){if($line -match '^\s*path\s+/(opt|usr/local|Users)/'){throw 'Absolute build-host rpath in app bundle'}}
         }
     } elseif($Platform -eq 'linux-x64') {
         $work=Join-Path $repo ('.cache/verify-appimage-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $work | Out-Null

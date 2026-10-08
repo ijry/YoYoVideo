@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rename, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { PLATFORMS, validatePlatformSet, collectRelease, publishRelease } from './verify-updater-release.mjs';
@@ -97,4 +97,16 @@ test('a tag moved after upload prevents publication', async () => {
   };
   await assert.rejects(publishRelease(options, fake), /tag moved/);
   assert.ok(!fake.calls.some(c => c[0] === 'release' && c[1] === 'edit'));
+});
+
+test('portable AppImage filename comes from the native asset index', async () => {
+  const dir = await fixture();
+  const name = 'YoYoVideo-stable-linux-x64.AppImage';
+  await rename(join(dir, 'YoYoVideo.AppImage'), join(dir, name));
+  const indexPath = join(dir, 'assets.stable-linux-x64.json');
+  const index = JSON.parse(await readFile(indexPath, 'utf8'));
+  index.find(a => a.Type === 'Portable').RelativeFileName = name;
+  await writeFile(indexPath, JSON.stringify(index));
+  const files = await collectRelease(dir, '0.0.1');
+  assert.ok(files.some(f => f.name === name));
 });

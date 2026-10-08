@@ -39,7 +39,8 @@ try {
     foreach($shortcut in $shortcuts) {
         if(-not (Test-Path -LiteralPath $shortcut)){throw "Missing shortcut: $shortcut"}
         $link=$shell.CreateShortcut($shortcut)
-        if(-not (Test-Path -LiteralPath $link.TargetPath) -or (Split-Path $link.TargetPath) -ine $install){throw 'Shortcut does not point to a stable executable in the install root'}
+        # vpk 1.2.161 points new links at the stable current/ executable, not a version-numbered folder.
+        if(-not (Test-Path -LiteralPath $link.TargetPath) -or [IO.Path]::GetFullPath($link.TargetPath) -ine $main){throw ("Shortcut target mismatch: {0}" -f $link.TargetPath)}
         $links+=@{path=$shortcut;target=$link.TargetPath}
     }
     Run-SetupTool (Join-Path $install 'Update.exe') @('--uninstall','--silent','--log',('"'+(Join-Path $case 'uninstall.log')+'"'))

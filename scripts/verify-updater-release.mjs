@@ -59,7 +59,7 @@ export async function collectRelease(dir, version) {
     if (full.length !== 1 || full[0].RelativeFileName !== a.FileName || primary.length !== 1) throw new Error('Incomplete native asset index');
     const installable=primary[0].RelativeFileName; assetName(installable);
     const primaryName=platform==='windows-x64'?'YoYoVideo-'+channel+'-Setup.exe':platform==='linux-x64'?'YoYoVideo.AppImage':'YoYoVideo-'+channel+'-Portable.zip';
-    if(installable!==primaryName) throw new Error('Unexpected installable asset name');
+    if(platform==='linux-x64' ? !/^YoYoVideo(?:-[A-Za-z0-9_.-]+)?\.AppImage$/.test(installable) : installable!==primaryName) throw new Error('Unexpected installable asset name');
     for (const name of [manifestName,manifestName+'.sig',feedName,indexName,'RELEASES-'+channel,a.FileName,installable]) {
       if (expected.has(name)) throw new Error('Cross-platform asset collision');
       expected.add(name);
