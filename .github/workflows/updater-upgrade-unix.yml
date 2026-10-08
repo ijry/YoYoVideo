@@ -28,6 +28,9 @@ jobs:
         with:
           ref: ${{ inputs.revision }}
           persist-credentials: false
+      - name: Verify clean Linux container tools before building the app
+        if: runner.os == 'Linux'
+        run: bash scripts/qa-linux/build-containers.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-dotnet@v4
         with:
@@ -68,14 +71,10 @@ jobs:
           QA_BUILD_ROOT: ${{ steps.fixture.outputs.relative }}
         run: |
           set -euo pipefail
-          mkdir -p .cache/qa-container
-          cp scripts/qa-linux/Dockerfile .cache/qa-container/Dockerfile
-          cp -a "$(dirname "$(readlink -f "$(command -v pwsh)")")" .cache/qa-container/powershell
           for version in 22.04 24.04; do
-            docker build --build-arg "BASE=ubuntu:$version" -t "yoyo-qa:$version" .cache/qa-container
-            docker run --rm --entrypoint bash "yoyo-qa:$version" -c '! ldconfig -p | grep -q libmpv'
             for mode in extract fuse; do
-              docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -v "$GITHUB_WORKSPACE:/workspace" "yoyo-qa:$version" -BuildRoot "/workspace/$QA_BUILD_ROOT" -LinuxMode "$mode"
+              echo "Running Ubuntu $version / $mode"
+              timeout 900s docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -v "$GITHUB_WORKSPACE:/workspace" "yoyo-qa:$version" -BuildRoot "/workspace/$QA_BUILD_ROOT" -LinuxMode "$mode"
             done
           done
       - name: Retain evidence, never test keys or packages
