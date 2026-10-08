@@ -192,6 +192,57 @@ Case 'AppImage runtime output cannot replace or duplicate build metadata' {
     Reject {ConvertFrom-VelopackBuildInfoText ($json+"`n"+$json) -AppImage}
     Reject {ConvertFrom-VelopackBuildInfoText ("notice`n"+$json)}
 }
+function Reject-WithMessage([scriptblock]$Action,[string]$Expected) {
+    $message=$null
+    try { & $Action | Out-Null } catch { $message=$_.Exception.Message }
+    Check ($null -ne $message -and $message.Contains($Expected)) "Expected rejection containing '$Expected', got '$message'"
+}
+Case 'CLI version verification rejects unpinned tools at the subprocess boundary' {
+    # Replace only the external CLI call; keep the real version validation and arguments.
+    function Invoke-VelopackTool([string]$FilePath,[string[]]$Arguments) {
+        Check ($FilePath -ceq 'fixture-vpk') 'Unexpected CLI executable'
+        Check (($Arguments -join '|') -ceq '--legacyConsole|--skip-updates|--help') 'Unexpected CLI probe arguments'
+        return $script:FixtureCliHelp
+    }
+    foreach($help in @('Velopack CLI 1.2.160,','Velopack CLI 1.2.1610,','unrecognized help','')) {
+        $script:FixtureCliHelp=$help
+        Reject-WithMessage {Assert-VelopackCli 'fixture-vpk'} 'vpk 1.2.161 is required'
+    }
+    $script:FixtureCliHelp='Velopack CLI 1.2.161, current build'
+    Assert-VelopackCli 'fixture-vpk'
+}
+Case 'actual package script plans every target and rejects missing runtime or public key' {
+    $scriptPath=Join-Path $PSScriptRoot 'package-velopack.ps1'
+    foreach($item in @(@('windows-x64','win-x64','yoyovideo-desktop.exe','mpv-2.dll'),@('macos-aarch64','osx-arm64','yoyovideo-desktop','libmpv.dylib'),@('macos-x86_64','osx-x64','yoyovideo-desktop','libmpv.dylib'),@('linux-x64','linux-x64','yoyovideo-desktop',''))) {
+        $platform=$item[0];$stage=Join-Path $root ('plan-'+$platform)
+        foreach($dir in @('bin','docs','LICENSES')){New-Item -ItemType Directory -Path (Join-Path $stage $dir) -Force | Out-Null}
+        foreach($name in @('README.md','RELEASE-NOTES.md','LICENSES/README.md','LICENSES/runtime-provenance.md','docs/runtime-dependencies.md','LICENSES/runtime-source.json')){[IO.File]::WriteAllText((Join-Path $stage $name),'fixture only')}
+        [IO.File]::WriteAllBytes((Join-Path $stage ('bin/'+$item[2])),(Header $platform))
+        if($item[3]){[IO.File]::WriteAllBytes((Join-Path $stage ('bin/'+$item[3])),(Header $platform))}
+        $params=@{Platform=$platform;Version='0.0.1';PackageDir=$stage;OutputDir=(Join-Path $root ('output-'+$platform))}
+        $plan=(& $scriptPath @params -PrepareOnly -PlanOnly) | ConvertFrom-Json
+        Check ($plan.Platform -ceq $platform -and $plan.Runtime -ceq $item[1] -and $plan.Channel -ceq ('stable-'+$platform)) 'Wrong planned target'
+        foreach($pair in @(@('--packId','YoYoVideo'),@('--packVersion','0.0.1'),@('--mainExe',$item[2]),@('--channel',('stable-'+$platform)),@('--runtime',$item[1]),@('--delta','None'),@('--outputDir',$params.OutputDir))) {
+            $index=[Array]::IndexOf($plan.Arguments,$pair[0]);Check ($index -ge 0 -and $plan.Arguments[$index+1] -ceq $pair[1]) "Wrong planned $($pair[0])"
+        }
+        Reject-WithMessage {& $scriptPath @params -PrepareOnly -PlanOnly -PublicKeyPath (Join-Path $root 'missing.pub')} 'Pinned public key is required'
+        if($item[3]) {
+            Remove-Item -LiteralPath (Join-Path $stage ('bin/'+$item[3]))
+            Reject-WithMessage {& $scriptPath @params -PrepareOnly -PlanOnly} $item[3]
+            [IO.File]::WriteAllBytes((Join-Path $stage ('bin/'+$item[3])),(Header $platform))
+        }
+        Check (-not (Test-Path -LiteralPath $params.OutputDir)) 'Planning must not create release artifacts'
+    }
+}
+Case 'actual signed packaging refuses absent credentials before probing any executable' {
+    $platform=if($IsWindows){'windows-x64'}elseif($IsMacOS){'macos-aarch64'}else{'linux-x64'}
+    $stage=Join-Path $root ('plan-'+$platform)
+    $savedKey=$env:YOYOVIDEO_UPDATER_PRIVATE_KEY;$savedPassword=$env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD
+    try {
+        $env:YOYOVIDEO_UPDATER_PRIVATE_KEY=$null;$env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD=$null
+        Reject-WithMessage {& (Join-Path $PSScriptRoot 'package-velopack.ps1') -Platform $platform -Version 0.0.1 -PackageDir $stage -OutputDir (Join-Path $root 'no-signing')} 'Signing credentials are required'
+    } finally {$env:YOYOVIDEO_UPDATER_PRIVATE_KEY=$savedKey;$env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD=$savedPassword}
+}
 Write-Host "Fixture diagnostics retained under $root"
 if($failures.Count){ throw ($failures -join [Environment]::NewLine) }
 Write-Host 'Velopack packaging contracts passed.'

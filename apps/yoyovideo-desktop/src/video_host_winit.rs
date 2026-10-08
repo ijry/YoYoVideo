@@ -177,6 +177,35 @@ impl WinitVideoHost {
         (size.width.max(1), size.height.max(1))
     }
 
+    fn update_window(
+        &self,
+        update: impl FnOnce(&Window) + Send + 'static,
+    ) -> Result<(), VideoHostError> {
+        #[cfg(target_os = "macos")]
+        {
+            // A Slint display-link timer can run outside a winit event callback.
+            // AppKit may synchronously emit Moved/Resized/Focused from these setters,
+            // re-entering DesktopWinitHandler while its runtime is still borrowed.
+            // Queue the native operation onto a clean event-loop turn instead; winit
+            // can then deliver all events normally, without dropped events or panics
+            // escaping the Objective-C callback boundary. Do not keep a closed host alive.
+            let window = Arc::downgrade(&self.window);
+            slint::invoke_from_event_loop(move || {
+                if let Some(window) = window.upgrade() {
+                    update(&window);
+                }
+            })
+            .map_err(|error| {
+                VideoHostError::new(format!("queue video host window update: {error}"))
+            })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            update(&self.window);
+            Ok(())
+        }
+    }
+
     fn raw_window_id(&self) -> Result<NativeVideoWindowId, VideoHostError> {
         let handle = self
             .window
@@ -203,19 +232,18 @@ impl VideoHost for WinitVideoHost {
     }
 
     fn set_bounds(&mut self, bounds: VideoHostBounds) -> Result<(), VideoHostError> {
-        self.window.set_outer_position(PhysicalPosition::new(bounds.x, bounds.y));
-        let _ = self.window.request_inner_size(PhysicalSize::new(bounds.width, bounds.height));
-        Ok(())
+        self.update_window(move |window| {
+            window.set_outer_position(PhysicalPosition::new(bounds.x, bounds.y));
+            let _ = window.request_inner_size(PhysicalSize::new(bounds.width, bounds.height));
+        })
     }
 
     fn show(&mut self) -> Result<(), VideoHostError> {
-        self.window.set_visible(true);
-        Ok(())
+        self.update_window(|window| window.set_visible(true))
     }
 
     fn hide(&mut self) -> Result<(), VideoHostError> {
-        self.window.set_visible(false);
-        Ok(())
+        self.update_window(|window| window.set_visible(false))
     }
 
     fn is_available(&self) -> bool {
