@@ -81,7 +81,13 @@ function Start-Qa {
     if(Test-Path -LiteralPath $events){$known=@(Read-UpdaterQaEvents $events | ForEach-Object {$_.pid} | Sort-Object -Unique)}
     $options=@{FilePath=$main;WorkingDirectory=$Root;PassThru=$true;RedirectStandardOutput=(Join-Path $Root "$tag.stdout.log");RedirectStandardError=(Join-Path $Root "$tag.stderr.log")}
     if($IsWindows){$options.WindowStyle='Hidden'}
-    $launcher=Start-Process @options
+    if($IsWindows){$launcher=Start-Process @options}
+    else {
+        # Redirect through POSIX file descriptors, not PowerShell's asynchronous TextWriter callbacks.
+        $start=[Diagnostics.ProcessStartInfo]::new('/bin/sh');$start.UseShellExecute=$false;$start.WorkingDirectory=$Root
+        foreach($arg in @('-c','exec "$0" >"$1" 2>"$2"',$main,$options.RedirectStandardOutput,$options.RedirectStandardError)){$start.ArgumentList.Add($arg)}
+        $launcher=[Diagnostics.Process]::Start($start)
+    }
     if($IsWindows){$null=$launcher.Handle;$null=Wait-Qa {param($s) $s.playback.ready} 'player initialization' $launcher.Id;return $launcher}
     $state=Wait-Qa {param($s) $s.playback.ready} 'native player initialization' -ExcludePids $known
     if($IsLinux -and (Normalize-QaPath $state.appimage) -ne $main){throw 'Unexpected AppImage launched'}

@@ -7,7 +7,8 @@ pub fn startup_report(args: &[OsString]) -> Option<String> {
         "--version" => Some(format!("YoYoVideo {}", env!("CARGO_PKG_VERSION"))),
         "--build-info" => Some(
             serde_json::json!({
-                "schema": "yoyovideo-build-info-v1",
+                // Keep the probe marker addressable in optimized x86_64 binaries.
+                "schema": std::hint::black_box("yoyovideo-build-info-v1"),
                 "version": env!("CARGO_PKG_VERSION"),
                 "mpv_runtime": cfg!(feature = "mpv-runtime"),
                 "updater": true,
@@ -27,6 +28,7 @@ mod tests {
         assert_eq!(version, format!("YoYoVideo {}", env!("CARGO_PKG_VERSION")));
         let info: serde_json::Value =
             serde_json::from_str(&startup_report(&["--build-info".into()]).unwrap()).unwrap();
+        assert_eq!(info["schema"], "yoyovideo-build-info-v1");
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(info["mpv_runtime"], cfg!(feature = "mpv-runtime"));
         assert_eq!(info["updater"], true);
