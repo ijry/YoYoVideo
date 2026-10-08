@@ -1,0 +1,70 @@
+name: Updater native packaging smoke
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['crates/**', 'apps/**', 'scripts/**', 'runtime/**', 'Cargo.*', '.github/workflows/updater-*.yml']
+  push:
+    branches-ignore: ['gh-pages']
+    paths: ['crates/**', 'apps/**', 'scripts/**', 'runtime/**', 'Cargo.*', '.github/workflows/updater-*.yml']
+permissions:
+  contents: read
+jobs:
+  # This proves native packaging/playback, not 0.0.1 -> 0.0.2 install/restart.
+  packages:
+    uses: ./.github/workflows/updater-build.yml
+    with:
+      revision: ${{ github.sha }}
+
+  windows-upgrade:
+    uses: ./.github/workflows/updater-upgrade-windows.yml
+    with:
+      revision: ${{ github.sha }}
+  unix-upgrade:
+    uses: ./.github/workflows/updater-upgrade-unix.yml
+    with:
+      revision: ${{ github.sha }}
+
+  authenticated-release-contract:
+    name: Verify all four release artifacts with disposable signatures
+    needs: packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          path: .cache/release-input
+      - name: Build signer and disposable keys (no production secrets)
+        run: |
+          cargo build -p yoyo-update-sign -j 2
+          cargo run -p yoyo-update-sign --example packaging_test_keys -- .cache/release-test-keys
+      - name: Merge without overwriting and authenticate the complete platform set
+        shell: pwsh
+        run: |
+          . ./scripts/velopack-common.ps1
+          $version = ((Get-Content Cargo.toml | Select-String '^version = "([^"]+)"$' | Select-Object -First 1).Matches[0].Groups[1].Value)
+          $platforms = @('windows-x64','macos-aarch64','macos-x86_64','linux-x64')
+          if (@(Get-ChildItem .cache/release-input -Directory).Count -ne 4) { throw 'Expected all four packages' }
+          New-Item -ItemType Directory -Path .cache/release-verify | Out-Null
+          foreach ($platform in $platforms) {
+            foreach ($file in Get-ChildItem -LiteralPath ".cache/release-input/updater-$platform" -Force) {
+              Assert-VelopackAssetName $file.Name
+              if ($file.PSIsContainer -or $file.LinkType -or (Test-Path -LiteralPath (Join-Path .cache/release-verify $file.Name))) { throw 'Invalid or duplicate release file' }
+              Copy-Item -LiteralPath $file.FullName -Destination .cache/release-verify/
+            }
+          }
+          $env:YOYOVIDEO_UPDATER_PRIVATE_KEY = Get-Content -Raw .cache/release-test-keys/TEST-ONLY-private.key
+          $env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD = 'fixture-only'
+          try {
+            foreach ($platform in $platforms) {
+              Invoke-VelopackTool ./target/debug/yoyo-update-sign @('sign','--feed',".cache/release-verify/releases.stable-$platform.json",'--platform',$platform,'--version',$version,'--assets-dir','.cache/release-verify','--output',".cache/release-verify/yoyovideo-update.$platform.json",'--public-key','.cache/release-test-keys/TEST-ONLY-public.key') -Signing | Out-Host
+            }
+          } finally { $env:YOYOVIDEO_UPDATER_PRIVATE_KEY=$null; $env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD=$null }
+          node scripts/verify-updater-release.mjs verify --assets-dir .cache/release-verify --version $version --signer target/debug/yoyo-update-sign --public-key .cache/release-test-keys/TEST-ONLY-public.key
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

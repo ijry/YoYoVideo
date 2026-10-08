@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [features]
 default = []
+updater-qa = ["mpv-runtime", "yoyo-updater/qa-fixture", "i-slint-backend-winit/renderer-software"]
 mpv-runtime = ["dep:i-slint-backend-winit", "dep:raw-window-handle", "yoyo-mpv/mpv-runtime"]
 
 [dependencies]
@@ -24,6 +25,9 @@ tracing-subscriber = "0.3.23"
 toml = "1.1.2"
 yoyo-core = { path = "../../crates/yoyo-core" }
 yoyo-mpv = { path = "../../crates/yoyo-mpv" }
+yoyo-updater = { path = "../../crates/yoyo-updater" }
+velopack = "=1.2.161"
+open = "5.3"
 
 [build-dependencies]
 slint-build = "1.17.0"

@@ -29,6 +29,16 @@ jobs:
           # them and only the window-construction tests notice.
           sudo apt-get install -y libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test release gates and packaging contracts (no private keys)
+        run: |
+          node --test scripts/test-updater-release.mjs
+          pwsh -NoProfile -File scripts/test-velopack-package.ps1 -SkipNativeProbe
+          pwsh -NoProfile -File scripts/test-appimage-runtime.ps1
+
       - name: Check formatting
         run: cargo fmt --check
 
@@ -135,8 +145,8 @@ jobs:
               if ($depends.Count -lt 2) {
                 throw "Linux runtime declared only $($depends.Count) dependency package(s)"
               }
-              if (-not ($depends -contains "libmpv2")) {
-                throw "Linux runtime does not declare libmpv2: $($depends -join ', ')"
+              if (-not ($depends -contains $record.package) -or $record.package -notin @("libmpv1", "libmpv2")) {
+                throw "Linux runtime does not declare its libmpv package: $($depends -join ', ')"
               }
               if ($libs | Where-Object { $_.Name -match '^lib(avcodec|avformat|avutil|c)\.' }) {
                 throw "The Linux staging is bundling FFmpeg copies; those belong in dependencies."

@@ -73,8 +73,8 @@ if ($RequireRuntime) {
             if ($depends.Count -eq 0) {
                 Fail "The Linux runtime record declares no dependencies"
             }
-            if (-not ($depends -contains "libmpv2")) {
-                Fail "The Linux runtime record does not declare libmpv2: $($depends -join ', ')"
+            if ($runtime.package -notin @("libmpv1", "libmpv2") -or -not ($depends -contains $runtime.package)) {
+                Fail "The Linux runtime record does not declare its libmpv1/libmpv2 package: $($depends -join ', ')"
             }
             $bundled = @(Get-ChildItem (Join-Path $PackageDir "bin") -Filter "libmpv.so*" -File -ErrorAction SilentlyContinue)
             if ($bundled.Count -gt 0) {

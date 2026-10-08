@@ -165,3 +165,14 @@ fn restore_leaves_placement_to_the_window_system_when_monitors_are_unavailable()
     assert_eq!((restored.x, restored.y), (None, None));
     assert_eq!((restored.width, restored.height), (1200, 760));
 }
+
+#[test]
+fn compact_window_state_round_trips_without_enlargement() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("window-state.toml");
+    let state = WindowState { width: 800, height: 600, x: Some(20), y: Some(30), maximized: false };
+
+    assert_eq!(state.clone().clamped(), state);
+    save_window_state(Some(path.clone()), &state).unwrap();
+    assert_eq!(load_window_state(Some(path)).unwrap(), Some(state));
+}

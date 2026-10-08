@@ -1,55 +1,40 @@
 ---
 title: Installation
-description: Download YoYoVideo v0.0.1 and run it on Windows.
+description: YoYoVideo platform packages and automatic updates.
 ---
 
 # Installation
 
-## Download
+The new 0.0.1 pipeline uses Velopack. Download availability is determined by the assets actually published on [Releases](https://github.com/ijry/YoYoVideo/releases/latest).
 
-Grab v0.0.1 from the [Releases page](https://github.com/ijry/YoYoVideo/releases/latest).
+| Platform | File | Updates |
+| --- | --- | --- |
+| Windows x64 | `YoYoVideo-stable-windows-x64-Setup.exe` | In-app after installation |
+| macOS ARM / Intel | Architecture-specific `Portable.zip` containing .app | In-app |
+| Linux x64 | `YoYoVideo.AppImage` | In-app at a writable location |
+| Linux x64 | `YoYoVideo-linux-x64.deb` | Package manager/manual |
 
-| File | What it is |
-| --- | --- |
-| `YoYoVideo-windows-x64-setup.exe` | NSIS installer, adds a Start menu entry |
-| `YoYoVideo-windows-x64.zip` | Portable package, unpack and run |
-
-Both contain the same payload: `bin/` (the app and the playback core), `LICENSES/` (license and
-runtime provenance) and the documentation.
-
-::: tip No decoders to install first
-libmpv and the FFmpeg build it depends on are already in `bin/`. Whether or not mpv or a third-party
-codec pack is installed on your system makes no difference to YoYoVideo.
-:::
-
-## Verify
-
-Every asset on the release page carries a SHA-256:
+Compare downloaded assets against the release page SHA-256, for example:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\YoYoVideo-windows-x64.zip
+Get-FileHash -Algorithm SHA256 .\YoYoVideo-stable-windows-x64-Setup.exe
 ```
 
-The value should match the one listed under "校验和 / SHA-256" for the same file.
+On Windows, launch from the Start menu after installation. On macOS, extract the .app to a writable applications directory. On Linux, give the AppImage execute permission.
+Windows/macOS/AppImage packages bundle libmpv; .deb uses distribution dependencies.
+Click **Open file** in the empty window or drop media/folders onto it.
 
-## Run it
+## Automatic updates
 
-**Portable:** unpack, then launch `bin\yoyovideo-desktop.exe`.
+Open **Check for updates** to disable automatic checking, download, postpone, or confirm exit and install.
+Signatures and package hashes are checked first. Unconfirmed downloads are not applied on startup. Settings/history are retained; playback does not automatically resume.
+Old NSIS installs, ordinary ZIPs and development builds require manual installation of the new format.
 
-**Installer:** run it, then start YoYoVideo from the Start menu.
+macOS uses **ad-hoc signing without Apple notarization**. Gatekeeper may block first launch. Download only from the trusted release page and use normal system approval flows; do not disable system security.
+Windows does not currently have a trusted Authenticode certificate either, so SmartScreen may warn. Update authentication is not OS code signing.
 
-On first launch the window may start small or partly offscreen; the player corrects this itself.
-Window state lives under `%APPDATA%\xyito\YoYoVideo\`.
-
-## Hand it some media
-
-- Launch `bin\yoyovideo-desktop.exe`, then drag videos or a whole folder onto the window.
-- Right-click a file in Explorer and pick "Open with" → `yoyovideo-desktop.exe`.
-- Or pass files on the command line; several files start batch playback:
-
-```powershell
-.\bin\yoyovideo-desktop.exe D:\videos\a.mp4 D:\videos\b.mkv D:\videos\c.mp4
-```
+AppImages are built on Ubuntu 22.04 and still require host graphics drivers, a desktop and audio services.
+Packaging success is not proof of successful installation/upgrading on every platform; see the [verification status](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md).
 
 ## Other platforms
 
@@ -59,7 +44,7 @@ differs per platform, and so does how much of it is proven:
 | Platform | Video | Runtime |
 | --- | --- | --- |
 | Windows x64 | mpv `--wid` | bundled DLL from a pinned upstream build |
-| Linux x64 | mpv `--wid` under X11 | declared as `.deb` dependencies |
+| Linux x64 | mpv `--wid` under X11 | bundled non-host libraries in AppImage; system dependencies for .deb |
 | macOS | mpv render API over OpenGL | Homebrew dylibs, bundled and rewritten to `@rpath` |
 
 **Two caveats, stated plainly:**

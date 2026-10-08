@@ -23,12 +23,17 @@ fn staged_runtime_lib_dir(workspace_root: &Path) -> Option<PathBuf> {
     let target_os = env::var("CARGO_CFG_TARGET_OS").ok()?;
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").ok()?;
 
-    let platform_dir = match (target_os.as_str(), target_arch.as_str()) {
-        ("windows", "x86_64") => "windows-x64",
-        ("macos", _) => "macos-universal",
-        ("linux", "x86_64") => "linux-x64",
-        _ => return None,
-    };
+    let platform_dir = runtime_platform(&target_os, &target_arch)?;
 
     Some(workspace_root.join("third_party").join("mpv").join(platform_dir).join("lib"))
+}
+
+fn runtime_platform(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
+        ("windows", "x86_64") => Some("windows-x64"),
+        ("macos", "aarch64") => Some("macos-aarch64"),
+        ("macos", "x86_64") => Some("macos-x86_64"),
+        ("linux", "x86_64") => Some("linux-x64"),
+        _ => None,
+    }
 }

@@ -1,0 +1,121 @@
+name: Build native updater packages
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      version:
+        default: ''
+        type: string
+      require-public-key-variable:
+        default: false
+        type: boolean
+permissions:
+  contents: read
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+jobs:
+  build:
+    name: Package ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: windows-x64, os: windows-latest }
+          - { platform: macos-aarch64, os: macos-14 }
+          - { platform: macos-x86_64, os: macos-15-intel }
+          - { platform: linux-x64, os: ubuntu-22.04 }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate version and pinned public key before compiling
+        id: metadata
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUIRE_PUBLIC_KEY: ${{ inputs.require-public-key-variable }}
+          YOYOVIDEO_UPDATER_PUBLIC_KEY: ${{ vars.YOYOVIDEO_UPDATER_PUBLIC_KEY }}
+        run: |
+          . ./scripts/velopack-common.ps1
+          $version = ((Get-Content Cargo.toml | Select-String '^version = "([^"]+)"$' | Select-Object -First 1).Matches[0].Groups[1].Value)
+          Assert-VelopackVersion $version
+          if ($env:REQUESTED_VERSION -and $env:REQUESTED_VERSION -cne $version) { throw 'Version mismatch' }
+          $pinned = (Get-Content -Raw apps/yoyovideo-desktop/assets/updater.pub).Trim()
+          if ($env:REQUIRE_PUBLIC_KEY -eq 'true' -or $env:YOYOVIDEO_UPDATER_PUBLIC_KEY) {
+            if ($env:YOYOVIDEO_UPDATER_PUBLIC_KEY.Trim() -cne $pinned) { throw 'GitHub public key differs from the client key' }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Install macOS playback runtime
+        if: startsWith(matrix.platform, 'macos-')
+        run: brew install mpv
+      - name: Install Ubuntu 22.04 playback and packaging dependencies
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0 libxcursor1 libxrandr2 libxi6 libfuse2 patchelf squashfs-tools desktop-file-utils file xvfb
+      - name: Locate Windows archive tool
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command 7z.exe -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path 'C:/Program Files/7-Zip/7z.exe')) { choco install 7zip --yes --no-progress; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+            'C:/Program Files/7-Zip' >> $env:GITHUB_PATH
+          }
+      - name: Install pinned Velopack CLI
+        shell: pwsh
+        run: dotnet tool install vpk --version 1.2.161 --tool-path .cache/tools/vpk
+      - name: Stage playback runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/fetch-runtime.ps1 -Platform ${{ matrix.platform }} -Force
+      - name: Build runtime-enabled player staging
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          # Linux additionally retains the manual/package-manager .deb format.
+          $args = @('-NoProfile','-File','scripts/package.ps1','-Platform','${{ matrix.platform }}','-Configuration','release','-RequireRuntime','-ReleaseMode','-ReleaseVersion',$env:RELEASE_VERSION)
+          if ('${{ matrix.platform }}' -ne 'linux-x64') { $args += '-StageOnly' }
+          & pwsh @args
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Decode media using the staged playback runtime
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/smoke-package.ps1 -Platform ${{ matrix.platform }} -PackageDir dist/YoYoVideo-${{ matrix.platform }} -RequireRuntime -SkipLaunch -TimeoutSeconds 60
+      - name: Build and verify native unsigned Velopack artifacts
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          pwsh -NoProfile -File scripts/package-velopack.ps1 -Platform ${{ matrix.platform }} -Version $env:RELEASE_VERSION -PackageDir dist/YoYoVideo-${{ matrix.platform }} -OutputDir dist/velopack/${{ matrix.platform }} -PrepareOnly
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ('${{ matrix.platform }}' -eq 'linux-x64') {
+            Copy-Item -LiteralPath dist/YoYoVideo-linux-x64.deb -Destination dist/velopack/linux-x64/
+          }
+      - name: Verify first-time Windows Setup and uninstall in the disposable runner
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: pwsh -NoProfile -File scripts/test-velopack-setup.ps1 -ReleaseDir dist/velopack/windows-x64 -Version $env:RELEASE_VERSION
+      - name: Retain Setup acceptance evidence
+        if: always() && matrix.platform == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: setup-windows-diagnostics
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/yoyo-setup-*/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.platform }}
+          if-no-files-found: error
+          path: dist/velopack/${{ matrix.platform }}/*

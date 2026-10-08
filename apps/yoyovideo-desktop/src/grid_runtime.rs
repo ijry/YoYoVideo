@@ -20,13 +20,19 @@ use crate::{
 
 /// One video in the grid.
 ///
-/// `host` is declared before `session` on purpose. Rust drops fields in
+/// On macOS, `host` is declared before `session` on purpose. Rust drops fields in
 /// declaration order, and on macOS the host owns mpv's render context, which keeps
 /// a pointer into the mpv handle that `session`'s backend owns. mpv requires the
 /// render context to be freed before the handle, so swapping these two would make
-/// teardown a use-after-free.
+/// teardown a use-after-free. Win32 instead keeps the embedding HWND alive until
+/// the mpv session has terminated.
 pub struct GridTile {
+    // Win32 embedding: terminate mpv before destroying the host HWND.
+    #[cfg(windows)]
+    session: AppSession<MpvBackend>,
     host: WinitVideoHost,
+    // macOS: release its render context before the mpv handle.
+    #[cfg(not(windows))]
     session: AppSession<MpvBackend>,
     /// Per-tile gesture tracking; the picture is a native window Slint never sees.
     pointer: VideoAreaPointer,

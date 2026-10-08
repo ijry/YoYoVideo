@@ -47,13 +47,15 @@ pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
 pub fn build_desktop_backend_with_options(
     options: yoyo_mpv::MpvClientOptions,
 ) -> Result<MpvBackend, MpvError> {
+    #[cfg(feature = "updater-qa")]
+    let options = yoyo_mpv::MpvClientOptions { audio_output: Some("null".into()), ..options };
     MpvBackend::new_runtime_with_options(options)
 }
 
 pub fn build_desktop_backend_with_video_window(
     window_id: NativeVideoWindowId,
 ) -> Result<MpvBackend, MpvError> {
-    MpvBackend::new_runtime_with_options(yoyo_mpv::MpvClientOptions {
+    build_desktop_backend_with_options(yoyo_mpv::MpvClientOptions {
         video_window: Some(yoyo_mpv::MpvVideoWindow::new(window_id.0)),
         force_window: true,
         ..yoyo_mpv::MpvClientOptions::default()
@@ -536,6 +538,8 @@ impl DesktopRuntime {
 #[cfg(feature = "mpv-runtime")]
 impl Drop for DesktopRuntime {
     fn drop(&mut self) {
+        #[cfg(feature = "updater-qa")]
+        eprintln!("QA: DesktopRuntime drop begins");
         // The notifier keeps the runtime alive until GL teardown. If a renderer
         // misses that notification, retain the core rather than leave a live
         // render context pointing into a destroyed mpv core.
@@ -1141,7 +1145,10 @@ fn remember_recent_open(
     }
 }
 
-fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &slint::Window) {
+fn try_save_current_window_state(
+    runtime: &mut DesktopRuntime,
+    window: &slint::Window,
+) -> Result<(), yoyo_core::StorageError> {
     let size = window.size();
     let position = window.position();
     let state = crate::platform::WindowState {
@@ -1152,11 +1159,11 @@ fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &sli
         maximized: window.is_maximized(),
     }
     .clamped();
-
+    crate::platform::save_window_state(runtime.window_state_path.clone(), &state)
+}
+fn save_current_window_state(runtime: &Rc<RefCell<DesktopRuntime>>, window: &slint::Window) {
     let mut runtime = runtime.borrow_mut();
-    if let Err(error) =
-        crate::platform::save_window_state(runtime.window_state_path.clone(), &state)
-    {
+    if let Err(error) = try_save_current_window_state(&mut runtime, window) {
         runtime.record_diagnostic("WARN", format!("Window state save failed: {error}"));
     }
 }
@@ -1226,8 +1233,13 @@ fn dispatch_dropped_paths(
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("app-run-entry");
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
+    #[cfg(feature = "updater-qa")]
+    let paths = Some(crate::update_qa::paths()?);
+    #[cfg(not(feature = "updater-qa"))]
     let paths = AppPaths::discover();
     let config_path =
         paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
@@ -1251,7 +1263,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     )));
     configure_backend(Rc::clone(&runtime))?;
 
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-main-window");
     let app = MainWindow::new()?;
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("after-main-window");
     #[cfg(feature = "mpv-runtime")]
     install_composited_video_notifier(&app, Rc::clone(&runtime));
     let saved_window_state = crate::platform::load_window_state(window_state_path).ok().flatten();
@@ -1385,7 +1401,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(app) = app_handle.upgrade() {
                 save_current_window_state(&runtime, app.window());
                 let _ = app.hide();
+                let _ = slint::quit_event_loop();
             }
+        }
+    });
+    app.window().on_close_requested({
+        let app_handle = app.as_weak();
+        let runtime = Rc::clone(&runtime);
+        move || {
+            if let Some(app) = app_handle.upgrade() {
+                save_current_window_state(&runtime, app.window());
+            }
+            let _ = slint::quit_event_loop();
+            slint::CloseRequestResponse::HideWindow
         }
     });
 
@@ -2688,24 +2716,113 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    app.run()?;
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-updater-ui");
+    let _updates = match crate::update_runtime::UpdateRuntime::attach(
+        &app,
+        paths.clone(),
+        {
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                let app =
+                    app_handle.upgrade().ok_or_else(|| "Player window is closed".to_string())?;
+                let mut runtime = runtime.borrow_mut();
+                if runtime.settings_window.as_ref().is_some_and(|w| w.window().is_visible())
+                    && runtime.settings_controller.as_ref().is_some_and(|c| c.snapshot().dirty)
+                {
+                    return Err(match runtime.ui_language {
+                        crate::UiLanguage::Chinese => {
+                            "请先应用或取消设置窗口中尚未保存的修改。".into()
+                        }
+                        crate::UiLanguage::English => {
+                            "Apply or cancel unsaved settings before updating.".into()
+                        }
+                    });
+                }
+                persist_playback_for_shutdown(&mut runtime).map_err(|e| e.to_string())?;
+                try_save_current_window_state(&mut runtime, app.window()).map_err(|e| e.to_string())
+            }
+        },
+        {
+            let app_handle = app.as_weak();
+            let runtime = Rc::clone(&runtime);
+            move || {
+                if let Some(window) = runtime.borrow().settings_window.as_ref() {
+                    let _ = window.hide();
+                }
+                if let Some(app) = app_handle.upgrade() {
+                    let _ = app.hide();
+                }
+                let _ = slint::quit_event_loop();
+            }
+        },
+    ) {
+        Ok(updates) => Some(updates),
+        Err(error) => {
+            runtime
+                .borrow_mut()
+                .record_diagnostic("WARN", format!("Updater UI unavailable: {error}"));
+            None
+        }
+    };
 
+    #[cfg(feature = "updater-qa")]
+    let _qa = crate::update_qa::QaSession::attach(
+        &app,
+        &_updates.as_ref().ok_or("QA updater window unavailable")?.qa_window(),
+        {
+            let runtime = Rc::clone(&runtime);
+            let handle = app.as_weak();
+            move |path| {
+                with_runtime_controller(&handle, &runtime, move |controller| {
+                    controller.dispatch(AppCommand::OpenFile(path))
+                });
+            }
+        },
+        {
+            let runtime = Rc::clone(&runtime);
+            move || {
+                let runtime = runtime.borrow();
+                let state = runtime.controller().map(|c| c.session().state());
+                serde_json::json!({
+                    "ready": state.is_some(),
+                    "media": state.and_then(|s| s.current.as_ref()).map(|m| m.as_label()),
+                    "position": state.map(|s| s.position_seconds),
+                    "duration": state.and_then(|s| s.duration_seconds),
+                    "history": runtime.history.store().items(),
+                })
+            }
+        },
+    )?;
+
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::trace("before-event-loop");
+    app.run()?;
+    #[cfg(feature = "updater-qa")]
+    eprintln!("QA: app.run returned");
     {
         let mut runtime = runtime.borrow_mut();
-        if let Some(controller) = runtime.controller() {
-            let snapshot = capture_history_snapshot(controller.session());
-            let state = controller.session().state().clone();
-            let _ = sync_history_from_snapshot(&mut runtime, &snapshot);
-            let _ = sync_subtitle_prefs_from_state(&mut runtime, &state);
-            persist_current_markers(&mut runtime, &state);
+        if let Err(error) = persist_playback_for_shutdown(&mut runtime) {
+            runtime.record_diagnostic("WARN", format!("Shutdown state save failed: {error}"));
         }
-        let shutdown_now = history_now(&runtime);
-        let _ = runtime.history.flush_if_needed(shutdown_now, crate::FlushReason::Shutdown);
-        let _ = runtime
-            .subtitle_prefs
-            .flush_if_needed(shutdown_now, crate::SubtitlePrefsFlushReason::Shutdown);
     }
 
+    // Winit's thread-local event handler retains Runtime after this function.
+    // Waiting until process/TLS teardown to destroy libmpv can deadlock after
+    // Windows has terminated its worker threads. Release playback explicitly,
+    // while those threads and the embedding HWNDs are still alive.
+    #[cfg(all(windows, feature = "mpv-runtime"))]
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.grid.clear();
+        drop(runtime.controller.take());
+        drop(runtime.video_host.take());
+    }
+    #[cfg(feature = "updater-qa")]
+    eprintln!("QA: post-loop state persisted");
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::record_shutdown();
     Ok(())
 }
 
@@ -3132,6 +3249,10 @@ fn configure_backend(
     // A borrowed GL texture cannot be consumed by Vulkan/software renderers.
     #[cfg(target_os = "linux")]
     let builder = builder.with_renderer_name("femtovg");
+    // The custom backend builder does not consult SLINT_RENDERER. Hosted Windows
+    // has no OpenGL driver; keep QA on its explicitly selected software renderer.
+    #[cfg(all(windows, feature = "updater-qa"))]
+    let builder = builder.with_renderer_name("software");
     let backend = builder.build()?;
     slint::platform::set_platform(Box::new(backend))?;
     Ok(())
@@ -3576,3 +3697,54 @@ impl CustomApplicationHandler for DesktopWinitHandler {
         EventResult::Propagate
     }
 }
+
+fn remember_shutdown_markers(runtime: &mut DesktopRuntime, state: &PlayerState) {
+    let Some(key) = current_locator_key(state) else {
+        return;
+    };
+    if runtime.last_marker_locator_key.as_ref() != Some(&key) {
+        return;
+    }
+    if runtime.marker_store.markers_for(&key) != state.markers {
+        runtime.marker_store.set_markers(key, state.markers.clone());
+    }
+}
+
+fn persist_playback_for_shutdown(
+    runtime: &mut DesktopRuntime,
+) -> Result<(), yoyo_core::StorageError> {
+    // Attempt every store even if one fails; updating must still reject any failure.
+    let mut first_error = None;
+    let mut save = |result: Result<(), yoyo_core::StorageError>| {
+        if let Err(error) = result {
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
+    };
+    if let Some(controller) = runtime.controller() {
+        let snapshot = capture_history_snapshot(controller.session());
+        let state = controller.session().state().clone();
+        save(sync_history_from_snapshot(runtime, &snapshot));
+        save(sync_subtitle_prefs_from_state(runtime, &state));
+        remember_shutdown_markers(runtime, &state);
+    }
+    let now = history_now(runtime);
+    save(runtime.history.flush_if_needed(now, crate::FlushReason::Shutdown).map(|_| ()));
+    save(
+        runtime
+            .subtitle_prefs
+            .flush_if_needed(now, crate::SubtitlePrefsFlushReason::Shutdown)
+            .map(|_| ()),
+    );
+    save(runtime.recent_open.save());
+    // Do not skip this because an earlier failed save left identical in-memory markers.
+    save(runtime.marker_store.save());
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+#[cfg(test)]
+#[path = "update_shutdown_tests.rs"]
+mod update_shutdown_tests;

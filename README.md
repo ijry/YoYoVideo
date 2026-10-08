@@ -6,7 +6,7 @@
 
 <p align="center">
   Rust + Slint + libmpv 打造的全格式本地视频播放器。<br>
-  多画面批量播放 · 字幕与音轨切换 · 画面滤镜 · A-B 循环 · 完全离线
+  多画面批量播放 · 字幕与音轨切换 · 画面滤镜 · A-B 循环 · 离线播放
 </p>
 
 <p align="center">
@@ -34,24 +34,28 @@
 - **字幕与音轨**。外部字幕加载，字幕延迟 / 缩放 / 垂直位置可调，音轨与声道模式即时切换。
 - **画面工具**。常用滤镜预设，以及亮度、对比度、饱和度调节。
 - **轻量无边框**。自绘标题栏与控制条，滚轮调音量，悬停呼出菜单。
-- **完全离线**。没有网络请求，没有遥测。libmpv 运行时随包分发，**无需预装任何解码器**。
+- **离线播放，无遥测**。本地媒体无需联网；可关闭自动更新检查。更新功能只访问 GitHub 获取版本和安装包，不上传媒体或播放历史。
 
 完整功能与快捷键见[文档站](https://ijry.github.io/YoYoVideo/)。
 
-## 下载
+## 下载与自动更新
 
-v0.0.1 发布 **Windows x64** 便携包与 NSIS 安装包，解压即用。
+新的 0.0.1 发布流程使用 **Velopack 1.2.161**，目标资源如下；请以 [Releases](https://github.com/ijry/YoYoVideo/releases/latest) 实际已发布的文件为准。
 
-| 文件 | 说明 |
-| --- | --- |
-| `YoYoVideo-windows-x64-setup.exe` | 安装包 |
-| `YoYoVideo-windows-x64.zip` | 免安装绿色包 |
+| 平台 | 格式 | 应用内更新 |
+| --- | --- | --- |
+| Windows x64 | `YoYoVideo-stable-windows-x64-Setup.exe` | 安装后支持 |
+| macOS Apple Silicon / Intel | 各架构独立的 `Portable.zip`（内含 .app） | 支持 Velopack 应用包 |
+| Linux x64 | `YoYoVideo.AppImage` | 可写位置的 AppImage 支持 |
+| Linux x64 | `YoYoVideo-linux-x64.deb` | 包管理器或手动更新 |
 
-前往 [Releases](https://github.com/ijry/YoYoVideo/releases/latest) 下载，发行页附有每个文件的 SHA-256。
+通过“检查更新”打开更新窗口，可控制自动检查、下载、稍后安装或确认退出并安装。更新前验证签名和包哈希，不会在启动时偷偷安装未确认的缓存更新。设置和播放历史保留，更新后不自动开始播放。
 
-> **为什么只有 Windows？** macOS 目前没有经过审核的通用架构 libmpv 构建，且原生视频嵌入尚未实现；
-> Linux 需要打包 libmpv 的完整依赖闭包，Wayland 单视频已有实验性的 OpenGL 合成路径，但尚未经过 Wayland 实机验证，多宫格仍不支持。
-> 详见 [`runtime/manifest.toml`](runtime/manifest.toml) 里对应条目的 `notes`。
+- 普通开发构建、旧 NSIS/便携 ZIP 不能原地变成 Velopack 安装，请手动安装新发布格式。
+- macOS 使用 **ad-hoc 签名，未做 Apple 公证**；它不等于 Apple Developer 签名，首次运行仍可能被 Gatekeeper 拦截。只从可信发布页下载，按系统正常流程处理，不建议关闭系统安全检查。
+- AppImage 按 Ubuntu 22.04 构建，包含 libmpv 和可分发依赖；仍需要系统图形驱动、桌面及音频环境。Wayland/多画面原有平台限制不因换打包格式而消失。
+
+开发验证状态、密钥管理和发布步骤见[更新机制文档](docs/development/updater.md)。
 
 ## 从源码构建
 
