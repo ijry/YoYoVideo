@@ -25,7 +25,7 @@ function Get-VelopackPackArguments([string]$Platform,[string]$Version,[string]$P
     $result=@('--skip-updates','--yes','--legacyConsole','pack','--packId','YoYoVideo','--packTitle',$title,'--packAuthors','YoYoVideo contributors','--packVersion',$Version,'--packDir',$PackRoot,'--mainExe',$t.Exe,'--channel',$t.Channel,'--runtime',$t.Rid,'--outputDir',$OutputDir,'--delta','None','--icon',$IconPath,'--releaseNotes',$NotesPath)
     if($Platform -eq 'windows-x64'){$result+=@('--noPortable','--shortcuts',$(if($QaFixture){'None'}else{'Desktop,StartMenuRoot'}))}
     elseif($Platform -like 'macos-*'){$result+=@('--noInst','--signAppIdentity','-')}
-    else {$result+=@('--noInst','--categories','AudioVideo;Player')}
+    else {$result+=@('--categories','AudioVideo;Player')}
     return $result
 }
 function Assert-VelopackAssetName([string]$Name) {
@@ -78,7 +78,7 @@ function Invoke-VelopackTool {
         }
         $global:LASTEXITCODE=0
         $output=@(& $FilePath @Arguments 2>&1)
-        if($LASTEXITCODE -ne 0){throw "External command failed: $([IO.Path]::GetFileName($FilePath)) (exit $LASTEXITCODE)"}
+        if($LASTEXITCODE -ne 0){if(-not $Signing){$output | Out-Host};throw "External command failed: $([IO.Path]::GetFileName($FilePath)) (exit $LASTEXITCODE)"}
         return $output
     } finally { foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')} }
 }
@@ -87,10 +87,15 @@ function Assert-VelopackCli([string]$VpkPath) {
     if($help -notmatch 'Velopack CLI 1\.2\.161(?:,|\s)'){throw 'vpk 1.2.161 is required; do not use an unpinned tool'}
 }
 function Get-VelopackBuildInfo {
-    param([string]$Executable,[string]$Version,[switch]$QaFixture)
+    param([string]$Executable,[string]$Version,[switch]$QaFixture,[switch]$AppImage)
     Assert-VelopackVersion $Version
     # Do not launch an older player that would treat the probe flag as a media argument.
-    $file=[IO.File]::OpenRead($Executable);$found=$false;$tail='';$buffer=[byte[]]::new(65536)
+    if($AppImage) {
+        $stream=[IO.File]::OpenRead($Executable);try{$prefix=Read-VelopackPrefix $stream 64}finally{$stream.Dispose()}
+        Assert-VelopackBinary -Bytes $prefix -Platform linux-x64
+        if($prefix[8] -ne 65 -or $prefix[9] -ne 73 -or $prefix[10] -ne 2){throw 'Not a type-2 AppImage'}
+    }
+    $file=[IO.File]::OpenRead($Executable);$found=[bool]$AppImage;$tail='';$buffer=[byte[]]::new(65536)
     try {while(($count=$file.Read($buffer,0,$buffer.Length)) -gt 0){$text=$tail+[Text.Encoding]::ASCII.GetString($buffer,0,$count);if($text.Contains('yoyovideo-build-info-v1')){$found=$true;break};$tail=$text.Substring([Math]::Max(0,$text.Length-32))}}finally{$file.Dispose()}
     if(-not $found){throw 'Player lacks build-info support; rebuild before packaging'}
     $start=[Diagnostics.ProcessStartInfo]::new($Executable);$start.ArgumentList.Add('--build-info')

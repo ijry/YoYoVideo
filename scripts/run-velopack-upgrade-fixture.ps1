@@ -63,6 +63,7 @@ function Wait-Qa([scriptblock]$Predicate,[string]$Description,[int]$TargetPid=0,
         if($last -and (& $Predicate $last)){return $last}
         Start-Sleep -Milliseconds 200
     } while([DateTime]::UtcNow -lt $until)
+    Get-ChildItem -LiteralPath $Root -Filter '*.log' -File | ForEach-Object { Write-Host $_.Name; Get-Content -LiteralPath $_.FullName -Tail 30 | Out-Host }
     throw "Timeout: $Description. Last state: $($last | ConvertTo-Json -Depth 6 -Compress)"
 }
 function Send-Qa([int]$TargetPid,[string]$Command,[string]$MediaPath) {

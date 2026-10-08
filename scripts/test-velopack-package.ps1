@@ -40,7 +40,7 @@ Case 'arguments disable delta and preserve platform signing choices' {
         Check ($a -contains '--skip-updates') 'CLI update checks not disabled'
         $i=[Array]::IndexOf($a,'--delta'); Check ($i -ge 0 -and $a[$i+1] -eq 'None') 'Delta enabled'
         if($platform -like 'macos-*') { $i=[Array]::IndexOf($a,'--signAppIdentity'); Check ($i -ge 0 -and $a[$i+1] -eq '-') 'Missing ad-hoc signature'; Check (-not ($a -contains '--notaryProfile')) 'Unexpected notarization' }
-        if($platform -eq 'linux-x64'){Check (-not ($a -contains '--noPortable')) 'AppImage disabled'}
+        if($platform -eq 'linux-x64'){Check (-not ($a -contains '--noPortable')) 'AppImage disabled'; Check (-not ($a -contains '--noInst')) 'Linux vpk does not accept noInst'}
         Check (-not ($a -contains '--skipVeloAppCheck')) 'App integration check bypassed'
     }
     Reject { Get-VelopackPackArguments 'windows-x64' 'v0.0.1' 'in' 'out' 'icon' 'notes' }

@@ -42,7 +42,7 @@ function Assert-VelopackArchive {
     try {
         Assert-VelopackZipPaths $zip $Platform
         $meta=Read-VelopackNuspec (Read-VelopackEntry $zip.GetEntry('YoYoVideo.nuspec'))
-        if($meta.id -cne 'YoYoVideo' -or $meta.version -cne $Version -or $meta.channel -cne $t.Channel -or $meta.mainExe -cne $t.Exe -or $meta.os -cne $t.Os -or $meta.rid -cne $t.Rid -or $meta.machineArchitecture -cne $t.Arch){throw 'Package identity, version, channel or architecture mismatch'}
+        if($meta.id -cne 'YoYoVideo' -or $meta.version -cne $Version -or $meta.channel -cne $t.Channel -or $meta.mainExe -cne $t.Exe -or $meta.os -cne $t.Os -or $meta.rid -cne $t.Rid -or $meta.machineArchitecture -cne $t.Arch){throw ('Package identity, version, channel or architecture mismatch: '+($meta | ConvertTo-Json -Compress))}
         $title=if($QaFixture){'YoYoVideo QA ONLY'}else{'YoYoVideo'}
         if($meta.title -cne $title){throw 'QA packages are not production releases'}
         if($Platform -eq 'linux-x64') {

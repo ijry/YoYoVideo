@@ -46,6 +46,7 @@ jobs:
         with:
           name: windows-upgrade-diagnostics
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             .cache/updater-upgrade-build-*/run-*/events.jsonl
             .cache/updater-upgrade-build-*/run-*/SUCCESS.json
