@@ -19,7 +19,6 @@ mod service;
 pub use service::{ServiceConfig, UpdatePhase, UpdateService, UpdateSnapshot};
 
 mod pending;
-#[cfg(windows)]
 mod process_guard;
 
 mod worker;

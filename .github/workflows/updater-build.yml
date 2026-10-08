@@ -100,6 +100,20 @@ jobs:
           if ('${{ matrix.platform }}' -eq 'linux-x64') {
             Copy-Item -LiteralPath dist/YoYoVideo-linux-x64.deb -Destination dist/velopack/linux-x64/
           }
+      - name: Verify first-time Windows Setup and uninstall in the disposable runner
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: pwsh -NoProfile -File scripts/test-velopack-setup.ps1 -ReleaseDir dist/velopack/windows-x64 -Version $env:RELEASE_VERSION
+      - name: Retain Setup acceptance evidence
+        if: always() && matrix.platform == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: setup-windows-diagnostics
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/yoyo-setup-*/*
       - uses: actions/upload-artifact@v4
         with:
           name: updater-${{ matrix.platform }}

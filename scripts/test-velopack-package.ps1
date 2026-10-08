@@ -137,7 +137,7 @@ Case 'AppImage provenance rejects missing, altered and host ABI libraries' {
 Case 'macOS resources stay outside MacOS binaries and symlinks are constrained' {
     $windows=Package-Entries;$entries=@{}
     foreach($key in $windows.Keys){if($key.StartsWith('lib/app/') -and $key -notmatch '\.exe$|\.dll$'){$entries[$key.Replace('lib/app/','lib/app/Contents/Resources/')]=$windows[$key]}}
-    $xml=$windows['YoYoVideo.nuspec'].Replace('stable-windows-x64','stable-macos-aarch64').Replace('yoyovideo-desktop.exe','yoyovideo-desktop').Replace('<os>win</os>','<os>osx</os>').Replace('<rid>win-x64</rid>','<rid>osx-arm64</rid>').Replace('<machineArchitecture>x64','<machineArchitecture>arm64')
+    $xml=$windows['YoYoVideo.nuspec'].Replace('stable-windows-x64','stable-macos-aarch64').Replace('yoyovideo-desktop.exe','Contents/MacOS/yoyovideo-desktop').Replace('<os>win</os>','<os>osx</os>').Replace('<rid>win-x64</rid>','<rid>osx-arm64</rid>').Replace('<machineArchitecture>x64','<machineArchitecture>arm64')
     $entries['YoYoVideo.nuspec']=$xml
     $entries['lib/app/Contents/Resources/sq.version']=$xml
     foreach($name in @('yoyovideo-desktop','libmpv.dylib','UpdateMac')){$entries['lib/app/Contents/MacOS/'+$name]=Header 'macos-aarch64'}
@@ -169,6 +169,12 @@ Case 'test-only packages cannot pass the production release validator' {
     $args=@(Get-VelopackPackArguments 'windows-x64' '0.0.1' 'in' 'out' 'icon' 'notes' -QaFixture)
     Check ($args -contains 'YoYoVideo QA ONLY' -and $args[[Array]::IndexOf($args,'--shortcuts')+1] -eq 'None') 'QA packaging must have a distinct title and no shortcuts'
     Reject {Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1'}
+}
+Case 'native Linux nuspec names the AppDir executable' {
+    $entries=Package-Entries
+    $xml=$entries['YoYoVideo.nuspec'].Replace('stable-windows-x64','stable-linux-x64').Replace('win-x64','linux-x64').Replace('<os>win</os>','<os>linux</os>').Replace('yoyovideo-desktop.exe','usr/bin/yoyovideo-desktop')
+    $linux=@{'YoYoVideo.nuspec'=$xml;'lib/app/YoYoVideo.AppImage'=(Header 'linux-x64')}
+    $null=Assert-VelopackArchive -Path (Zip-Fixture $linux) -Platform linux-x64 -Version 0.0.1
 }
 Write-Host "Fixture diagnostics retained under $root"
 if($failures.Count){ throw ($failures -join [Environment]::NewLine) }

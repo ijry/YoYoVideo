@@ -30,3 +30,25 @@ fn fixture_key_cannot_be_an_absent_or_unbounded_file() {
     fs::write(dir.path().join("public.key"), "test-only-public-key").unwrap();
     assert_eq!(fixture.public_key().unwrap(), "test-only-public-key");
 }
+
+#[test]
+fn sdk_cache_is_isolated_and_foreign_installations_are_rejected() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("TEST-ONLY"), "YoYoVideo updater QA fixture v1\n").unwrap();
+    let fixture = QaFixture::open(dir.path()).unwrap();
+    fs::create_dir(fixture.root().join("installation")).unwrap();
+    fs::write(fixture.root().join("installation/YoYoVideo.AppImage"), b"fixture").unwrap();
+    let config = velopack::locator::VelopackLocatorConfig {
+        RootAppDir: fixture.root().join("installation/YoYoVideo.AppImage"),
+        PackagesDir: "/var/tmp/velopack/YoYoVideo/packages".into(),
+        ..Default::default()
+    };
+    let isolated = fixture.isolate_locator(config.clone()).unwrap();
+    assert_eq!(isolated.PackagesDir, fixture.root().join("sdk-packages"));
+    assert_eq!(isolated.RootAppDir, config.RootAppDir);
+    let foreign = velopack::locator::VelopackLocatorConfig {
+        RootAppDir: dir.path().join("foreign"),
+        ..config
+    };
+    assert!(fixture.isolate_locator(foreign).is_err());
+}

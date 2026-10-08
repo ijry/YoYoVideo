@@ -26,15 +26,16 @@ elseif($Platform -eq 'linux-x64') {
     try {$stream=$zip.GetEntry('lib/app/YoYoVideo.AppImage').Open();$hash=[Security.Cryptography.SHA256]::Create();try{$embedded=[Convert]::ToHexString($hash.ComputeHash($stream))}finally{$stream.Dispose();$hash.Dispose()}}finally{$zip.Dispose()}
     if($embedded -ne (Get-FileHash -LiteralPath $primary -Algorithm SHA256).Hash){throw 'AppImage differs from the authenticated full package'}
 } else {
+    $bundleName=if($QaFixture){'YoYoVideo QA ONLY.app'}else{'YoYoVideo.app'}
     $zip=[IO.Compression.ZipFile]::OpenRead($primary);$package=[IO.Compression.ZipFile]::OpenRead($full)
     try {
         Assert-VelopackZipPaths $zip $Platform
-        $main=$zip.GetEntry('YoYoVideo.app/Contents/MacOS/yoyovideo-desktop');if($null -eq $main){throw 'Missing .app in portable archive'}
+        $main=$zip.GetEntry(($bundleName+'/Contents/MacOS/yoyovideo-desktop'));if($null -eq $main){throw 'Missing .app in portable archive'}
         $stream=$main.Open();try{Assert-VelopackBinary -Bytes (Read-VelopackPrefix $stream) -Platform $Platform}finally{$stream.Dispose()}
         foreach($entry in $zip.Entries) {
             if($entry.FullName.EndsWith('/') -or $entry.FullName.StartsWith('__MACOSX/')){continue}
-            if(-not $entry.FullName.StartsWith('YoYoVideo.app/')){throw 'Unexpected file outside the app bundle'}
-            $relative=$entry.FullName.Substring('YoYoVideo.app/'.Length);$other=$package.GetEntry('lib/app/'+$relative)
+            if(-not $entry.FullName.StartsWith($bundleName+'/')){throw 'Unexpected file outside the app bundle'}
+            $relative=$entry.FullName.Substring(($bundleName+'/').Length);$other=$package.GetEntry('lib/app/'+$relative)
             if($null -eq $other -or $other.Length -ne $entry.Length){throw 'Portable app differs from full package'}
             $sha=[Security.Cryptography.SHA256]::Create();$left=$entry.Open();$right=$other.Open()
             try {if([Convert]::ToHexString($sha.ComputeHash($left)) -ne [Convert]::ToHexString($sha.ComputeHash($right))){throw 'Portable app content differs from full package'}}finally{$left.Dispose();$right.Dispose();$sha.Dispose()}
@@ -52,7 +53,7 @@ if($Native) {
     if($Platform -like 'macos-*') {
         $work=Join-Path $repo ('.cache/verify-macos-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $work | Out-Null
         Invoke-VelopackTool '/usr/bin/ditto' @('-x','-k',$primary,$work) | Out-Null
-        $app=Join-Path $work 'YoYoVideo.app';$bin=Join-Path $app 'Contents/MacOS'
+        $app=Join-Path $work $bundleName;$bin=Join-Path $app 'Contents/MacOS'
         Invoke-VelopackTool '/usr/bin/codesign' @('--verify','--deep','--strict',$app) | Out-Null
         foreach($file in Get-ChildItem -LiteralPath $bin -File | Where-Object {$_.Name -eq 'yoyovideo-desktop' -or $_.Name -eq 'UpdateMac' -or $_.Name -like '*.dylib'}) {
             Assert-VelopackBinary -Path $file.FullName -Platform $Platform -Library

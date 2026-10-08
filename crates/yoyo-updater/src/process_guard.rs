@@ -23,13 +23,27 @@ pub(crate) fn ensure_exclusive_installation(directory: &Path) -> Result<(), Upda
             continue;
         }
         let executable = process.exe().and_then(|p| p.canonicalize().ok());
+        #[cfg(not(windows))]
+        if matches!(process.status(), sysinfo::ProcessStatus::Zombie | sysinfo::ProcessStatus::Dead)
+        {
+            continue;
+        }
         let conflict = conflicts_with_installation(
             executable.as_deref(),
             process.name(),
             &directory,
             current_name,
         );
-        if conflict && is_live_process(pid.as_u32())? {
+        #[cfg(target_os = "linux")]
+        let conflict = conflict
+            || appimage_conflict(
+                *pid,
+                process.exe().and_then(|p| p.file_name()).unwrap_or(process.name()),
+                current_name,
+            )?;
+        #[cfg(windows)]
+        let conflict = conflict && is_live_process(pid.as_u32())?;
+        if conflict {
             return Err(UpdateError::Install(
                 "close other instances or processes using this installation, then retry".into(),
             ));
@@ -40,6 +54,7 @@ pub(crate) fn ensure_exclusive_installation(directory: &Path) -> Result<(), Upda
 
 // Process enumeration can retain exited entries while another process holds a
 // handle. A zero-time wait is authoritative; access errors are not proof of exit.
+#[cfg(windows)]
 fn is_live_process(pid: u32) -> Result<bool, UpdateError> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     #[link(name = "kernel32")]
@@ -62,12 +77,49 @@ fn is_live_process(pid: u32) -> Result<bool, UpdateError> {
         )),
     }
 }
+#[cfg(windows)]
 fn classify_open_error(code: i32) -> Result<bool, UpdateError> {
     if code == 87 {
         // ERROR_INVALID_PARAMETER: the enumerated PID no longer exists.
         Ok(false)
     } else {
         Err(UpdateError::Install("cannot inspect a potentially conflicting process".into()))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn appimage_conflict(
+    pid: sysinfo::Pid,
+    name: &std::ffi::OsStr,
+    current_name: &std::ffi::OsStr,
+) -> Result<bool, UpdateError> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let Some(image) = std::env::var_os("APPIMAGE") else {
+        return Ok(false);
+    };
+    if name != current_name {
+        return Ok(false);
+    }
+    // Read only a candidate player's environment, never every system process.
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_environ(UpdateKind::Always),
+    );
+    let Some(process) = system.process(pid) else {
+        return Ok(false);
+    };
+    if matches!(process.status(), sysinfo::ProcessStatus::Zombie | sysinfo::ProcessStatus::Dead) {
+        return Ok(false);
+    }
+    let value = process.environ().iter().find_map(|v| v.to_str()?.strip_prefix("APPIMAGE="));
+    match value {
+        Some(other) => Ok(Path::new(other).canonicalize()? == Path::new(&image).canonicalize()?),
+        None if process.environ().is_empty() => {
+            Err(UpdateError::Install("cannot inspect a potentially conflicting AppImage".into()))
+        }
+        None => Ok(false),
     }
 }
 
@@ -112,6 +164,7 @@ mod tests {
         assert!(conflicts_with_installation(None, OsStr::new("YOYOVIDEO-DESKTOP.EXE"), dir, name));
         assert!(!conflicts_with_installation(None, OsStr::new("unrelated.exe"), dir, name));
     }
+    #[cfg(windows)]
     #[test]
     fn exited_process_handles_are_not_live_installation_conflicts() {
         use std::os::windows::process::CommandExt;

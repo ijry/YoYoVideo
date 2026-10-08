@@ -22,6 +22,33 @@ impl QaFixture {
             .ok_or_else(|| io::Error::other("QA build requires YOYOVIDEO_UPDATER_QA_ROOT"))?;
         Self::open(Path::new(&root))
     }
+    pub fn isolate_locator(
+        &self,
+        mut config: velopack::locator::VelopackLocatorConfig,
+    ) -> io::Result<velopack::locator::VelopackLocatorConfig> {
+        if !config.RootAppDir.canonicalize()?.starts_with(self.root.join("installation")) {
+            return Err(io::Error::other("QA locator must refer to the isolated installation"));
+        }
+        config.PackagesDir = self.root.join("sdk-packages");
+        Ok(config)
+    }
+    pub fn native_locator(&self) -> io::Result<velopack::locator::VelopackLocatorConfig> {
+        use velopack::locator::{LocationContext, VelopackLocatorConfig, auto_locate_app_manifest};
+        let native =
+            auto_locate_app_manifest(LocationContext::FromCurrentExe).map_err(io::Error::other)?;
+        #[cfg(target_os = "linux")]
+        let root = native.get_appimage_path();
+        #[cfg(not(target_os = "linux"))]
+        let root = native.get_root_dir();
+        self.isolate_locator(VelopackLocatorConfig {
+            RootAppDir: root,
+            UpdateExePath: native.get_update_path(),
+            PackagesDir: native.get_packages_dir(),
+            ManifestPath: native.get_current_bin_dir().join("sq.version"),
+            CurrentBinaryDir: native.get_current_bin_dir(),
+            IsPortable: native.get_is_portable(),
+        })
+    }
     pub fn root(&self) -> &Path {
         &self.root
     }

@@ -11,7 +11,6 @@ pub(super) struct NativeBackend {
     source: SignedSource,
     version: Version,
     packages: PathBuf,
-    #[cfg(windows)]
     binaries: PathBuf,
 }
 impl NativeBackend {
@@ -41,14 +40,21 @@ impl NativeBackend {
             MaximumDeltasBeforeFallback: -1,
             ..Default::default()
         };
-        let manager = UpdateManager::new(source.clone(), Some(options), None)
+        #[cfg(feature = "qa-fixture")]
+        let override_locator = Some(crate::QaFixture::from_env()?.native_locator()?);
+        #[cfg(not(feature = "qa-fixture"))]
+        let override_locator = None;
+        let packages = override_locator
+            .as_ref()
+            .map(|l: &velopack::locator::VelopackLocatorConfig| l.PackagesDir.clone())
+            .unwrap_or_else(|| locator.get_packages_dir());
+        let manager = UpdateManager::new(source.clone(), Some(options), override_locator)
             .map_err(|_| UpdateError::Unsupported)?;
         Ok(Self {
             manager,
             source,
             version: manifest.version,
-            packages: locator.get_packages_dir(),
-            #[cfg(windows)]
+            packages,
             binaries: locator.get_current_bin_dir(),
         })
     }
@@ -87,7 +93,6 @@ impl Backend for NativeBackend {
             .map_err(|e| UpdateError::Backend(e.to_string()))
     }
     fn launch(&mut self, candidate: &VerifiedManifest) -> Result<(), UpdateError> {
-        #[cfg(windows)]
         crate::process_guard::ensure_exclusive_installation(&self.binaries)?;
         self.manager
             .wait_exit_then_apply_updates(candidate.asset(), false, true, Vec::<String>::new())

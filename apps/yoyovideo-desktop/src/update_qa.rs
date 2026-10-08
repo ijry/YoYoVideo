@@ -112,7 +112,8 @@ impl QaSession {
                 Err(e) => error = Some(e.to_string()),
             }
             let record = serde_json::json!({
-                "pid": pid, "version": env!("CARGO_PKG_VERSION"), "seq": last_seq,
+                "kind": "snapshot", "pid": pid, "version": env!("CARGO_PKG_VERSION"), "seq": last_seq,
+                "executable": std::env::current_exe().ok(), "appimage": std::env::var("APPIMAGE").ok(),
                 "phase": updates.get_phase_index(), "automatic_check": updates.get_automatic_check(),
                 "update_error": updates.get_status_message().as_str(), "qa_error": error,
                 "playback": snapshot(),
@@ -177,5 +178,16 @@ mod tests {
             .unwrap()
             .is_some()
         );
+    }
+}
+
+pub(crate) fn record_shutdown() {
+    if let Ok(fixture) = yoyo_updater::QaFixture::from_env() {
+        if let Ok(mut file) =
+            std::fs::OpenOptions::new().append(true).open(fixture.root().join("events.jsonl"))
+        {
+            let record = serde_json::json!({"kind":"shutdown","pid":std::process::id(),"version":env!("CARGO_PKG_VERSION")});
+            let _ = writeln!(file, "{record}");
+        }
     }
 }

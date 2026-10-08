@@ -2811,6 +2811,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(feature = "updater-qa")]
     eprintln!("QA: post-loop state persisted");
+    #[cfg(feature = "updater-qa")]
+    crate::update_qa::record_shutdown();
     Ok(())
 }
 
@@ -3237,6 +3239,10 @@ fn configure_backend(
     // A borrowed GL texture cannot be consumed by Vulkan/software renderers.
     #[cfg(target_os = "linux")]
     let builder = builder.with_renderer_name("femtovg");
+    // The custom backend builder does not consult SLINT_RENDERER. Hosted Windows
+    // has no OpenGL driver; keep QA on its explicitly selected software renderer.
+    #[cfg(all(windows, feature = "updater-qa"))]
+    let builder = builder.with_renderer_name("software");
     let backend = builder.build()?;
     slint::platform::set_platform(Box::new(backend))?;
     Ok(())

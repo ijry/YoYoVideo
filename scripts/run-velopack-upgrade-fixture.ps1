@@ -1,16 +1,18 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$BuildRoot,[string]$FromVersion='0.0.1',[string]$ToVersion='0.0.2',[int]$TimeoutSeconds=180)
+param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$BuildRoot,[string]$FromVersion='0.0.1',[string]$ToVersion='0.0.2',[int]$TimeoutSeconds=180,[string]$Platform='windows-x64',[string]$LinuxMode='extract')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'velopack-common.ps1')
-if(-not $IsWindows){throw 'This native runner currently implements Windows portable-layout upgrades only'}
+. (Join-Path $PSScriptRoot 'velopack-qa-common.ps1')
+Assert-VelopackHost $Platform
 $Root=(Resolve-Path -LiteralPath $Root).Path
 if([IO.File]::ReadAllText((Join-Path $Root 'TEST-ONLY')) -cne "YoYoVideo updater QA fixture v1`n"){throw 'Missing QA root marker'}
-$install=Join-Path $Root 'installation';$main=Join-Path $install 'current/yoyovideo-desktop.exe'
-if(-not (Test-Path -LiteralPath (Join-Path $install '.portable'))){throw 'Refusing a profile-affecting installation'}
+$layout=Get-UpdaterQaLayout $Root $Platform
+$install=$layout.Install;$main=$layout.Launcher
+if($IsWindows -and -not (Test-Path -LiteralPath (Join-Path $install '.portable'))){throw 'Refusing a profile-affecting installation'}
 if($env:YOYOVIDEO_UPDATER_QA_ROOT -cne $Root){throw 'QA process root is not configured'}
-$null=Get-VelopackBuildInfo -Executable $main -Version $FromVersion -QaFixture
-if (-not ('QaProcessSignal' -as [type])) {
+$null=Get-VelopackBuildInfo -Executable $main -Version $FromVersion -QaFixture -AppImage:$IsLinux
+if ($IsWindows -and -not ('QaProcessSignal' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
@@ -42,24 +44,24 @@ function Normalize-QaPath([string]$Value) {
     if($Value.StartsWith('\\?\')){$Value=$Value.Substring(4)}
     return [IO.Path]::GetFullPath($Value)
 }
-function Read-QaState([int]$TargetPid=0) {
+function Read-QaState([int]$TargetPid=0,[int[]]$ExcludePids=@()) {
     if(-not (Test-Path -LiteralPath $events)){return $null}
     $stream=[IO.File]::Open($events,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
     $reader=[IO.StreamReader]::new($stream)
     try {$lines=$reader.ReadToEnd().Split([char]10)}finally{$reader.Dispose()}
     for($i=$lines.Length-1;$i -ge 0;$i--) {
         try {$state=$lines[$i] | ConvertFrom-Json -ErrorAction Stop}catch{continue}
-        if($null -ne $state -and ($TargetPid -eq 0 -or $state.pid -eq $TargetPid)) {
+        if($null -ne $state -and $state.pid -notin $ExcludePids -and (-not ($state.PSObject.Properties.Name -contains 'kind') -or $state.kind -eq 'snapshot') -and ($TargetPid -eq 0 -or $state.pid -eq $TargetPid)) {
             if($state.qa_error){throw "QA control error: $($state.qa_error)"}
             return $state
         }
     }
     return $null
 }
-function Wait-Qa([scriptblock]$Predicate,[string]$Description,[int]$TargetPid=0,[int]$Seconds=$TimeoutSeconds) {
+function Wait-Qa([scriptblock]$Predicate,[string]$Description,[int]$TargetPid=0,[int]$Seconds=$TimeoutSeconds,[int[]]$ExcludePids=@()) {
     $until=[DateTime]::UtcNow.AddSeconds($Seconds);$last=$null
     do {
-        $last=Read-QaState $TargetPid
+        $last=Read-QaState $TargetPid $ExcludePids
         if($last -and (& $Predicate $last)){return $last}
         Start-Sleep -Milliseconds 200
     } while([DateTime]::UtcNow -lt $until)
@@ -77,12 +79,33 @@ function Send-Qa([int]$TargetPid,[string]$Command,[string]$MediaPath) {
 }
 function Start-Qa {
     $tag=[guid]::NewGuid().ToString('N')
-    $process=Start-Process -FilePath $main -WorkingDirectory $Root -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $Root "$tag.stdout.log") -RedirectStandardError (Join-Path $Root "$tag.stderr.log")
-    $null=$process.Handle # Retain the real kernel process handle before termination.
-    $null=Wait-Qa {param($s) $s.playback.ready} 'player initialization' $process.Id
-    return $process
+    $known=@()
+    if(Test-Path -LiteralPath $events){$known=@(Get-Content -LiteralPath $events | ForEach-Object {try{($_ | ConvertFrom-Json).pid}catch{}} | Sort-Object -Unique)}
+    $options=@{FilePath=$main;WorkingDirectory=$Root;PassThru=$true;RedirectStandardOutput=(Join-Path $Root "$tag.stdout.log");RedirectStandardError=(Join-Path $Root "$tag.stderr.log")}
+    if($IsWindows){$options.WindowStyle='Hidden'}
+    $launcher=Start-Process @options
+    if($IsWindows){$null=$launcher.Handle;$null=Wait-Qa {param($s) $s.playback.ready} 'player initialization' $launcher.Id;return $launcher}
+    $state=Wait-Qa {param($s) $s.playback.ready} 'native player initialization' -ExcludePids $known
+    if($IsLinux -and (Normalize-QaPath $state.appimage) -ne $main){throw 'Unexpected AppImage launched'}
+    if($state.pid -eq $launcher.Id){return $launcher}
+    return Get-Process -Id $state.pid
 }
+
 function Wait-QaExit($Process,[int]$Milliseconds=30000) {
+    if(-not $IsWindows) {
+        $watch=[Diagnostics.Stopwatch]::StartNew()
+        do {
+            $status=(& /bin/ps -p $Process.Id -o stat= 2>$null) -join ''
+            if(-not $status.Trim() -or $status.Trim().StartsWith('Z')){break}
+            Start-Sleep -Milliseconds 100
+        } while($watch.ElapsedMilliseconds -lt $Milliseconds)
+        if($status.Trim() -and -not $status.Trim().StartsWith('Z')){throw 'Native player did not terminate'}
+        $shutdown=@(Get-Content -LiteralPath $events | ForEach-Object {try{$_ | ConvertFrom-Json}catch{}} | Where-Object {($_.PSObject.Properties.Name -contains 'kind') -and $_.kind -eq 'shutdown' -and $_.pid -eq $Process.Id})
+        if(-not $shutdown.Count){throw 'Native process ended without the normal shutdown marker'}
+        $global:LASTEXITCODE=0
+        Write-Host "QA process $($Process.Id) completed shutdown"
+        return
+    }
     $watch=[Diagnostics.Stopwatch]::StartNew()
     do {
         $status=[QaProcessSignal]::WaitForSingleObject($Process.Handle,0)
@@ -117,13 +140,13 @@ $null=Wait-Qa {param($s) $s.seq -eq $seq -and -not $s.automatic_check} 'disable 
 $seq=Send-Qa $old.Id 'open' 'media.wav'
 $played=Wait-Qa {param($s) $s.seq -eq $seq -and $s.playback.position -ge 2 -and $s.playback.duration -gt 100} 'real playback advances' $old.Id
 if($played.version -cne $FromVersion){throw 'Initial process is not the old compiled version'}
-$signature=Join-Path $Root 'source/yoyovideo-update.windows-x64.json.sig'
+$signature=Join-Path $Root "source/yoyovideo-update.$Platform.json.sig"
 $goodSignature=[IO.File]::ReadAllText($signature)
 [IO.File]::WriteAllText($signature,'BAD TEST SIGNATURE')
 $seq=Send-Qa $old.Id 'check'
 $null=Wait-Qa {param($s) $s.seq -eq $seq -and $s.phase -eq 8} 'reject invalid signature' $old.Id
 [IO.File]::WriteAllText($signature,$goodSignature)
-$packageName="YoYoVideo-$ToVersion-stable-windows-x64-full.nupkg"
+$packageName="YoYoVideo-$ToVersion-stable-$Platform-full.nupkg"
 $sourcePackage=Join-Path $Root "source/$packageName"
 $pristine=Join-Path $BuildRoot "$ToVersion/$packageName"
 $stream=[IO.File]::OpenWrite($sourcePackage);try{$stream.WriteByte(0)}finally{$stream.Dispose()}
@@ -140,7 +163,7 @@ Start-Sleep -Seconds 12
 $pending=Read-QaState $restarted.Id
 if($restarted.HasExited -or $pending.version -cne $FromVersion -or $pending.playback.media -or $pending.automatic_check){throw 'Restart applied an unconfirmed update or lost preferences'}
 if(@($pending.playback.history).Count -ne 1 -or $pending.playback.history[0].last_position_seconds -lt 2){throw 'Old restart lost real playback history'}
-$cachePackage=Join-Path $install "packages/$packageName"
+$cachePackage=Join-Path $layout.Packages $packageName
 if(-not (Test-Path -LiteralPath $cachePackage -PathType Leaf)){throw 'Native updater did not cache the expected package'}
 $stream=[IO.File]::OpenWrite($cachePackage);try{$stream.WriteByte(0)}finally{$stream.Dispose()}
 $seq=Send-Qa $restarted.Id 'install';$null=Wait-Qa {param($s) $s.seq -eq $seq -and $s.phase -eq 8} 'reject cache tampering before install' $restarted.Id
@@ -157,13 +180,14 @@ Wait-QaExit $restarted
 if($newState.playback.media -or $newState.automatic_check){throw 'New version autoplayed or lost updater preferences'}
 if(@($newState.playback.history).Count -ne 1 -or $newState.playback.history[0].last_position_seconds -lt 2){throw 'New version lost playback history'}
 $new=Get-Process -Id $newState.pid
-if(-not $new.Path.StartsWith($install+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected restarted process path'}
-$null=Get-VelopackBuildInfo -Executable $main -Version $ToVersion -QaFixture
+if($IsLinux){if((Normalize-QaPath $newState.appimage) -ne $main){throw 'Unexpected restarted AppImage'}}
+elseif(-not $new.Path.StartsWith($install+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected restarted process path'}
+$null=Get-VelopackBuildInfo -Executable $main -Version $ToVersion -QaFixture -AppImage:$IsLinux
 $resumeTarget=[double]$newState.playback.history[0].last_position_seconds
 if($resumeTarget -lt 15){throw 'Saved resume target is too short to distinguish seeking from fresh playback'}
 $seq=Send-Qa $new.Id 'resume_history'
 $resumed=Wait-Qa {param($s) $s.seq -eq $seq -and $s.playback.position -ge ($resumeTarget-1) -and (Normalize-QaPath $s.playback.media) -eq $media} 'restore history through real UI callback' $new.Id -Seconds 8
 $seq=Send-Qa $new.Id 'check';$null=Wait-Qa {param($s) $s.seq -eq $seq -and $s.phase -eq 3} 'same-version check must be up-to-date' $new.Id
 Close-Qa $new
-@{from_pid=$old.Id;pending_restart_pid=$restarted.Id;to_pid=$newState.pid;from_version=$played.version;to_version=$newState.version;restored_position=$resumed.playback.position;layout='isolated Windows Velopack portable';registry_and_shortcuts_tested=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'SUCCESS.json')
+@{from_pid=$old.Id;pending_restart_pid=$restarted.Id;to_pid=$newState.pid;from_version=$played.version;to_version=$newState.version;restored_position=$resumed.playback.position;layout="native-$Platform-$LinuxMode";registry_and_shortcuts_tested=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'SUCCESS.json')
 Write-Host "PASS actual player $FromVersion -> $ToVersion, real restart/history/preferences and negative security cases."

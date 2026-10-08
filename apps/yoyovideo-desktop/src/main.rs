@@ -3,7 +3,13 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() -> std::process::ExitCode {
-    velopack::VelopackApp::build().set_auto_apply_on_startup(false).run();
+    let startup = velopack::VelopackApp::build().set_auto_apply_on_startup(false);
+    #[cfg(feature = "updater-qa")]
+    let startup = startup.set_locator(
+        yoyo_updater::QaFixture::from_env().and_then(|f| f.native_locator()).unwrap_or_default(),
+    );
+    let mut startup = startup;
+    startup.run();
     if let Some(report) =
         yoyovideo_desktop::startup_report(&std::env::args_os().skip(1).collect::<Vec<_>>())
     {

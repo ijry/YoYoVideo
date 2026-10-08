@@ -19,3 +19,7 @@ jobs:
     uses: ./.github/workflows/updater-upgrade-windows.yml
     with:
       revision: ${{ github.sha }}
+  unix-upgrade:
+    uses: ./.github/workflows/updater-upgrade-unix.yml
+    with:
+      revision: ${{ github.sha }}
