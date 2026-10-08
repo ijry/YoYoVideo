@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, rename, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PLATFORMS, validatePlatformSet, collectRelease, publishRelease } from './verify-updater-release.mjs';
 
@@ -130,4 +132,80 @@ test('native feed spelling/defaults match the SDK-normalized signed feed', async
   feed.Assets[0].NotesHTML = 'tampered';
   await writeFile(feedPath, JSON.stringify(feed));
   await assert.rejects(collectRelease(dir, '0.0.1'));
+});
+
+
+// Run the actual release workflow's tag-resolution script against local Git repos.
+// actions/checkout may bind the public tag ref to a peeled commit even at depth 0.
+async function releaseTagFixture({ annotated = true, version = '0.0.1', shadowTag = false } = {}) {
+  await mkdir('.cache', { recursive: true });
+  const root = resolve(await mkdtemp('.cache/release-tag-contract-'));
+  const seed = join(root, 'seed'), remote = join(root, 'origin.git'), work = join(root, 'work');
+  await mkdir(seed); await mkdir(work);
+  const config = join(root, 'gitconfig');
+  await writeFile(config, '[core]\n  autocrlf = false\n');
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: config };
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', args, { cwd, env, encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git(seed, 'init', '--initial-branch=main');
+  await writeFile(join(seed, 'Cargo.toml'), '[workspace.package]\nversion = "' + version + '"\n');
+  git(seed, 'add', 'Cargo.toml');
+  git(seed, '-c', 'user.name=Release fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture source');
+  if (annotated) git(seed, '-c', 'user.name=Release fixture', '-c', 'user.email=fixture@example.invalid', 'tag', '-a', 'v0.0.1', '-m', 'annotated release fixture notes');
+  else git(seed, 'tag', 'v0.0.1');
+  const commit = git(seed, 'rev-parse', 'HEAD');
+  git(root, 'init', '--bare', remote);
+  git(seed, 'remote', 'add', 'origin', pathToFileURL(remote).href);
+  git(seed, 'push', 'origin', 'main', 'refs/tags/v0.0.1');
+  git(work, 'init');
+  git(work, 'remote', 'add', 'origin', pathToFileURL(remote).href);
+  git(work, 'fetch', '--no-tags', '--depth=1', 'origin', shadowTag ? '+' + commit + ':refs/tags/v0.0.1' : commit);
+  const yaml = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const run = yaml.match(/      - name: Resolve annotated tag, version and exact commit[\s\S]*?        run: \|\r?\n((?:          [^\r\n]*(?:\r?\n|$))*)/);
+  assert.ok(run, 'The release tag-validation entry point must be runnable in this regression');
+  await writeFile(join(work, 'prepare-release.sh'), run[1].split(/\r?\n/).map(line => line.slice(10)).join('\n'));
+  return { root, work, commit, env, git };
+}
+function runReleaseTagFixture(fixture, tag = 'v0.0.1') {
+  const bash = process.platform === 'win32' ? join(process.env.ProgramFiles || 'C:/Program Files', 'Git/bin/bash.exe') : 'bash';
+  const result = spawnSync(bash, ['--noprofile', '--norc', 'prepare-release.sh'], {
+    cwd: fixture.work, env: { ...fixture.env, TAG: tag, GITHUB_OUTPUT: 'outputs.txt' },
+    encoding: 'utf8', windowsHide: true, timeout: 30000,
+  });
+  if (result.error) throw result.error;
+  return result;
+}
+test('release resolves the real annotated tag despite checkout installing a peeled tag ref', async () => {
+  const fixture = await releaseTagFixture({ shadowTag: true });
+  assert.equal(fixture.git(fixture.work, 'cat-file', '-t', 'refs/tags/v0.0.1'), 'commit');
+  const result = runReleaseTagFixture(fixture);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(join(fixture.work, 'outputs.txt'), 'utf8'), 'tag=v0.0.1\nversion=0.0.1\ncommit=' + fixture.commit + '\n');
+  assert.equal((await readFile(join(fixture.work, 'release-notes.md'), 'utf8')).trim(), 'annotated release fixture notes');
+  assert.equal(fixture.git(fixture.work, 'cat-file', '-t', 'refs/tags/v0.0.1'), 'commit', 'Do not force-overwrite the checkout-owned tag');
+});
+test('release refuses a lightweight remote tag', async () => {
+  const fixture = await releaseTagFixture({ annotated: false });
+  const result = runReleaseTagFixture(fixture);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /Release notes require an annotated tag/);
+  await assert.rejects(readFile(join(fixture.work, 'outputs.txt')), { code: 'ENOENT' });
+});
+test('release refuses a tag whose workspace version differs', async () => {
+  const fixture = await releaseTagFixture({ version: '0.0.2' });
+  const result = runReleaseTagFixture(fixture);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /Tag\/workspace version mismatch/);
+  await assert.rejects(readFile(join(fixture.work, 'outputs.txt')), { code: 'ENOENT' });
+});
+test('release refuses unsafe or non-stable tag names before fetching', async () => {
+  const fixture = await releaseTagFixture();
+  const result = runReleaseTagFixture(fixture, 'v0.0.1/../../outside');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /Expected stable vX.Y.Z/);
+  await assert.rejects(readFile(join(fixture.work, 'outputs.txt')), { code: 'ENOENT' });
 });

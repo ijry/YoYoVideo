@@ -24,9 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Depth-1 tag checkout binds the local tag ref to the peeled commit.
-          # Preserve the annotated object; validation must not force-fetch a changed tag.
-          fetch-depth: 0
           persist-credentials: false
       - name: Resolve annotated tag, version and exact commit
         id: tag
@@ -36,13 +33,16 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Expected stable vX.Y.Z'; exit 1; }
-          git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
-          git checkout --detach "$TAG"
+          # Checkout can bind the public tag ref to a peeled commit, even at depth 0.
+          # Fetch the real annotated tag into a separate tag ref without force-overwriting either.
+          tag_ref="refs/tags/yoyovideo-release-validation/$TAG"
+          git fetch --no-tags origin "refs/tags/$TAG:$tag_ref"
+          git checkout --detach "$tag_ref"
           commit="$(git rev-parse HEAD)"
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
           [[ "v$version" == "$TAG" ]] || { echo 'Tag/workspace version mismatch'; exit 1; }
-          [[ "$(git cat-file -t "refs/tags/$TAG")" == tag ]] || { echo 'Release notes require an annotated tag'; exit 1; }
-          git for-each-ref --format='%(contents)' "refs/tags/$TAG" > release-notes.md
+          [[ "$(git cat-file -t "$tag_ref")" == tag ]] || { echo 'Release notes require an annotated tag'; exit 1; }
+          git for-each-ref --format='%(contents)' "$tag_ref" > release-notes.md
           grep -q '[^[:space:]]' release-notes.md
           printf 'tag=%s\nversion=%s\ncommit=%s\n' "$TAG" "$version" "$commit" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
