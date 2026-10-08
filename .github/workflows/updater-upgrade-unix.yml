@@ -74,7 +74,7 @@ jobs:
           for version in 22.04 24.04; do
             for mode in extract fuse; do
               echo "Running Ubuntu $version / $mode"
-              timeout 900s docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -v "$GITHUB_WORKSPACE:/workspace" "yoyo-qa:$version" -BuildRoot "/workspace/$QA_BUILD_ROOT" -LinuxMode "$mode"
+              timeout 900s docker run --init --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -v "$GITHUB_WORKSPACE:/workspace" "yoyo-qa:$version" -BuildRoot "/workspace/$QA_BUILD_ROOT" -LinuxMode "$mode"
             done
           done
       - name: Retain evidence, never test keys or packages

@@ -46,11 +46,9 @@ function Normalize-QaPath([string]$Value) {
 }
 function Read-QaState([int]$TargetPid=0,[int[]]$ExcludePids=@()) {
     if(-not (Test-Path -LiteralPath $events)){return $null}
-    $stream=[IO.File]::Open($events,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-    $reader=[IO.StreamReader]::new($stream)
-    try {$lines=$reader.ReadToEnd().Split([char]10)}finally{$reader.Dispose()}
-    for($i=$lines.Length-1;$i -ge 0;$i--) {
-        try {$state=$lines[$i] | ConvertFrom-Json -ErrorAction Stop}catch{continue}
+    $records=@(Read-UpdaterQaEvents $events)
+    for($i=$records.Count-1;$i -ge 0;$i--) {
+        $state=$records[$i]
         if($null -ne $state -and $state.pid -notin $ExcludePids -and (-not ($state.PSObject.Properties.Name -contains 'kind') -or $state.kind -eq 'snapshot') -and ($TargetPid -eq 0 -or $state.pid -eq $TargetPid)) {
             if($state.qa_error){throw "QA control error: $($state.qa_error)"}
             return $state
@@ -80,7 +78,7 @@ function Send-Qa([int]$TargetPid,[string]$Command,[string]$MediaPath) {
 function Start-Qa {
     $tag=[guid]::NewGuid().ToString('N')
     $known=@()
-    if(Test-Path -LiteralPath $events){$known=@(Get-Content -LiteralPath $events | ForEach-Object {try{($_ | ConvertFrom-Json).pid}catch{}} | Sort-Object -Unique)}
+    if(Test-Path -LiteralPath $events){$known=@(Read-UpdaterQaEvents $events | ForEach-Object {$_.pid} | Sort-Object -Unique)}
     $options=@{FilePath=$main;WorkingDirectory=$Root;PassThru=$true;RedirectStandardOutput=(Join-Path $Root "$tag.stdout.log");RedirectStandardError=(Join-Path $Root "$tag.stderr.log")}
     if($IsWindows){$options.WindowStyle='Hidden'}
     $launcher=Start-Process @options
@@ -100,7 +98,7 @@ function Wait-QaExit($Process,[int]$Milliseconds=30000) {
             Start-Sleep -Milliseconds 100
         } while($watch.ElapsedMilliseconds -lt $Milliseconds)
         if($status.Trim() -and -not $status.Trim().StartsWith('Z')){throw 'Native player did not terminate'}
-        $shutdown=@(Get-Content -LiteralPath $events | ForEach-Object {try{$_ | ConvertFrom-Json}catch{}} | Where-Object {($_.PSObject.Properties.Name -contains 'kind') -and $_.kind -eq 'shutdown' -and $_.pid -eq $Process.Id})
+        $shutdown=@(Read-UpdaterQaEvents $events | Where-Object {($_.PSObject.Properties.Name -contains 'kind') -and $_.kind -eq 'shutdown' -and $_.pid -eq $Process.Id})
         if(-not $shutdown.Count){throw 'Native process ended without the normal shutdown marker'}
         $global:LASTEXITCODE=0
         Write-Host "QA process $($Process.Id) completed shutdown"

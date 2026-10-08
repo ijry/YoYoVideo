@@ -9,4 +9,6 @@ for version in 22.04 24.04; do
   docker build --build-arg "BASE=ubuntu:$version" -t "yoyo-qa:$version" "$context"
   timeout 45s docker run --rm --name "qa-tools-$version" --entrypoint /bin/bash "yoyo-qa:$version" -c 'echo CONTAINER_READY; if ldconfig -p | grep libmpv; then exit 1; fi; echo NO_SYSTEM_MPV'
   timeout 45s docker run --rm --name "qa-tools-$version" --entrypoint /usr/local/bin/pwsh "yoyo-qa:$version" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion; Write-Output POWERSHELL_READY'
+  # Xvfb readiness uses SIGUSR1 to its parent; it must not be the container's PID 1.
+  timeout 45s docker run --init --rm --name "qa-tools-$version" --entrypoint xvfb-run "yoyo-qa:$version" -a pwsh -NoLogo -NoProfile -Command 'Write-Output XVFB_POWERSHELL_READY'
 done

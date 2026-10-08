@@ -6,6 +6,12 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+fn encode_event(record: &serde_json::Value) -> Vec<u8> {
+    // One append operation per process: concurrent players must not interleave JSON fragments.
+    let mut bytes = record.to_string().into_bytes();
+    bytes.push(b'\n');
+    bytes
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -118,7 +124,7 @@ impl QaSession {
                 "update_error": updates.get_status_message().as_str(), "qa_error": error,
                 "playback": snapshot(),
             });
-            let _ = writeln!(events, "{record}");
+            let _ = events.write_all(&encode_event(&record));
             let _ = events.flush();
         });
         Ok(Self { timer })
@@ -134,6 +140,13 @@ impl Drop for QaSession {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn event_serialization_is_one_atomic_log_line() {
+        let bytes = super::encode_event(&serde_json::json!({"pid":3,"text":"a\nb"}));
+        assert_eq!(bytes.iter().filter(|b| **b == b'\n').count(), 1);
+        assert_eq!(bytes.last(), Some(&b'\n'));
+        assert!(serde_json::from_slice::<serde_json::Value>(&bytes).is_ok());
+    }
     use super::*;
     #[test]
     fn commands_are_pid_bound_non_replayable_and_cannot_open_outside_the_fixture() {
@@ -187,7 +200,7 @@ pub(crate) fn record_shutdown() {
             std::fs::OpenOptions::new().append(true).open(fixture.root().join("events.jsonl"))
         {
             let record = serde_json::json!({"kind":"shutdown","pid":std::process::id(),"version":env!("CARGO_PKG_VERSION")});
-            let _ = writeln!(file, "{record}");
+            let _ = file.write_all(&encode_event(&record));
         }
     }
 }
