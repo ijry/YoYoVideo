@@ -22,9 +22,9 @@
 - 发布集合 Node 测试 10 通过；AppImage/QA 布局测试、actionlint、fmt、更新核心 Clippy、文档站 4 项测试和构建通过。打包契约 20 项通过，包含实际脚本 PlanOnly、缺运行库/公钥/签名凭据、错误 CLI 版本边界。
 - Windows 实际打包及一次性签名集成最新证据：`.cache/velopack-integration-726f2f041bba45d99e57cd07b92d6fd1`。没有在开发者用户目录运行 Setup。
 - GitHub 公钥 Variable 已与仓库 pinned key 再次比对一致，两个 Secret 名称存在；没有读取其值。生产私钥未用于测试，也未复制进仓库、日志或产物。
-- 本轮经用户授权推送工作分支以运行 CI；未改 tag、未公开 Release、未重新发布 0.0.1，测试 0.0.2 不进入 stable Release。
+- 实现验收时未发布；随后按用户单独授权，已于 2026-10-08 重发 [v0.0.1](https://github.com/ijry/YoYoVideo/releases/tag/v0.0.1)，源码固定为 `4c04726`。[正式流水线 37750925601](https://github.com/ijry/YoYoVideo/actions/runs/37750925601) 10/10 通过；29 个公开附件重新下载校验、四份正式更新签名及匿名更新入口验证通过。旧 Release/附件/tag 已完整备份；0.0.2 不进入 stable Release。
 - 原有安装器关闭进程相关未提交改动保持不动。隐私模式和空态按钮/标题提示未混入本次升级改动，尚未实施。
-- 完整证据表及限制见 [updater.md](../../development/updater.md#已完成的原生验收2026-10-08)；本机复核数据位于 `.cache/native-acceptance-81d7f06/verified-summary.json`。实现与原生验收完成，不等于已公开重新发布 0.0.1。
+- 完整证据表及限制见 [updater.md](../../development/updater.md#已完成的原生验收2026-10-08)；本机复核数据位于 `.cache/native-acceptance-81d7f06/verified-summary.json`。实现、原生验收与单独授权的 0.0.1 重发均已完成，三者分别留有验证记录。
 - 工具链：Velopack/vpk 固定 1.2.161；本地 .NET 8.0.425 位于 `.cache/tools`；Slint 1.17 本身要求 Rust 1.92，本机 1.94.1。保留既有 rust-version 1.85 声明不等于声称可在 1.85 构建。
 
 ## Global Constraints

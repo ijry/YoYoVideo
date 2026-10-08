@@ -41,7 +41,12 @@ Reissuing the old 0.0.1 requires an explicit separate operator action.
 
 On 2026-10-08, commit `81d7f06` passed all **9/9 [native CI jobs](https://github.com/ijry/YoYoVideo/actions/runs/37736646064)**
 and [regular CI](https://github.com/ijry/YoYoVideo/actions/runs/37736645755). Each macOS architecture passed three consecutive full upgrades,
-and all four Linux cases passed. This work did not republish 0.0.1 or use production private keys for tests.
+and all four Linux cases passed. These tests did not use production private keys.
+
+After separate maintainer authorization, [v0.0.1 was reissued](https://github.com/ijry/YoYoVideo/releases/tag/v0.0.1) from `4c04726`.
+All **10/10 [release workflow jobs](https://github.com/ijry/YoYoVideo/actions/runs/37750925601)** passed.
+All 29 public assets were downloaded and checksum-verified; the four signed update manifests and anonymous update endpoint were checked.
+The previous release assets, metadata and annotated tag were backed up.
 
 `updater-smoke.yml` covers native packaging/playback on all four targets, clean Windows Setup installation/shortcuts/uninstallation,
 and real `0.0.1 → 0.0.2` upgrades: Windows portable layout, macOS ARM64/Intel,

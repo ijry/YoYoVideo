@@ -225,8 +225,25 @@ AppImage 的 build-info 探测允许运行时通知行，但必须且只能包�
 - 非 QA 的 runtime-enabled 程序已重建、报告非 QA，二进制不含 QA 环境入口。
   GitHub 公钥 Variable 与 pinned key 一致，Secret 仅核对名称而未读取值。
 
-**公开发布是独立状态：0.0.1 尚未重新发布。** 本轮只推送工作分支执行 CI，未移动 tag，
-未用生产私钥做测试，测试 0.0.2 没有进入 stable Release。重新发布需另行明确操作。
+## 0.0.1 正式重发（2026-10-08）
+
+维护者另行授权后，已于 **17:24（UTC+8）** 重新发布
+[`v0.0.1`](https://github.com/ijry/YoYoVideo/releases/tag/v0.0.1)，`latest` 指向此版本。
+发布源码固定为 `4c047264385b0630cbd89eb601a964e11c611d1c`，Release ID 为 `406651136`。
+
+- [正式 Release 流水线 37750925601](https://github.com/ijry/YoYoVideo/actions/runs/37750925601)
+  **10/10 作业通过**，包含四平台构建、Windows Setup、真实升级、正式签名、draft 下载复验及公开发布。
+- 先保留旧下载，完成新包构建、正式签名和验签后，才删除已备份的旧 Release；
+  同 tag 保护按预期拒绝首次发布尝试，随后仅重跑发布作业，复用已通过的原生构建/升级结果。
+- 新版本共 **29 个附件**。从公开 Release 重新下载后，29 个 SHA-256 均与 GitHub 元数据一致，
+  四个平台的更新清单均用该 tag 内的正式公钥独立验签通过。Windows 的匿名 `latest/download`
+  清单和签名入口也已核对，与已验签的文件一致。
+- 原 Release 的 5 个附件、完整元数据及旧附注 tag 已备份到维护者本地
+  `.cache/republish-0.0.1-*`；没有把密钥或 QA 包上传到公开 Release，0.0.2 仍仅用于测试。
+- 发布 tag 解析使用独立校验引用，避免 checkout 将同名 tag 绑定到提交对象时发生冲突；
+  实际执行 tag 校验脚本的 Git 回归已纳入 `test-updater-release.mjs`，该测试集现为 **14 项通过**。
+
+
 macOS 仍为 ad-hoc、未公证；Windows 仍无受信任 Authenticode 证书。原生回归验证真实 WAV
 解码及升级/状态生命周期，不替代所有 GPU、视频、Wayland、多宫格兼容性测试，
 也不证明 Gatekeeper/SmartScreen 提示已消失。

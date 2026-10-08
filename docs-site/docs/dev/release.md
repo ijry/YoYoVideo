@@ -43,7 +43,11 @@ Variable `YOYOVIDEO_UPDATER_PUBLIC_KEY` 必须与客户端 `assets/updater.pub` 
 
 2026-10-08，提交 `81d7f06` 的[完整原生 CI](https://github.com/ijry/YoYoVideo/actions/runs/37736646064) **9/9 通过**，
 [普通 CI](https://github.com/ijry/YoYoVideo/actions/runs/37736645755) 通过。macOS 两种架构各连续 3 次升级必过，
-Linux 四种组合全部通过；本轮未重发 0.0.1，未使用生产私钥做测试。
+Linux 四种组合全部通过；测试未使用生产私钥。
+
+随后经维护者单独授权，已重发 [v0.0.1](https://github.com/ijry/YoYoVideo/releases/tag/v0.0.1)（源码 `4c04726`）。
+[正式发布流水线](https://github.com/ijry/YoYoVideo/actions/runs/37750925601) **10/10 通过**；
+29 个公开附件下载校验、四份正式更新签名和匿名更新入口均已核对。旧版本附件与 tag 已备份。
 
 `updater-smoke.yml` 同时覆盖四平台原生包装/解码、Windows Setup 首次安装/快捷方式/卸载，
 以及真实 `0.0.1 → 0.0.2` 升级：Windows portable-layout、macOS ARM64/Intel、
