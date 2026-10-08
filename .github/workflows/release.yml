@@ -54,9 +54,14 @@ jobs:
       revision: ${{ needs.prepare.outputs.commit }}
       version: ${{ needs.prepare.outputs.version }}
       require-public-key-variable: true
+  windows-upgrade:
+    needs: prepare
+    uses: ./.github/workflows/updater-upgrade-windows.yml
+    with:
+      revision: ${{ needs.prepare.outputs.commit }}
   publish:
     name: Sign, verify draft and publish
-    needs: [prepare, build]
+    needs: [prepare, build, windows-upgrade]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [features]
 default = []
+updater-qa = ["mpv-runtime", "yoyo-updater/qa-fixture"]
 mpv-runtime = ["dep:i-slint-backend-winit", "dep:raw-window-handle", "yoyo-mpv/mpv-runtime"]
 
 [dependencies]

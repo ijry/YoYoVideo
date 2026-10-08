@@ -109,9 +109,56 @@ glibc、动态加载器、C++ 宿主 ABI 与图形驱动/dispatch 不打包。�
 - 文件占用：先正常关闭同安装目录的其他实例，再重试。预检查不能消除所有占用竞态。
 - 更新后异常：从可信发布页重新安装正确平台包；不要删除用户数据目录来“修复升级”。
 
+## 真实 Windows 升级回归
+
+```powershell
+pwsh -NoProfile -File scripts/test-velopack-upgrade.ps1 -Platform windows-x64 -FromVersion 0.0.1 -ToVersion 0.0.2
+```
+
+脚本在 `.cache/updater-upgrade-build-*` 中复制源码，分别编译两个真实版本，生成一次性密钥，
+用真实 vpk 包装/签名。`-BuildOnly` 只准备产物；`-BuildRoot <已生成目录>` 重跑既有二进制，
+Rust 实现变更后应重新构建，不要用旧目录当作新代码的证据。
+
+测试 feature 是桌面的 `updater-qa` 与核心的 `qa-fixture`，均非默认。
+只有这些构建接受带 `TEST-ONLY` 标记的 `YOYOVIDEO_UPDATER_QA_ROOT`，其中存放测试公钥、
+本地更新源、控制请求、独立用户目录和事件记录。正式构建不接受该环境入口。
+QA 请求绑定 PID 和递增序号，打开的媒体必须位于测试目录内；实际执行复用 UI 回调和正式验签/下载/安装状态机。
+
+QA 包使用独立标题 `YoYoVideo QA ONLY`，build-info 标记 `updater_qa=true`，禁用快捷方式。
+只能使用 `-PrepareOnly -QaFixture` 包装。默认生产包装和发布验证均拒绝这些包，
+即使 Linux 校验不展开 AppImage，也会在外层 nuspec 标题检查处拒绝。
+
+Windows 测试使用 SDK 认可的 `.portable` 布局和真实 `Update.exe`，不运行 Setup，
+因此不写入真实用户的卸载注册项/快捷方式。测试覆盖：
+
+- 实际解码 WAV 并保存播放历史；
+- 错误签名、损坏下载、缓存篡改都不安装；
+- 选择稍后、关闭并重启后仍为旧版，等待超过自动检查延迟也不偷偷安装；
+- 同目录另一实例存在时拒绝安装，不杀掉它；
+- 真正退出旧进程、由更新助手替换并启动新版，新 PID 报告编译版本 0.0.2；
+- 新版不自动播放，保留自动检查偏好及历史，并在 8 秒内恢复到至少 15 秒的历史位置，
+  不能靠从头播放来冒充恢复；
+- 同版本检查为最新，最后确认所有播放器的内核进程对象已终止。
+
+`events.jsonl`、`SUCCESS.json` 和日志保留在该次 `run-*` 目录；成功以新版进程的报告为准，
+不是以安装助手返回 0 为准。失败清理先核对已打开进程的实际映像路径，只处理隔离安装目录，
+不清理/终止用户正常安装的播放器。CI 只上传事件/日志，不上传测试私钥或 QA 包。
+
+### Windows 退出修复
+
+原来的 Winit 线程局部事件处理器可能把播放后端留到进程/TLS 清理时才释放，
+此时 libmpv 的其他线程已经终止，导致进程停留在退出中。`HasExited`/退出码 0
+不足以证明进程内核对象完成终止。现在在保存状态后显式释放 Windows 播放后端，
+并让 Windows 网格先释放 mpv session、再释放嵌入 HWND；macOS 的 render-context 优先顺序不变。
+占用预检查使用零超时内核等待核对存活状态，无法检查的潜在冲突仍拒绝安装。
+
 ## 当前验证状态（2026-10-08）
 
-本机 Windows 已运行真实 vpk 打包、一次性密钥签名/独立验签、篡改拒绝；**没有运行安装器**。
-Windows 上的跨平台 ZIP/ELF/Mach-O fixtures 只证明格式契约，不代表 macOS/Linux 原生通过。
-本次四目标 GitHub CI 尚未运行；实际 0.0.1 → 0.0.2 下载安装/重启/状态保留仍待 Task 8。
-0.0.1 尚未重新发布。后续完成时分别更新这些状态，不把“打包成功”当作“升级成功”。
+- Windows 本机真实 `0.0.1 → 0.0.2` portable-layout 替换、重启、状态恢复及负例已通过，
+  默认与 CI 指定的 software 渲染环境均运行过。非 QA 的 runtime-enabled 二进制也已重新构建，
+  build-info 为非 QA，且不包含 QA 环境入口字符串。
+- `updater-upgrade-windows.yml` 将上述回归接入普通 smoke 及正式发布依赖。
+  本次 GitHub 工作流尚未实际运行，未推送，不等于四目标 CI 已通过。
+- 未验证正式 Windows Setup 的首次安装/注册项流程；未完成 macOS ARM/Intel 和 Linux
+  AppImage 的原生安装升级回归（包括 Linux 22.04/24.04、FUSE/extract-and-run）。
+- 0.0.1 尚未重新发布；测试 0.0.2 没有上传 stable Release。

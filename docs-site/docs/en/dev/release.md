@@ -38,6 +38,7 @@ Reissuing the old 0.0.1 requires an explicit separate operator action.
 
 ## Verification status
 
-`updater-smoke.yml` tests native packaging/playback, not actual old-to-new installation and restart.
+`updater-smoke.yml` tests native packaging/playback and a real Windows portable-layout upgrade.
+Release publishing also depends on `updater-upgrade-windows.yml`; this does not cover first-time Setup registration or native macOS/Linux upgrades.
 Local Windows package/signature success does not prove native macOS/Linux success or end-to-end upgrades.
 See the [updater notes](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md) for commands, backups and current verification status.

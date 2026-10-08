@@ -19,10 +19,11 @@ function Assert-VelopackHost([string]$Platform) {
     $target=Get-VelopackTarget $Platform
     if(($target.Os -eq 'win' -and -not $IsWindows) -or ($target.Os -eq 'osx' -and -not $IsMacOS) -or ($target.Os -eq 'linux' -and -not $IsLinux)){throw 'This package must be built and verified on its native OS'}
 }
-function Get-VelopackPackArguments([string]$Platform,[string]$Version,[string]$PackRoot,[string]$OutputDir,[string]$IconPath,[string]$NotesPath) {
+function Get-VelopackPackArguments([string]$Platform,[string]$Version,[string]$PackRoot,[string]$OutputDir,[string]$IconPath,[string]$NotesPath,[switch]$QaFixture) {
     Assert-VelopackVersion $Version; $t=Get-VelopackTarget $Platform
-    $result=@('--skip-updates','--yes','--legacyConsole','pack','--packId','YoYoVideo','--packTitle','YoYoVideo','--packAuthors','YoYoVideo contributors','--packVersion',$Version,'--packDir',$PackRoot,'--mainExe',$t.Exe,'--channel',$t.Channel,'--runtime',$t.Rid,'--outputDir',$OutputDir,'--delta','None','--icon',$IconPath,'--releaseNotes',$NotesPath)
-    if($Platform -eq 'windows-x64'){$result+=@('--noPortable','--shortcuts','Desktop,StartMenuRoot')}
+    $title=if($QaFixture){'YoYoVideo QA ONLY'}else{'YoYoVideo'}
+    $result=@('--skip-updates','--yes','--legacyConsole','pack','--packId','YoYoVideo','--packTitle',$title,'--packAuthors','YoYoVideo contributors','--packVersion',$Version,'--packDir',$PackRoot,'--mainExe',$t.Exe,'--channel',$t.Channel,'--runtime',$t.Rid,'--outputDir',$OutputDir,'--delta','None','--icon',$IconPath,'--releaseNotes',$NotesPath)
+    if($Platform -eq 'windows-x64'){$result+=@('--noPortable','--shortcuts',$(if($QaFixture){'None'}else{'Desktop,StartMenuRoot'}))}
     elseif($Platform -like 'macos-*'){$result+=@('--noInst','--signAppIdentity','-')}
     else {$result+=@('--noInst','--categories','AudioVideo;Player')}
     return $result
@@ -86,7 +87,7 @@ function Assert-VelopackCli([string]$VpkPath) {
     if($help -notmatch 'Velopack CLI 1\.2\.161(?:,|\s)'){throw 'vpk 1.2.161 is required; do not use an unpinned tool'}
 }
 function Get-VelopackBuildInfo {
-    param([string]$Executable,[string]$Version)
+    param([string]$Executable,[string]$Version,[switch]$QaFixture)
     Assert-VelopackVersion $Version
     # Do not launch an older player that would treat the probe flag as a media argument.
     $file=[IO.File]::OpenRead($Executable);$found=$false;$tail='';$buffer=[byte[]]::new(65536)
@@ -104,6 +105,8 @@ function Get-VelopackBuildInfo {
         if($text.Length -gt 65536){throw 'Oversized build-info response'}
         $info=$text | ConvertFrom-Json
         if($info.schema -cne 'yoyovideo-build-info-v1' -or $info.version -cne $Version -or $info.mpv_runtime -ne $true -or $info.updater -ne $true){throw 'Player version/runtime/updater does not match requested package'}
+        $isQa=($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true
+        if($isQa -ne [bool]$QaFixture){throw 'QA and production player builds must not be mixed'}
         return $info
     } finally {$process.Dispose()}
 }

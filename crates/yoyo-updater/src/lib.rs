@@ -29,3 +29,12 @@ pub use worker::{
 
 mod control;
 pub use control::{ControlEffect, UpdateControl};
+
+#[cfg(feature = "qa-fixture")]
+mod qa_fixture;
+#[cfg(feature = "qa-fixture")]
+pub use qa_fixture::QaFixture;
+
+pub const fn qa_fixture_enabled() -> bool {
+    cfg!(feature = "qa-fixture")
+}

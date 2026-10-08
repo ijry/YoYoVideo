@@ -16,13 +16,13 @@
 - Task 3 已实现并通过契约测试：后台 worker、请求编号过滤、冻结候选、缓存重验、双阶段安装授权、Windows 同目录进程检查。下载进度单独发送，避免反复复制更新说明。
 - Task 4 已实现并验证渲染：独立中英文更新窗口、菜单入口、标题栏提示、下载进度、自动检查设置、稍后操作，以及复选框的鼠标/键盘焦点行为。
 - Task 5 已接线：启动关闭 SDK 自动应用；后台复验后先保存播放器状态，确认安装助手启动后正常退出。保存失败、未应用设置、过期回调和无效缓存不触发退出。标记尚未恢复或未改变时不覆盖/制造空记录。
-- 本轮整仓验证：cargo test --workspace -j 2，305 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
+- 本轮整仓验证：cargo test --workspace -j 2，306 项通过、1 项既有桌面测试忽略；mpv-runtime 编译检查、更新核心 Clippy -D warnings、格式与 diff 检查通过。
 - 高并行整仓链接曾出现 MSVC LNK1123；失败目标单独运行以及低并行整仓重试通过，没有删除测试或修改业务逻辑绕过该链接失败。
 - Task 6 包装实现已提交（5554dd0）：真实 Windows vpk 打包与一次性密钥验签通过；macOS/Linux 格式契约和脚本已实现，但对应原生构建/运行未执行，6.4/6.5 仍未验收。
 - Task 7 发布工作流与文档已实现：四目标无私钥构建、独立签名、完整集合检查、draft 上传后下载复验、tag commit 双重核对，拒绝已有同 tag Release/draft。尚未推送/触发此次四目标 CI。
-- Task 8/9 未完成：未实现/执行四目标真实 0.0.1→0.0.2 安装重启验证，0.0.1 未重发。普通开发/非 Velopack 安装显示手动升级提示，属于预期保护行为。
+- Task 8 Windows 部分已实现并实际通过：两个真实编译版本、一次性签名、本地 fixture 源、真实 SDK 替换/重启、内核进程终止与历史恢复。使用隔离 portable 布局，不触及真实用户安装。macOS/Linux 原生升级、正式 Windows Setup 注册项与四目标 CI 尚未验收；0.0.1 未重发。
 - 新界面的本地渲染图：.cache/update-window-verified.png（不提交生成图片）。
-- 私钥和密码仍只在用户指定目录与 GitHub Secrets 中；本轮没有复制进源码、日志或产物。
+- 生产私钥和密码仍只在用户指定目录与 GitHub Secrets 中；本轮没有复制进源码、日志或产物。
 - 工具链：Slint 1.17.0 本身要求 Rust 1.92，本地使用 1.94.1；保留了仓库既有 1.85 声明，不据此宣称真实支持 1.85。Velopack 固定 1.2.161 并启用 public-utils。
 
 
@@ -39,6 +39,20 @@
 - GitHub 公钥 Variable 与客户端 pin 再次核对相同；没有读取远端私钥。生产签名密钥未用于本机测试。
 - 新增 `updater-build.yml` 复用无私钥矩阵，`updater-smoke.yml` 明确只做包装/解码，不伪装 Task 8。修正中英文 README 和文档站的旧 NSIS/自动覆盖/“没有网络请求”说明。
 - Task 6.1 的剩余模拟工具负例可继续补充；Task 6.4/6.5 原生验收、完整 CI、Task 8 真实升级仍未执行。不推送、不移动 tag、不覆盖旧 0.0.1。
+
+
+### 2026-10-08 真实升级测试续记
+
+- 增加非默认 `updater-qa`/`qa-fixture` feature、带标记的隔离目录、PID/序号绑定控制文件；开媒体路径限定在测试根目录。网络边界换为本地文件，但签名/包哈希/SDK/状态保存/退出全部复用正式实现。
+- QA 包标题为 `YoYoVideo QA ONLY`，build-info 有 `updater_qa=true`；默认包装与全平台外层 archive 校验拒绝 QA 包。Windows QA 禁用快捷方式，原生布局有 `.portable` 标记，不执行 Setup、不写用户卸载信息。
+- 真实执行中发现 Windows 退出码/HasExited 可以先于内核进程完成终止，原 Winit TLS 持有的播放后端在进程退出阶段释放可能阻塞。已在 `app.run` 返回并保存状态后显式释放 Windows 播放对象；Windows 网格 session 在 HWND 之前释放，macOS 原顺序不变。测试以零超时内核等待为准，不能靠强杀或退出码 0 算成功。
+- 进程占用预检查也用只读 SYNCHRONIZE 句柄判断存活；已退出的记录不误拦截，无法检查的潜在冲突仍失败关闭。新增保留已退出子进程句柄的回归测试。
+- 最新通过记录：`.cache/updater-upgrade-build-f0488a90ce8a4870b3c818a85e0d7529/run-c47db99e94954fd095e7a371c46033b9/SUCCESS.json`。初始 PID 39704，未确认更新重启 PID 15220，新版 PID 36244 报告 0.0.2；恢复位置约 20.53 秒，恢复限时 8 秒且旧目标至少 15 秒，不能靠从头播放冒充恢复。
+- 坏签名、坏包、缓存篡改、稍后/重启不偷偷安装、同目录多实例拒绝且不杀其他实例、新版不自动播放、偏好和历史保留、同版不提示全部通过。默认与 software 渲染环境均运行；这不等于真实视频/网格跨平台验收。
+- 失败测试进程清理核对打开句柄对应的实际映像路径后才终止，仅限本次隔离目录。先前失败用例的残留已按此方式清理，没有处理用户正常安装目录中的播放器。
+- 默认 workspace：306 passed / 1 ignored；QA core：43 passed；QA 控制解析器：1 passed；核心 QA all-targets Clippy -D warnings 通过。普通 mpv-runtime 二进制已重建，QA 环境入口字符串不存在。
+- 新增 `updater-upgrade-windows.yml`；普通 smoke 和正式 release 发布都依赖该 Windows 回归，CI 只上传事件/日志，不上传测试私钥或 QA 包。工作流尚未在 GitHub 实际运行。
+- Windows 本机 8.1/8.2 的实现与验收完成；8.3 的 macOS ARM/Intel、Linux 22.04/24.04（FUSE/extract-and-run）仍待实现/执行。不得据此标记全平台交付完成。
 
 ## Global Constraints
 
@@ -368,8 +382,8 @@ git commit -m "ci: verify and publish authenticated desktop updates"
 **Files:** scripts/test-velopack-upgrade.ps1、desktop/src/update_qa.rs、desktop Cargo.toml 的专用测试 feature、tests/fixtures/updater/。
 **Produces:** 仅测试编译接受 fixture endpoint/public key/user-data-dir；正式编译不接受相关环境变量或 CLI 开关。
 
-- [ ] **8.1 RED：** 实际构建两份独立 fixture 源码/产物版本 0.0.1、0.0.2，使用公开测试密钥和临时用户目录。fixture 的任务消息分别请求 check/download/later/install 并把实际应用版本和播放状态写入测试事件文件。先运行拒绝坏签名/坏包、禁止启动自动应用案例，证明没有验证时会失败。
-- [ ] **8.2 GREEN：** 测试专用 feature 实现控制输入但复用 Task 3/5 的正式校验和生命周期；仅替换源、固定测试公钥与目录。脚本启动真实播放器、解码样例媒体、执行下载及稍后、再确认更新；独立助手更新后重启应用，由新进程报告 0.0.2 和历史/偏好保留。脚本设置总超时，失败留证据且清理仅限已核对的测试绝对目录。不得安装到真实用户配置/应用目录。
+- [x] **8.1 RED：** 实际构建两份独立 fixture 源码/产物版本 0.0.1、0.0.2，使用公开测试密钥和临时用户目录。fixture 的任务消息分别请求 check/download/later/install 并把实际应用版本和播放状态写入测试事件文件。先运行拒绝坏签名/坏包、禁止启动自动应用案例，证明没有验证时会失败。
+- [x] **8.2 GREEN：** 测试专用 feature 实现控制输入但复用 Task 3/5 的正式校验和生命周期；仅替换源、固定测试公钥与目录。脚本启动真实播放器、解码样例媒体、执行下载及稍后、再确认更新；独立助手更新后重启应用，由新进程报告 0.0.2 和历史/偏好保留。脚本设置总超时，失败留证据且清理仅限已核对的测试绝对目录。不得安装到真实用户配置/应用目录。
 - [ ] **8.3 平台执行：**
 
 ```powershell

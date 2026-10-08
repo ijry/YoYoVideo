@@ -75,7 +75,7 @@ Case 'subprocesses do not inherit signing keys and environment is restored' {
 
 . (Join-Path $PSScriptRoot 'velopack-archive.ps1')
 function Package-Entries {
-    $xml='<package><metadata><id>YoYoVideo</id><version>0.0.1</version><channel>stable-windows-x64</channel><mainExe>yoyovideo-desktop.exe</mainExe><os>win</os><rid>win-x64</rid><machineArchitecture>x64</machineArchitecture></metadata></package>'
+    $xml='<package><metadata><id>YoYoVideo</id><title>YoYoVideo</title><version>0.0.1</version><channel>stable-windows-x64</channel><mainExe>yoyovideo-desktop.exe</mainExe><os>win</os><rid>win-x64</rid><machineArchitecture>x64</machineArchitecture></metadata></package>'
     $entries=@{'YoYoVideo.nuspec'=$xml;'lib/app/sq.version'=$xml;'lib/app/yoyovideo-build-info.json'='{"schema":"yoyovideo-build-info-v1","version":"0.0.1","mpv_runtime":true,"updater":true}'}
     foreach($name in @('yoyovideo-desktop.exe','mpv-2.dll','Squirrel.exe','YoYoVideo_ExecutionStub.exe')){$entries['lib/app/'+$name]=Header 'windows-x64'}
     foreach($name in @('README.md','LICENSE','LICENSES/README.md','LICENSES/Velopack-LICENSE.txt','LICENSES/runtime-provenance.md')){$entries['lib/app/'+$name]='fixture notice'}
@@ -156,6 +156,18 @@ Case 'macOS resources stay outside MacOS binaries and symlinks are constrained' 
 Case 'installed sq.version must match the full package identity' {
     $entries=Package-Entries
     $entries['lib/app/sq.version']=$entries['lib/app/sq.version'].Replace('<version>0.0.1</version>','<version>0.0.2</version>')
+    Reject {Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1'}
+}
+Case 'test-only packages cannot pass the production release validator' {
+    $entries=Package-Entries
+    $entries['YoYoVideo.nuspec']=$entries['YoYoVideo.nuspec'].Replace('<title>YoYoVideo</title>','<title>YoYoVideo QA ONLY</title>')
+    $entries['lib/app/sq.version']=$entries['YoYoVideo.nuspec']
+    $entries['lib/app/yoyovideo-build-info.json']='{"schema":"yoyovideo-build-info-v1","version":"0.0.1","mpv_runtime":true,"updater":true,"updater_qa":true}'
+    $entries['lib/app/YoYoVideo QA ONLY_ExecutionStub.exe']=$entries['lib/app/YoYoVideo_ExecutionStub.exe']
+    $entries.Remove('lib/app/YoYoVideo_ExecutionStub.exe')
+    $null=Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1' -QaFixture
+    $args=@(Get-VelopackPackArguments 'windows-x64' '0.0.1' 'in' 'out' 'icon' 'notes' -QaFixture)
+    Check ($args -contains 'YoYoVideo QA ONLY' -and $args[[Array]::IndexOf($args,'--shortcuts')+1] -eq 'None') 'QA packaging must have a distinct title and no shortcuts'
     Reject {Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1'}
 }
 Write-Host "Fixture diagnostics retained under $root"

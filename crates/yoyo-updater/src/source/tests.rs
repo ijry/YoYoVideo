@@ -112,3 +112,27 @@ fn unknown_app_or_channel_never_uses_the_network() {
 fn http_is_rejected_before_making_any_request() {
     assert!(HttpsTransport.open("http://127.0.0.1:1", Duration::from_secs(1)).is_err());
 }
+
+#[cfg(feature = "qa-fixture")]
+#[test]
+fn local_qa_source_still_requires_real_signatures_and_package_hashes() {
+    let (existing, transport, app) = fixture();
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("TEST-ONLY"), "YoYoVideo updater QA fixture v1\n").unwrap();
+    std::fs::create_dir(dir.path().join("source")).unwrap();
+    for (url, body) in transport.bodies.lock().unwrap().iter() {
+        std::fs::write(dir.path().join("source").join(url.rsplit('/').next().unwrap()), body)
+            .unwrap();
+    }
+    let source = SignedSource::from_qa_fixture(
+        Platform::WindowsX64,
+        existing.public_key.to_string(),
+        crate::QaFixture::open(dir.path()).unwrap(),
+    );
+    let feed = source.check("stable-windows-x64", &app).unwrap();
+    source.download(&feed.Assets[0], &dir.path().join("download"), None).unwrap();
+    std::fs::write(dir.path().join("source/YoYoVideo-0.0.2-full.nupkg"), "bad").unwrap();
+    assert!(source.download(&feed.Assets[0], &dir.path().join("bad-download"), None).is_err());
+    std::fs::write(dir.path().join("source/yoyovideo-update.windows-x64.json.sig"), "bad").unwrap();
+    assert!(source.check("stable-windows-x64", &app).is_err());
+}

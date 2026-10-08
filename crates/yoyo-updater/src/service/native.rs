@@ -28,7 +28,14 @@ impl NativeBackend {
         {
             return Err(UpdateError::Unsupported);
         }
+        #[cfg(not(feature = "qa-fixture"))]
         let source = SignedSource::new(config.platform, config.public_key.clone());
+        #[cfg(feature = "qa-fixture")]
+        let source = SignedSource::from_qa_fixture(
+            config.platform,
+            config.public_key.clone(),
+            crate::QaFixture::from_env()?,
+        );
         let options = UpdateOptions {
             AllowVersionDowngrade: false,
             MaximumDeltasBeforeFallback: -1,

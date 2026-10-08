@@ -12,8 +12,20 @@ use yoyo_updater::{
     spawn_worker,
 };
 
+#[cfg(not(feature = "updater-qa"))]
 const PUBLIC_KEY: &str = include_str!("../assets/updater.pub");
 const RELEASES: &str = "https://github.com/ijry/YoYoVideo/releases/latest";
+fn configured_public_key() -> std::io::Result<String> {
+    #[cfg(feature = "updater-qa")]
+    {
+        yoyo_updater::QaFixture::from_env()?.public_key()
+    }
+    #[cfg(not(feature = "updater-qa"))]
+    {
+        Ok(PUBLIC_KEY.into())
+    }
+}
+
 type SaveState = Box<dyn FnMut() -> Result<(), String>>;
 type ExitPlayer = Box<dyn FnMut()>;
 trait Bridge {
@@ -84,22 +96,23 @@ impl UpdateRuntime {
         save: impl FnMut() -> Result<(), String> + 'static,
         exit: impl FnMut() + 'static,
     ) -> Result<Self, slint::PlatformError> {
-        let bridge: Box<dyn Bridge> = match (paths.as_ref(), Platform::current()) {
-            (Some(paths), Some(platform)) => match spawn_worker(ServiceConfig {
-                platform,
-                public_key: PUBLIC_KEY.into(),
-                cache_dir: paths.cache_dir.join("updates"),
-            }) {
-                Ok(worker) => Box::new(worker),
-                Err(error) => {
-                    Box::new(UnavailableBridge::new(UpdatePhase::Error, error.to_string()))
-                }
-            },
-            _ => Box::new(UnavailableBridge::new(
-                UpdatePhase::Unsupported,
-                "Update directories or platform unavailable".into(),
-            )),
-        };
+        let bridge: Box<dyn Bridge> =
+            match (configured_public_key(), paths.as_ref(), Platform::current()) {
+                (Ok(public_key), Some(paths), Some(platform)) => match spawn_worker(ServiceConfig {
+                    platform,
+                    public_key,
+                    cache_dir: paths.cache_dir.join("updates"),
+                }) {
+                    Ok(worker) => Box::new(worker),
+                    Err(error) => {
+                        Box::new(UnavailableBridge::new(UpdatePhase::Error, error.to_string()))
+                    }
+                },
+                _ => Box::new(UnavailableBridge::new(
+                    UpdatePhase::Unsupported,
+                    "Update directories or platform unavailable".into(),
+                )),
+            };
         Self::with_bridge(main, paths, bridge, Box::new(save), Box::new(exit))
     }
     fn with_bridge(
@@ -220,6 +233,10 @@ impl UpdateRuntime {
             }
         });
         Ok(Self { state, timer })
+    }
+    #[cfg(feature = "updater-qa")]
+    pub(crate) fn qa_window(&self) -> UpdateWindow {
+        self.state.borrow().window.clone_strong()
     }
     #[cfg(test)]
     fn poll(&self) {

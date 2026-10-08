@@ -40,6 +40,7 @@ Variable `YOYOVIDEO_UPDATER_PUBLIC_KEY` 必须与客户端 `assets/updater.pub` 
 
 ## 验收状态
 
-`updater-smoke.yml` 测的是原生包装/解码，不是从旧版到新版的安装重启。
+`updater-smoke.yml` 运行原生包装/解码，以及 Windows portable-layout 的真实升级回归。
+正式发布也依赖 `updater-upgrade-windows.yml`；它不替代首次 Setup 安装或 macOS/Linux 原生升级验收。
 Windows 本机包装与验签通过不能代替 macOS/Linux 原生验证，也不能代替真实升级。
 精确命令、密钥备份和当前验收状态见[更新机制文档](https://github.com/ijry/YoYoVideo/blob/main/docs/development/updater.md)。

@@ -10,6 +10,20 @@ const REPOSITORY: &str = "https://github.com/ijry/YoYoVideo";
 trait Transport: Send + Sync {
     fn open(&self, url: &str, timeout: Duration) -> Result<Box<dyn Read + Send>, UpdateError>;
 }
+#[cfg(feature = "qa-fixture")]
+struct QaTransport(crate::QaFixture);
+#[cfg(feature = "qa-fixture")]
+impl Transport for QaTransport {
+    fn open(&self, url: &str, _: Duration) -> Result<Box<dyn Read + Send>, UpdateError> {
+        if !url.starts_with(&format!("{REPOSITORY}/releases/")) {
+            return Err(UpdateError::Network("Not a fixture release request"));
+        }
+        let name =
+            url.rsplit('/').next().ok_or(UpdateError::Network("Missing fixture filename"))?;
+        Ok(Box::new(File::open(self.0.source_file(name)?)?))
+    }
+}
+
 struct HttpsTransport;
 impl Transport for HttpsTransport {
     fn open(&self, url: &str, timeout: Duration) -> Result<Box<dyn Read + Send>, UpdateError> {
@@ -43,6 +57,14 @@ pub struct SignedSource {
 impl SignedSource {
     pub fn new(platform: Platform, key: String) -> Self {
         Self::from_transport(platform, key, Arc::new(HttpsTransport))
+    }
+    #[cfg(feature = "qa-fixture")]
+    pub(crate) fn from_qa_fixture(
+        platform: Platform,
+        key: String,
+        fixture: crate::QaFixture,
+    ) -> Self {
+        Self::from_transport(platform, key, Arc::new(QaTransport(fixture)))
     }
     fn from_transport(platform: Platform, key: String, transport: Arc<dyn Transport>) -> Self {
         Self { platform, public_key: key.into(), transport, verified: Arc::new(Mutex::new(None)) }

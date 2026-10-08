@@ -14,3 +14,8 @@ jobs:
     uses: ./.github/workflows/updater-build.yml
     with:
       revision: ${{ github.sha }}
+
+  windows-upgrade:
+    uses: ./.github/workflows/updater-upgrade-windows.yml
+    with:
+      revision: ${{ github.sha }}

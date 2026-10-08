@@ -1,6 +1,6 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReleaseDir,[Parameter(Mandatory)][string]$Platform,[Parameter(Mandatory)][string]$Version,[string]$SignerPath,[string]$PublicKeyPath,[switch]$BeforeSigning,[switch]$Native)
+param([Parameter(Mandatory)][string]$ReleaseDir,[Parameter(Mandatory)][string]$Platform,[Parameter(Mandatory)][string]$Version,[string]$SignerPath,[string]$PublicKeyPath,[switch]$BeforeSigning,[switch]$Native,[switch]$QaFixture)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'velopack-archive.ps1')
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -16,7 +16,7 @@ if($a.Type -cne 'Full' -or $a.PackageId -cne 'YoYoVideo' -or $a.Version -cne $Ve
 $full=Join-Path $ReleaseDir $a.FileName
 if($a.Size -le 0 -or $a.Size -gt 2147483648 -or (Get-Item -LiteralPath $full).Length -ne $a.Size){throw 'Package size mismatch'}
 if((Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash -ne $a.SHA256){throw 'Package SHA-256 mismatch'}
-$metadata=Assert-VelopackArchive -Path $full -Platform $Platform -Version $Version
+$metadata=Assert-VelopackArchive -Path $full -Platform $Platform -Version $Version -QaFixture:$QaFixture
 $primaryName=Get-VelopackPrimaryAsset $ReleaseDir $Platform
 $primary=Join-Path $ReleaseDir $primaryName
 if($Platform -eq 'windows-x64'){Assert-VelopackBinary -Path $primary -Platform $Platform}
@@ -81,7 +81,7 @@ if($Native) {
                 $lines=Invoke-VelopackTool 'ldd' @($file.FullName)
                 if($lines -match 'not found'){throw 'Unresolved AppImage dependencies'}
             }
-            $null=Get-VelopackBuildInfo -Executable (Join-Path $bin 'yoyovideo-desktop') -Version $Version
+            $null=Get-VelopackBuildInfo -Executable (Join-Path $bin 'yoyovideo-desktop') -Version $Version -QaFixture:$QaFixture
         }finally{$env:LD_LIBRARY_PATH=$old}
     }
 }

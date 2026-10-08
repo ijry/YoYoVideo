@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+qa-fixture = []
+
 [dependencies]
 base64 = "0.22"
 minisign-verify = "=0.3.0"

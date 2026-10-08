@@ -87,3 +87,6 @@ pub use video_host::{
 
 mod startup_report;
 pub use startup_report::startup_report;
+
+#[cfg(feature = "updater-qa")]
+mod update_qa;

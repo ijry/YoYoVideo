@@ -47,13 +47,15 @@ pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
 pub fn build_desktop_backend_with_options(
     options: yoyo_mpv::MpvClientOptions,
 ) -> Result<MpvBackend, MpvError> {
+    #[cfg(feature = "updater-qa")]
+    let options = yoyo_mpv::MpvClientOptions { audio_output: Some("null".into()), ..options };
     MpvBackend::new_runtime_with_options(options)
 }
 
 pub fn build_desktop_backend_with_video_window(
     window_id: NativeVideoWindowId,
 ) -> Result<MpvBackend, MpvError> {
-    MpvBackend::new_runtime_with_options(yoyo_mpv::MpvClientOptions {
+    build_desktop_backend_with_options(yoyo_mpv::MpvClientOptions {
         video_window: Some(yoyo_mpv::MpvVideoWindow::new(window_id.0)),
         force_window: true,
         ..yoyo_mpv::MpvClientOptions::default()
@@ -536,6 +538,8 @@ impl DesktopRuntime {
 #[cfg(feature = "mpv-runtime")]
 impl Drop for DesktopRuntime {
     fn drop(&mut self) {
+        #[cfg(feature = "updater-qa")]
+        eprintln!("QA: DesktopRuntime drop begins");
         // The notifier keeps the runtime alive until GL teardown. If a renderer
         // misses that notification, retain the core rather than leave a live
         // render context pointing into a destroyed mpv core.
@@ -1231,6 +1235,9 @@ fn dispatch_dropped_paths(
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
+    #[cfg(feature = "updater-qa")]
+    let paths = Some(crate::update_qa::paths()?);
+    #[cfg(not(feature = "updater-qa"))]
     let paths = AppPaths::discover();
     let config_path =
         paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
@@ -2752,7 +2759,38 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    #[cfg(feature = "updater-qa")]
+    let _qa = crate::update_qa::QaSession::attach(
+        &app,
+        &_updates.as_ref().ok_or("QA updater window unavailable")?.qa_window(),
+        {
+            let runtime = Rc::clone(&runtime);
+            let handle = app.as_weak();
+            move |path| {
+                with_runtime_controller(&handle, &runtime, move |controller| {
+                    controller.dispatch(AppCommand::OpenFile(path))
+                });
+            }
+        },
+        {
+            let runtime = Rc::clone(&runtime);
+            move || {
+                let runtime = runtime.borrow();
+                let state = runtime.controller().map(|c| c.session().state());
+                serde_json::json!({
+                    "ready": state.is_some(),
+                    "media": state.and_then(|s| s.current.as_ref()).map(|m| m.as_label()),
+                    "position": state.map(|s| s.position_seconds),
+                    "duration": state.and_then(|s| s.duration_seconds),
+                    "history": runtime.history.store().items(),
+                })
+            }
+        },
+    )?;
+
     app.run()?;
+    #[cfg(feature = "updater-qa")]
+    eprintln!("QA: app.run returned");
     {
         let mut runtime = runtime.borrow_mut();
         if let Err(error) = persist_playback_for_shutdown(&mut runtime) {
@@ -2760,6 +2798,19 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Winit's thread-local event handler retains Runtime after this function.
+    // Waiting until process/TLS teardown to destroy libmpv can deadlock after
+    // Windows has terminated its worker threads. Release playback explicitly,
+    // while those threads and the embedding HWNDs are still alive.
+    #[cfg(all(windows, feature = "mpv-runtime"))]
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.grid.clear();
+        drop(runtime.controller.take());
+        drop(runtime.video_host.take());
+    }
+    #[cfg(feature = "updater-qa")]
+    eprintln!("QA: post-loop state persisted");
     Ok(())
 }
 

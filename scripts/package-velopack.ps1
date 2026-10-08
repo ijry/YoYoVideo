@@ -4,9 +4,10 @@ param(
     [Parameter(Mandatory)][ValidateSet('windows-x64','macos-aarch64','macos-x86_64','linux-x64')][string]$Platform,
     [Parameter(Mandatory)][string]$Version,[Parameter(Mandatory)][string]$PackageDir,
     [Parameter(Mandatory)][string]$OutputDir,[string]$VpkPath,[string]$SignerPath,[string]$PublicKeyPath,
-    [switch]$PrepareOnly,[switch]$PlanOnly
+    [switch]$PrepareOnly,[switch]$PlanOnly,[switch]$QaFixture
 )
 $ErrorActionPreference='Stop'
+if($QaFixture -and -not $PrepareOnly){throw 'QA packaging requires PrepareOnly; never use production signing credentials'}
 . (Join-Path $PSScriptRoot 'velopack-common.ps1')
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $target=Get-VelopackTarget $Platform; Assert-VelopackVersion $Version
@@ -23,14 +24,14 @@ if($Platform -like 'macos-*'){$payload=Join-Path $work 'YoYoVideo.app'}
 if($Platform -eq 'linux-x64'){$payload=Join-Path $work 'YoYoVideo.AppDir'}
 $icon=if($Platform -eq 'windows-x64'){Join-Path $repo 'apps/yoyovideo-desktop/assets/icons/yoyovideo.ico'}elseif($Platform -like 'macos-*'){Join-Path $work 'yoyovideo.icns'}else{Join-Path $repo 'apps/yoyovideo-desktop/assets/icons/yoyovideo-512.png'}
 $notes=Join-Path $PackageDir 'RELEASE-NOTES.md'
-$arguments=@(Get-VelopackPackArguments $Platform $Version $payload $OutputDir $icon $notes)
+$arguments=@(Get-VelopackPackArguments $Platform $Version $payload $OutputDir $icon $notes -QaFixture:$QaFixture)
 if($PlanOnly){[pscustomobject]@{Platform=$Platform;Runtime=$target.Rid;Channel=$target.Channel;Arguments=$arguments;PrepareOnly=[bool]$PrepareOnly} | ConvertTo-Json -Depth 5;return}
 Assert-VelopackHost $Platform
 if(-not $PrepareOnly -and ([string]::IsNullOrWhiteSpace($env:YOYOVIDEO_UPDATER_PRIVATE_KEY) -or $null -eq $env:YOYOVIDEO_UPDATER_PRIVATE_KEY_PASSWORD)){throw 'Signing credentials are required; use PrepareOnly only for unsigned CI staging'}
 Initialize-VelopackDotnet $repo
 $toolName=if($IsWindows){'vpk.exe'}else{'vpk'}
 $VpkPath=Resolve-VelopackTool 'vpk' $VpkPath (Join-Path $repo ('.cache/tools/vpk/'+$toolName));Assert-VelopackCli $VpkPath
-$build=Get-VelopackBuildInfo -Executable (Join-Path $PackageDir ('bin/'+$target.Exe)) -Version $Version
+$build=Get-VelopackBuildInfo -Executable (Join-Path $PackageDir ('bin/'+$target.Exe)) -Version $Version -QaFixture:$QaFixture
 New-Item -ItemType Directory -Force -Path $work,$OutputDir | Out-Null
 $bin=$payload;$resources=$payload
 if($Platform -like 'macos-*'){$bin=Join-Path $payload 'Contents/MacOS';$resources=Join-Path $payload 'Contents/Resources'}
@@ -54,7 +55,7 @@ if($Platform -eq 'linux-x64') {
     if($LASTEXITCODE -ne 0){throw 'AppImage runtime staging failed'}
 }
 Invoke-VelopackTool -FilePath $VpkPath -Arguments $arguments | Out-Host
-& (Join-Path $PSScriptRoot 'verify-velopack-package.ps1') -Platform $Platform -Version $Version -ReleaseDir $OutputDir -BeforeSigning -Native
+& (Join-Path $PSScriptRoot 'verify-velopack-package.ps1') -Platform $Platform -Version $Version -ReleaseDir $OutputDir -BeforeSigning -Native -QaFixture:$QaFixture
 if($LASTEXITCODE -ne 0){throw 'Native package verification failed'}
 if(-not $PrepareOnly) {
     $signName=if($IsWindows){'yoyo-update-sign.exe'}else{'yoyo-update-sign'}

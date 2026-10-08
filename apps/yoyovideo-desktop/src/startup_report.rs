@@ -11,6 +11,7 @@ pub fn startup_report(args: &[OsString]) -> Option<String> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "mpv_runtime": cfg!(feature = "mpv-runtime"),
                 "updater": true,
+                "updater_qa": yoyo_updater::qa_fixture_enabled(),
             })
             .to_string(),
         ),
@@ -29,6 +30,7 @@ mod tests {
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(info["mpv_runtime"], cfg!(feature = "mpv-runtime"));
         assert_eq!(info["updater"], true);
+        assert_eq!(info["updater_qa"], yoyo_updater::qa_fixture_enabled());
         assert!(startup_report(&["movie.mp4".into()]).is_none());
         assert!(startup_report(&["--version".into(), "movie.mp4".into()]).is_none());
     }

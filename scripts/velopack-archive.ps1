@@ -27,7 +27,7 @@ function Read-VelopackNuspec([byte[]]$Bytes) {
     $input=[IO.MemoryStream]::new($Bytes,$false);$reader=[Xml.XmlReader]::Create($input,$settings)
     try {$doc=[Xml.XmlDocument]::new();$doc.XmlResolver=$null;$doc.Load($reader)}finally{$reader.Dispose();$input.Dispose()}
     $metadata=@{}
-    foreach($field in @('id','version','channel','mainExe','os','rid','machineArchitecture')) {
+    foreach($field in @('id','title','version','channel','mainExe','os','rid','machineArchitecture')) {
         $nodes=$doc.SelectNodes("/*[local-name()='package']/*[local-name()='metadata']/*[local-name()='$field']")
         if($nodes.Count -ne 1){throw 'Ambiguous or incomplete NuGet metadata'}
         $metadata[$field]=$nodes[0].InnerText
@@ -35,7 +35,7 @@ function Read-VelopackNuspec([byte[]]$Bytes) {
     return $metadata
 }
 function Assert-VelopackArchive {
-    param([string]$Path,[string]$Platform,[string]$Version)
+    param([string]$Path,[string]$Platform,[string]$Version,[switch]$QaFixture)
     Assert-VelopackVersion $Version; $t=Get-VelopackTarget $Platform
     if((Get-Item -LiteralPath $Path).Length -gt 2147483648){throw 'Update package exceeds size limit'}
     $zip=[IO.Compression.ZipFile]::OpenRead($Path)
@@ -43,6 +43,8 @@ function Assert-VelopackArchive {
         Assert-VelopackZipPaths $zip $Platform
         $meta=Read-VelopackNuspec (Read-VelopackEntry $zip.GetEntry('YoYoVideo.nuspec'))
         if($meta.id -cne 'YoYoVideo' -or $meta.version -cne $Version -or $meta.channel -cne $t.Channel -or $meta.mainExe -cne $t.Exe -or $meta.os -cne $t.Os -or $meta.rid -cne $t.Rid -or $meta.machineArchitecture -cne $t.Arch){throw 'Package identity, version, channel or architecture mismatch'}
+        $title=if($QaFixture){'YoYoVideo QA ONLY'}else{'YoYoVideo'}
+        if($meta.title -cne $title){throw 'QA packages are not production releases'}
         if($Platform -eq 'linux-x64') {
             $entry=$zip.GetEntry('lib/app/YoYoVideo.AppImage')
             if($null -eq $entry){throw 'Missing bundled AppImage'}
@@ -58,13 +60,15 @@ function Assert-VelopackArchive {
         }
         $info=[Text.Encoding]::UTF8.GetString((Read-VelopackEntry $zip.GetEntry($resources+'yoyovideo-build-info.json') 65536)) | ConvertFrom-Json
         if($info.schema -cne 'yoyovideo-build-info-v1' -or $info.version -cne $Version -or $info.mpv_runtime -ne $true -or $info.updater -ne $true){throw 'Packaged build metadata does not describe the required player'}
+        $isQa=($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true
+        if($isQa -ne [bool]$QaFixture){throw 'Wrong build kind inside package'}
         foreach($entryName in @($t.Exe, $(if($Platform -eq 'windows-x64'){'mpv-2.dll'}else{'libmpv.dylib'}))) {
             $entry=$zip.GetEntry($bin+$entryName);if($null -eq $entry){throw "Missing packaged binary: $entryName"}
             $stream=$entry.Open();try{Assert-VelopackBinary -Bytes (Read-VelopackPrefix $stream) -Platform $Platform -Library:($entryName -ne $t.Exe)}finally{$stream.Dispose()}
         }
         $helper=if($Platform -eq 'windows-x64'){'Squirrel.exe'}else{'UpdateMac'}
         if($null -eq $zip.GetEntry($bin+$helper)){throw 'Missing native updater helper'}
-        if($Platform -eq 'windows-x64' -and $null -eq $zip.GetEntry($bin+'YoYoVideo_ExecutionStub.exe')){throw 'Missing stable execution stub'}
+        if($Platform -eq 'windows-x64' -and $null -eq $zip.GetEntry($bin+$title+'_ExecutionStub.exe')){throw 'Missing stable execution stub'}
         if($Platform -like 'macos-*' -and $null -eq $zip.GetEntry('lib/app/Contents/Info.plist')){throw 'Missing app bundle Info.plist'}
         return [pscustomobject]@{Version=$Version;Platform=$Platform;Payload=$bin+$t.Exe}
     } finally {$zip.Dispose()}
