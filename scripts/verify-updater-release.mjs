@@ -33,6 +33,21 @@ async function fingerprint(dir, name) {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return { name, size: stat.size, sha256: hash.digest('hex') };
 }
+function normalizedFeed(feed) {
+  if (!feed || !Array.isArray(feed.Assets) || Object.keys(feed).length !== 1) throw new Error('Invalid native feed');
+  const fields = ['PackageId','Version','Type','FileName','SHA1','SHA256','Size','NotesMarkdown','NotesHtml'];
+  const spelling = new Map(fields.map(name=>[name.toLowerCase(),name]));
+  return { Assets: feed.Assets.map(asset=>{
+    if (!asset || typeof asset !== 'object' || Array.isArray(asset)) throw new Error('Invalid feed asset');
+    const result = { NotesMarkdown:'', NotesHtml:'' }, seen = new Set();
+    for (const [key,value] of Object.entries(asset)) {
+      const canonical=spelling.get(key.toLowerCase());
+      if (!canonical || seen.has(canonical)) throw new Error('Unknown or ambiguous feed field');
+      seen.add(canonical); result[canonical]=value;
+    }
+    return result;
+  }) };
+}
 export async function collectRelease(dir, version) {
   versionCheck(version);
   const files = await readdir(dir, {withFileTypes:true});
@@ -47,7 +62,7 @@ export async function collectRelease(dir, version) {
     const manifest = await json(join(dir,manifestName));
     if (manifest.schema_version !== 1 || manifest.app_id !== 'YoYoVideo' || manifest.platform !== platform || manifest.channel !== channel || manifest.version !== version || manifest.release_tag !== 'v'+version) throw new Error('Release manifest context mismatch');
     const feedName = 'releases.'+channel+'.json', feed = await json(join(dir,feedName));
-    if (!isDeepStrictEqual(manifest.feed,feed) || !Array.isArray(feed.Assets) || feed.Assets.length !== 1) throw new Error('Unsigned feed differs from signed feed');
+    if (!isDeepStrictEqual(normalizedFeed(manifest.feed),normalizedFeed(feed)) || !Array.isArray(feed.Assets) || feed.Assets.length !== 1) throw new Error('Unsigned feed differs from signed feed');
     const a=feed.Assets[0]; assetName(a.FileName);
     if (a.Type !== 'Full' || a.PackageId !== 'YoYoVideo' || a.Version !== version || a.FileName !== 'YoYoVideo-'+version+'-'+channel+'-full.nupkg') throw new Error('Wrong full-package identity');
     const packageFile=await fingerprint(dir,a.FileName);

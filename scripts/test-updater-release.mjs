@@ -110,3 +110,24 @@ test('portable AppImage filename comes from the native asset index', async () =>
   const files = await collectRelease(dir, '0.0.1');
   assert.ok(files.some(f => f.name === name));
 });
+
+test('native feed spelling/defaults match the SDK-normalized signed feed', async () => {
+  const dir = await fixture();
+  for (const platform of PLATFORMS) {
+    const manifestPath = join(dir, 'yoyovideo-update.' + platform + '.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.feed.Assets[0].NotesMarkdown = '';
+    manifest.feed.Assets[0].NotesHtml = '<p>notes</p>';
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    const feedPath = join(dir, 'releases.stable-' + platform + '.json');
+    const feed = JSON.parse(await readFile(feedPath, 'utf8'));
+    feed.Assets[0].NotesHTML = '<p>notes</p>';
+    await writeFile(feedPath, JSON.stringify(feed));
+  }
+  await collectRelease(dir, '0.0.1');
+  const feedPath = join(dir, 'releases.stable-windows-x64.json');
+  const feed = JSON.parse(await readFile(feedPath, 'utf8'));
+  feed.Assets[0].NotesHTML = 'tampered';
+  await writeFile(feedPath, JSON.stringify(feed));
+  await assert.rejects(collectRelease(dir, '0.0.1'));
+});
