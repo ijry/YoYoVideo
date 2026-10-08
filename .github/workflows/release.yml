@@ -24,6 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          # Depth-1 tag checkout binds the local tag ref to the peeled commit.
+          # Preserve the annotated object; validation must not force-fetch a changed tag.
+          fetch-depth: 0
           persist-credentials: false
       - name: Resolve annotated tag, version and exact commit
         id: tag
