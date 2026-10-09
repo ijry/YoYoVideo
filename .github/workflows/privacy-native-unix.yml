@@ -1,0 +1,87 @@
+name: Native privacy acceptance
+
+on:
+  push:
+    paths:
+      - 'apps/yoyovideo-desktop/**'
+      - 'crates/yoyo-core/**'
+      - 'crates/yoyo-mpv/**'
+      - 'scripts/test-privacy-native-unix.ps1'
+      - '.github/workflows/privacy-native-unix.yml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - 'apps/yoyovideo-desktop/**'
+      - 'crates/yoyo-core/**'
+      - 'crates/yoyo-mpv/**'
+      - 'scripts/test-privacy-native-unix.ps1'
+      - '.github/workflows/privacy-native-unix.yml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Privacy (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos-aarch64, os: macos-14 }
+          - { platform: macos-x86_64, os: macos-15-intel }
+          - { platform: linux-x64, os: ubuntu-latest }
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: privacy-native-${{ matrix.platform }}
+          cache-on-failure: true
+      - name: Install native playback tools
+        if: startsWith(matrix.platform, 'macos')
+        run: brew install mpv ffmpeg
+      - name: Install Linux playback tools
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev ffmpeg xvfb pkg-config libfontconfig1-dev libxkbcommon-dev
+          sudo apt-get install -y libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
+      - name: Stage this architecture's playback runtime
+        shell: pwsh
+        run: ./scripts/fetch-runtime.ps1 -Platform '${{ matrix.platform }}' -Force
+      - name: Build an isolated privacy QA player
+        run: cargo build --locked -p yoyovideo-desktop --features privacy-qa
+      - name: Exercise native privacy controls
+        if: startsWith(matrix.platform, 'macos')
+        shell: pwsh
+        run: ./scripts/test-privacy-native-unix.ps1 -Platform '${{ matrix.platform }}'
+      - name: Exercise native privacy controls under X11
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: xvfb-run -a env WINIT_UNIX_BACKEND=x11 pwsh -NoProfile -File scripts/test-privacy-native-unix.ps1 -Platform linux-x64
+      - name: Upload native privacy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-native-${{ matrix.platform }}
+          path: |
+            .cache/privacy-native-unix-*/report.json
+            .cache/privacy-native-unix-*/events.jsonl
+            .cache/privacy-native-unix-*/*.log
+          if-no-files-found: warn
+          include-hidden-files: true
