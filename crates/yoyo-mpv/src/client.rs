@@ -102,6 +102,28 @@ pub struct MpvBackend {
 }
 
 impl MpvBackend {
+    #[cfg(feature = "native-qa")]
+    pub fn qa_output_flags(&self) -> Result<(bool, bool, bool), MpvError> {
+        let flag = |name: &str| -> Result<bool, MpvError> {
+            let name = cstring(name)?;
+            let mut value = 0_i32;
+            // QA-only, fixed flag properties. Never inspect locators or arbitrary strings.
+            let result = unsafe {
+                libmpv_sys::mpv_get_property(
+                    self.client.handle,
+                    name.as_ptr(),
+                    libmpv_sys::mpv_format_MPV_FORMAT_FLAG,
+                    (&mut value as *mut i32).cast(),
+                )
+            };
+            if result < 0 {
+                return Err(MpvError::Property("QA output flag unavailable".into()));
+            }
+            Ok(value != 0)
+        };
+        Ok((flag("pause")?, flag("mute")?, flag("idle-active")?))
+    }
+
     pub fn new_runtime() -> Result<Self, MpvError> {
         Self::new_runtime_with_options(MpvClientOptions::default())
     }
@@ -278,38 +300,9 @@ impl MpvClient {
                 break;
             }
 
-            if raw_event.error < 0 {
-                events.push(Err(MpvError::Api(mpv_error_message(raw_event.error))));
-                continue;
-            }
-
-            match raw_event.event_id {
-                libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE => {
-                    events.push(Ok(MpvEvent::EndFile));
-                }
-                libmpv_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
-                    if !raw_event.data.is_null() {
-                        let property =
-                            unsafe { &*(raw_event.data as *const libmpv_sys::mpv_event_property) };
-                        if let Some(event) = decode_property_event(property) {
-                            events.push(Ok(event));
-                        }
-                    }
-                }
-                libmpv_sys::mpv_event_id_MPV_EVENT_LOG_MESSAGE => {
-                    if !raw_event.data.is_null() {
-                        let message = unsafe {
-                            &*(raw_event.data as *const libmpv_sys::mpv_event_log_message)
-                        };
-                        events.push(Ok(MpvEvent::Warning(log_message_text(message))));
-                    }
-                }
-                other => {
-                    events.push(Ok(MpvEvent::Warning(format!(
-                        "ignored mpv event: {}",
-                        event_name(other)
-                    ))));
-                }
+            // The event payload is owned by mpv until the next wait_event call.
+            if let Some(event) = unsafe { decode_runtime_event(raw_event) } {
+                events.push(event);
             }
         }
         events
@@ -499,6 +492,52 @@ fn apply_client_options(
 }
 
 #[cfg(feature = "mpv-runtime")]
+/// Decode one live mpv event. Any payload pointers must remain valid for its event kind.
+unsafe fn decode_runtime_event(
+    raw_event: &libmpv_sys::mpv_event,
+) -> Option<Result<MpvEvent, MpvError>> {
+    if raw_event.error < 0 {
+        return Some(Err(MpvError::Api(mpv_error_message(raw_event.error))));
+    }
+    match raw_event.event_id {
+        libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE => {
+            if raw_event.data.is_null() {
+                return None;
+            }
+            let end = unsafe { &*(raw_event.data as *const libmpv_sys::mpv_event_end_file) };
+            match end.reason as u32 {
+                libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_EOF => {
+                    Some(Ok(MpvEvent::EndFile))
+                }
+                libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_ERROR => {
+                    Some(Err(MpvError::Api(mpv_error_message(end.error))))
+                }
+                _ => None, // Stop/replace/quit/redirect are not automatic playlist navigation.
+            }
+        }
+        libmpv_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
+            if raw_event.data.is_null() {
+                return None;
+            }
+            let property = unsafe { &*(raw_event.data as *const libmpv_sys::mpv_event_property) };
+            decode_property_event(property).map(Ok)
+        }
+        libmpv_sys::mpv_event_id_MPV_EVENT_LOG_MESSAGE => {
+            if raw_event.data.is_null() {
+                return None;
+            }
+            let message = unsafe { &*(raw_event.data as *const libmpv_sys::mpv_event_log_message) };
+            Some(Ok(MpvEvent::Warning(log_message_text(message))))
+        }
+        other => {
+            // Notifications such as start-file and playback-restart are not playback warnings.
+            tracing::debug!(event_id = other, event = %event_name(other), "ignored mpv event");
+            None
+        }
+    }
+}
+
+#[cfg(feature = "mpv-runtime")]
 fn decode_property_event(property: &libmpv_sys::mpv_event_property) -> Option<MpvEvent> {
     let name = cstr_to_string(property.name)?;
     if property.data.is_null() {
@@ -596,4 +635,125 @@ fn event_name(event_id: libmpv_sys::mpv_event_id) -> String {
 fn mpv_error_message(error: std::os::raw::c_int) -> String {
     let message = unsafe { libmpv_sys::mpv_error_string(error) };
     cstr_to_string(message).unwrap_or_else(|| format!("error code {error}"))
+}
+
+#[cfg(all(test, feature = "mpv-runtime"))]
+mod runtime_event_tests {
+    use super::*;
+
+    fn event(id: libmpv_sys::mpv_event_id) -> libmpv_sys::mpv_event {
+        libmpv_sys::mpv_event {
+            event_id: id,
+            error: 0,
+            reply_userdata: 0,
+            data: std::ptr::null_mut(),
+        }
+    }
+
+    #[test]
+    fn routine_mpv_notifications_do_not_become_user_warnings() {
+        for id in [
+            libmpv_sys::mpv_event_id_MPV_EVENT_START_FILE,
+            libmpv_sys::mpv_event_id_MPV_EVENT_FILE_LOADED,
+            libmpv_sys::mpv_event_id_MPV_EVENT_SEEK,
+            libmpv_sys::mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
+            libmpv_sys::mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
+            libmpv_sys::mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
+        ] {
+            let decoded = unsafe { decode_runtime_event(&event(id)) };
+            assert!(decoded.is_none(), "Routine event {id} became a user warning: {decoded:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_event_errors_are_still_reported() {
+        let mut raw = event(65535);
+        raw.error = -4;
+        assert!(matches!(unsafe { decode_runtime_event(&raw) }, Some(Err(MpvError::Api(_)))));
+    }
+
+    #[test]
+    fn real_mpv_log_warnings_are_preserved() {
+        let text = std::ffi::CString::new("audio output unavailable").unwrap();
+        let mut message: libmpv_sys::mpv_event_log_message = unsafe { std::mem::zeroed() };
+        message.text = text.as_ptr();
+        let mut raw = event(libmpv_sys::mpv_event_id_MPV_EVENT_LOG_MESSAGE);
+        raw.data = (&mut message as *mut libmpv_sys::mpv_event_log_message).cast();
+        match unsafe { decode_runtime_event(&raw) } {
+            Some(Ok(MpvEvent::Warning(message))) => assert_eq!(message, "audio output unavailable"),
+            other => panic!("Lost a real mpv warning: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn end_of_file_is_preserved() {
+        let mut payload: libmpv_sys::mpv_event_end_file = unsafe { std::mem::zeroed() };
+        payload.reason = libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_EOF as i32;
+        let mut raw = event(libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE);
+        raw.data = (&mut payload as *mut libmpv_sys::mpv_event_end_file).cast();
+        assert!(matches!(unsafe { decode_runtime_event(&raw) }, Some(Ok(MpvEvent::EndFile))));
+    }
+
+    #[test]
+    fn replacing_or_stopping_a_file_is_not_automatic_eof_navigation() {
+        for reason in [
+            libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_STOP,
+            libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_QUIT,
+            libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT,
+        ] {
+            let mut payload: libmpv_sys::mpv_event_end_file = unsafe { std::mem::zeroed() };
+            payload.reason = reason as i32;
+            let mut raw = event(libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE);
+            raw.data = (&mut payload as *mut libmpv_sys::mpv_event_end_file).cast();
+            assert!(unsafe { decode_runtime_event(&raw) }.is_none());
+        }
+        assert!(
+            unsafe { decode_runtime_event(&event(libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE)) }
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn failed_media_reports_an_error_instead_of_advancing_the_playlist() {
+        let mut payload: libmpv_sys::mpv_event_end_file = unsafe { std::mem::zeroed() };
+        payload.reason = libmpv_sys::mpv_end_file_reason_MPV_END_FILE_REASON_ERROR as i32;
+        payload.error = -13;
+        let mut raw = event(libmpv_sys::mpv_event_id_MPV_EVENT_END_FILE);
+        raw.data = (&mut payload as *mut libmpv_sys::mpv_event_end_file).cast();
+        assert!(matches!(unsafe { decode_runtime_event(&raw) }, Some(Err(MpvError::Api(_)))));
+    }
+
+    #[test]
+    fn observed_pause_properties_are_preserved() {
+        let name = std::ffi::CString::new("pause").unwrap();
+        let mut paused: std::os::raw::c_int = 1;
+        let mut property = libmpv_sys::mpv_event_property {
+            name: name.as_ptr(),
+            format: libmpv_sys::mpv_format_MPV_FORMAT_FLAG,
+            data: (&mut paused as *mut std::os::raw::c_int).cast(),
+        };
+        let mut raw = event(libmpv_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE);
+        raw.data = (&mut property as *mut libmpv_sys::mpv_event_property).cast();
+        assert!(matches!(unsafe { decode_runtime_event(&raw) }, Some(Ok(MpvEvent::Pause(true)))));
+    }
+}
+
+#[cfg(all(test, feature = "native-qa"))]
+mod privacy_native_probe_tests {
+    use super::*;
+    #[test]
+    fn qa_probe_reads_actual_backend_pause_and_mute_not_player_view_state() {
+        let mut backend = MpvBackend::new_runtime_with_options(MpvClientOptions {
+            audio_output: Some("null".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        backend.send(BackendCommand::SetPaused(true)).unwrap();
+        backend.send(BackendCommand::SetMuted(true)).unwrap();
+        let (paused, muted, _) = backend.qa_output_flags().unwrap();
+        assert!(paused);
+        assert!(muted);
+        backend.send(BackendCommand::SetMuted(false)).unwrap();
+        assert!(!backend.qa_output_flags().unwrap().1);
+    }
 }

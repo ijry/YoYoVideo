@@ -79,3 +79,7 @@ These ship as the factory bindings and can be changed in settings.
 | `S` | Screenshot |
 | `O` | Open file |
 | `U` | Open URL |
+
+## One-click Privacy Mode (v0.0.2+)
+
+A four-digit PIN, per-item protection, schedules and manual overrides lasting until the next period. Protected sessions pause and disappear while ordinary grid tiles keep playing. See the [privacy guide](./privacy). Requires v0.0.2 or later.

@@ -33,6 +33,17 @@ mod composited_video_runtime;
 #[cfg(feature = "mpv-runtime")]
 use composited_video_runtime::install_composited_video_notifier;
 
+#[path = "privacy_runtime.rs"]
+mod privacy_runtime;
+use privacy_runtime::{
+    allow_privacy_safe_exit, attach_privacy_ui, deny_private_action, enforce_runtime_privacy,
+    locator_allowed, set_playback_status,
+};
+
+#[cfg(feature = "privacy-qa")]
+#[path = "privacy_qa.rs"]
+mod privacy_qa;
+
 slint::include_modules!();
 
 pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
@@ -47,7 +58,7 @@ pub fn build_desktop_backend() -> Result<MpvBackend, MpvError> {
 pub fn build_desktop_backend_with_options(
     options: yoyo_mpv::MpvClientOptions,
 ) -> Result<MpvBackend, MpvError> {
-    #[cfg(feature = "updater-qa")]
+    #[cfg(any(feature = "updater-qa", feature = "privacy-qa"))]
     let options = yoyo_mpv::MpvClientOptions { audio_output: Some("null".into()), ..options };
     MpvBackend::new_runtime_with_options(options)
 }
@@ -71,6 +82,9 @@ fn refresh_window_with_language(
     state: &PlayerState,
     language: crate::UiLanguage,
 ) {
+    let projected =
+        crate::privacy::view::redact_state(state, window.get_privacy_blocked(), language);
+    let state = &projected;
     window.set_ui_language_code(language.code().into());
     window.set_transport_label(crate::format_transport_label_for_language(state, language).into());
     window.set_speed_label(crate::format_speed_label(state).into());
@@ -145,7 +159,8 @@ fn refresh_window_with_language(
         crate::format_video_filter_preset_label_for_language(state.video_filter_preset, language)
             .into(),
     );
-    window.set_status_label(
+    set_playback_status(
+        window,
         state
             .last_error
             .clone()
@@ -278,6 +293,7 @@ pub enum ShortcutDispatch {
     TakeScreenshot,
     OpenJumpPanel,
     OpenActionPanel,
+    TogglePrivacy,
     AddMarker,
 }
 
@@ -331,6 +347,7 @@ pub fn resolve_shortcut(map: &ShortcutMap, gesture: &str) -> Option<ShortcutDisp
         ShortcutAction::PreviousChapterOrMarker => {
             Some(ShortcutDispatch::Command(AppCommand::SeekToPreviousChapterOrMarker))
         }
+        ShortcutAction::TogglePrivacy => Some(ShortcutDispatch::TogglePrivacy),
         ShortcutAction::OpenFile | ShortcutAction::OpenUrl => None,
     }
 }
@@ -341,7 +358,7 @@ pub fn dispatch_shortcut(map: &ShortcutMap, gesture: &str) -> Option<AppCommand>
         ShortcutDispatch::AddMarker => {
             Some(AppCommand::AddMarkerAtCurrentPosition { created_at: "shortcut".into() })
         }
-        ShortcutDispatch::TakeScreenshot => None,
+        ShortcutDispatch::TakeScreenshot | ShortcutDispatch::TogglePrivacy => None,
         ShortcutDispatch::OpenJumpPanel | ShortcutDispatch::OpenActionPanel => None,
     }
 }
@@ -399,6 +416,9 @@ struct DesktopRuntime {
     osd: crate::OsdState,
     sidebar: crate::SidebarState,
     settings_window: Option<SettingsWindow>,
+    privacy: Option<std::sync::Arc<crate::privacy::PrivacyService>>,
+    privacy_ui: Option<Rc<RefCell<crate::privacy::window::PrivacyUi>>>,
+    privacy_save_error: bool,
     settings_controller: Option<crate::SettingsController>,
     /// Media named on the command line, opened once the runtime exists.
     pending_startup_open: Option<MediaLocator>,
@@ -431,6 +451,14 @@ struct DesktopRuntime {
 }
 
 impl DesktopRuntime {
+    fn configure_privacy(&mut self, service: std::sync::Arc<crate::privacy::PrivacyService>) {
+        self.privacy = Some(service.clone());
+        if let Some(controller) = self.controller.as_mut() {
+            controller.session_mut().set_playback_access(service.clone());
+        }
+        #[cfg(feature = "mpv-runtime")]
+        self.grid.set_playback_access(service);
+    }
     fn new(
         config: AppConfig,
         history: crate::HistoryRuntime,
@@ -458,6 +486,9 @@ impl DesktopRuntime {
             osd: crate::OsdState::default(),
             sidebar,
             settings_window: None,
+            privacy: None,
+            privacy_ui: None,
+            privacy_save_error: false,
             settings_controller: None,
             pending_startup_open: None,
             pending_resume: None,
@@ -526,9 +557,12 @@ impl DesktopRuntime {
     #[cfg(feature = "mpv-runtime")]
     fn set_runtime(
         &mut self,
-        controller: DesktopController<MpvBackend>,
+        mut controller: DesktopController<MpvBackend>,
         video_host: WinitVideoHost,
     ) {
+        if let Some(privacy) = &self.privacy {
+            controller.session_mut().set_playback_access(privacy.clone());
+        }
         self.controller = Some(controller);
         self.video_host = Some(video_host);
         self.video_host_error = None;
@@ -628,7 +662,7 @@ fn refresh_runtime_window(window: &MainWindow, runtime: &DesktopRuntime) {
         refresh_window_with_language(window, controller.session().state(), runtime.ui_language);
     } else {
         window.set_ui_language_code(runtime.ui_language.code().into());
-        window.set_status_label(runtime.status_message().into());
+        set_playback_status(window, runtime.status_message().into());
         refresh_navigation_surfaces(window, &PlayerState::default());
     }
 }
@@ -674,13 +708,31 @@ fn refresh_sidebar(window: &MainWindow, runtime: &DesktopRuntime) {
 
     let playlist_rows = runtime
         .controller()
-        .map(|controller| crate::build_playlist_rows(&controller.session().playlist_snapshot()))
+        .map(|controller| {
+            let snapshot = controller.session().playlist_snapshot();
+            match runtime.privacy.as_ref().filter(|service| service.snapshot().enabled) {
+                Some(access) => crate::privacy::view::playlist_rows(
+                    &snapshot,
+                    access.as_ref(),
+                    runtime.ui_language,
+                ),
+                None => crate::build_playlist_rows(&snapshot),
+            }
+        })
         .unwrap_or_default()
         .into_iter()
         .map(|row| PlaylistSidebarRowData { title: row.title.into(), is_current: row.is_current })
         .collect::<Vec<_>>();
 
-    let history_rows = crate::build_history_rows(runtime.history.store())
+    let history_rows =
+        match runtime.privacy.as_ref().filter(|service| service.snapshot().enabled) {
+            Some(access) => crate::privacy::view::history_rows(
+                runtime.history.store(),
+                access.as_ref(),
+                runtime.ui_language,
+            ),
+            None => crate::build_history_rows(runtime.history.store()),
+        }
         .into_iter()
         .map(|row| HistorySidebarRowData { title: row.title.into(), subtitle: row.subtitle.into() })
         .collect::<Vec<_>>();
@@ -694,9 +746,26 @@ fn refresh_recent_open_menu(window: &MainWindow, runtime: &DesktopRuntime) {
         .recent_open
         .items
         .iter()
-        .map(|item| RecentOpenRowData {
-            title: item.title.clone().into(),
-            subtitle: item.target.clone().into(),
+        .map(|item| {
+            let locator = match item.kind {
+                crate::platform::RecentOpenKind::File => {
+                    Some(MediaLocator::File(item.target.clone().into()))
+                }
+                crate::platform::RecentOpenKind::Url => {
+                    Some(MediaLocator::Url(item.target.clone()))
+                }
+                _ => None,
+            };
+            let blocked =
+                locator.as_ref().is_some_and(|locator| !locator_allowed(runtime, locator));
+            RecentOpenRowData {
+                title: if blocked {
+                    crate::privacy::view::protected_label(runtime.ui_language).into()
+                } else {
+                    item.title.clone().into()
+                },
+                subtitle: if blocked { "".into() } else { item.target.clone().into() },
+            }
         })
         .collect::<Vec<_>>();
 
@@ -718,6 +787,12 @@ fn refresh_tracks_popup(window: &MainWindow, runtime: &DesktopRuntime) {
         return;
     };
 
+    let projected = crate::privacy::view::redact_state(
+        state,
+        window.get_privacy_blocked(),
+        runtime.ui_language,
+    );
+    let state = &projected;
     window.set_audio_track_rows(model_from_vec(
         crate::build_audio_track_rows(state)
             .into_iter()
@@ -837,7 +912,7 @@ fn handle_settings_save(
 
     apply_saved_settings(&mut runtime, saved);
     if let Some(app) = runtime.app_handle.as_ref().and_then(|handle| handle.upgrade()) {
-        app.set_status_label("Settings saved".into());
+        set_playback_status(&app, "Settings saved".into());
     }
     refresh_runtime_settings_window(&runtime);
     if close_after_save {
@@ -857,7 +932,7 @@ fn ensure_runtime_ready(
     }
 
     if let Some(app) = app_handle.upgrade() {
-        app.set_status_label(runtime.status_message().into());
+        set_playback_status(&app, runtime.status_message().into());
     }
     false
 }
@@ -944,11 +1019,14 @@ fn persist_current_markers(runtime: &mut DesktopRuntime, state: &PlayerState) {
     }
 }
 
-fn apply_subtitle_restore_if_needed(
+fn apply_subtitle_restore_if_needed<B: PlayerBackend>(
     runtime: &mut DesktopRuntime,
-    controller: &mut DesktopController<MpvBackend>,
+    controller: &mut DesktopController<B>,
     app: Option<&MainWindow>,
 ) -> Result<(), yoyo_core::AppError> {
+    if controller.session().privacy_blocked() {
+        return Ok(());
+    }
     let state = controller.session().state().clone();
     let Some(locator) = state.current.as_ref() else {
         controller.set_subtitle_preferences_restored(true);
@@ -975,7 +1053,8 @@ fn apply_subtitle_restore_if_needed(
         Ok(None) => {}
         Err(crate::SubtitleRestoreError::MissingExternalSubtitle(path)) => {
             if let Some(app) = app {
-                app.set_status_label(
+                set_playback_status(
+                    app,
                     format!("Subtitle file is missing: {}", path.display()).into(),
                 );
             }
@@ -986,10 +1065,13 @@ fn apply_subtitle_restore_if_needed(
     Ok(())
 }
 
-fn apply_pending_resume(
-    controller: &mut DesktopController<MpvBackend>,
+fn apply_pending_resume<B: PlayerBackend>(
+    controller: &mut DesktopController<B>,
     pending: Option<crate::PendingResumeSeek>,
 ) -> Result<Option<crate::PendingResumeSeek>, yoyo_core::AppError> {
+    if controller.session().privacy_blocked() {
+        return Ok(pending);
+    }
     let Some(seek) = pending else {
         return Ok(None);
     };
@@ -1010,13 +1092,16 @@ where
     F: FnOnce(&mut DesktopController<MpvBackend>) -> Result<(), yoyo_core::AppError>,
 {
     let mut runtime = runtime.borrow_mut();
+    if let Some(app) = app_handle.upgrade() {
+        enforce_runtime_privacy(&app, &mut runtime);
+    }
     let pending_before = runtime.pending_resume.take();
     let Some(mut controller) = runtime.controller.take() else {
         runtime.pending_resume = pending_before;
         let message = runtime.status_message();
         runtime.record_diagnostic("WARN", &message);
         if let Some(app) = app_handle.upgrade() {
-            app.set_status_label(message.into());
+            set_playback_status(&app, message.into());
         }
         return false;
     };
@@ -1044,13 +1129,16 @@ where
         Err(error) => Err((error, pending_before)),
     };
     runtime.controller = Some(controller);
+    if let Some(app) = app_handle.upgrade() {
+        enforce_runtime_privacy(&app, &mut runtime);
+    }
 
     match outcome {
         Ok((state, history_snapshot, pending_after)) => {
             runtime.pending_resume = pending_after;
             if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot) {
                 if let Some(app) = app_handle.upgrade() {
-                    app.set_status_label(error.to_string().into());
+                    set_playback_status(&app, error.to_string().into());
                 }
                 return false;
             }
@@ -1068,7 +1156,7 @@ where
             runtime.pending_resume = pending_restore;
             runtime.record_diagnostic("ERROR", error.to_string());
             if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(error.to_string().into());
+                set_playback_status(&app, error.to_string().into());
             }
             false
         }
@@ -1080,6 +1168,12 @@ fn dispatch_screenshot(
     runtime: &Rc<RefCell<DesktopRuntime>>,
     paths: Option<AppPaths>,
 ) {
+    if runtime.borrow().controller.as_ref().is_some_and(|c| c.session().privacy_blocked()) {
+        if let Some(app) = app_handle.upgrade() {
+            deny_private_action(&app, &runtime.borrow());
+        }
+        return;
+    }
     let path = match crate::platform::prepare_screenshot_path(paths.as_ref()) {
         Ok(path) => path,
         Err(error) => {
@@ -1087,7 +1181,7 @@ fn dispatch_screenshot(
                 .borrow_mut()
                 .record_diagnostic("ERROR", format!("Screenshot path failed: {error}"));
             if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(format!("Screenshot path failed: {error}").into());
+                set_playback_status(&app, format!("Screenshot path failed: {error}").into());
             }
             return;
         }
@@ -1181,7 +1275,7 @@ fn dispatch_dropped_paths(
         Ok(action) => action,
         Err(error) => {
             if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(format!("Drop failed: {error}").into());
+                set_playback_status(&app, format!("Drop failed: {error}").into());
             }
             return;
         }
@@ -1193,7 +1287,7 @@ fn dispatch_dropped_paths(
     match action {
         crate::platform::DroppedMediaAction::NoPlayableMedia { .. } => {
             if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(status.into());
+                set_playback_status(&app, status.into());
             }
         }
         crate::platform::DroppedMediaAction::OpenFile(path) => {
@@ -1202,7 +1296,7 @@ fn dispatch_dropped_paths(
                 controller.dispatch(AppCommand::OpenFile(path))
             });
             if dispatched && let Some(app) = app_handle.upgrade() {
-                app.set_status_label(status.into());
+                set_playback_status(&app, status.into());
             }
             if dispatched {
                 remember_recent_open(
@@ -1218,7 +1312,7 @@ fn dispatch_dropped_paths(
                 controller.open_playlist_entries(entries)
             });
             if dispatched && let Some(app) = app_handle.upgrade() {
-                app.set_status_label(status.into());
+                set_playback_status(&app, status.into());
             }
             if dispatched && let Some(path) = single_folder_drop {
                 remember_recent_open(
@@ -1237,9 +1331,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     crate::update_qa::trace("app-run-entry");
     let _ = tracing_subscriber::fmt().with_target(false).try_init();
 
-    #[cfg(feature = "updater-qa")]
+    #[cfg(feature = "privacy-qa")]
+    let paths = Some(privacy_qa::paths()?);
+    #[cfg(all(feature = "updater-qa", not(feature = "privacy-qa")))]
     let paths = Some(crate::update_qa::paths()?);
-    #[cfg(not(feature = "updater-qa"))]
+    #[cfg(not(any(feature = "updater-qa", feature = "privacy-qa")))]
     let paths = AppPaths::discover();
     let config_path =
         paths.as_ref().map(config_file_path).unwrap_or_else(|| PathBuf::from("config.toml"));
@@ -1261,6 +1357,18 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         diagnostic_log_path,
         window_state_path.clone(),
     )));
+    let privacy_path = paths
+        .as_ref()
+        .map(|paths| paths.config_dir.join("privacy.toml"))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("privacy.toml"));
+    #[cfg(not(feature = "privacy-qa"))]
+    let privacy = std::sync::Arc::new(crate::privacy::PrivacyService::load(
+        crate::privacy::PrivacyStore::new(privacy_path),
+    ));
+    #[cfg(feature = "privacy-qa")]
+    let (privacy, privacy_clock) =
+        privacy_qa::load_service(crate::privacy::PrivacyStore::new(privacy_path))?;
+    runtime.borrow_mut().configure_privacy(privacy);
     configure_backend(Rc::clone(&runtime))?;
 
     #[cfg(feature = "updater-qa")]
@@ -1280,6 +1388,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let dialogs = Rc::new(RfdDialogService);
+    attach_privacy_ui(&app, &runtime)?;
+    enforce_runtime_privacy(&app, &mut runtime.borrow_mut());
 
     refresh_runtime_window(&app, &runtime.borrow());
     refresh_sidebar(&app, &runtime.borrow());
@@ -1399,6 +1509,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let runtime = Rc::clone(&runtime);
         move || {
             if let Some(app) = app_handle.upgrade() {
+                if !allow_privacy_safe_exit(&app, &runtime) {
+                    return;
+                }
                 save_current_window_state(&runtime, app.window());
                 let _ = app.hide();
                 let _ = slint::quit_event_loop();
@@ -1410,6 +1523,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let runtime = Rc::clone(&runtime);
         move || {
             if let Some(app) = app_handle.upgrade() {
+                if !allow_privacy_safe_exit(&app, &runtime) {
+                    return slint::CloseRequestResponse::KeepWindowShown;
+                }
                 save_current_window_state(&runtime, app.window());
             }
             let _ = slint::quit_event_loop();
@@ -1431,7 +1547,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 refresh_window_with_language(&app, controller.session().state(), language);
             } else {
                 app.set_ui_language_code(language.code().into());
-                app.set_status_label(runtime.status_message().into());
+                set_playback_status(&app, runtime.status_message().into());
             }
         }
     });
@@ -1503,11 +1619,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return;
                 };
                 let mut runtime = runtime.borrow_mut();
+                let locators: Vec<MediaLocator> =
+                    paths.into_iter().map(MediaLocator::File).collect();
+                if locators.iter().any(|locator| !runtime.grid.can_open(locator)) {
+                    deny_private_action(&app, &runtime);
+                    return;
+                }
                 if replace {
                     runtime.grid.clear();
                 }
-                let locators: Vec<MediaLocator> =
-                    paths.into_iter().map(MediaLocator::File).collect();
                 runtime.grid.queue_open(locators);
 
                 // Single-video playback would keep its own surface over the grid.
@@ -1808,7 +1928,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(message) => {
                 if let Some(app) = app_handle.upgrade() {
-                    app.set_status_label(message.into());
+                    set_playback_status(&app, message.into());
                 }
             }
         }
@@ -2066,13 +2186,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             crate::UiLanguage::Chinese => "已清除历史记录",
                             crate::UiLanguage::English => "History cleared",
                         };
-                        app.set_status_label(message.into());
+                        set_playback_status(&app, message.into());
                     }
                 }
                 Err(error) => {
                     let message = format!("Clear history failed: {error}");
                     runtime.record_diagnostic("ERROR", &message);
-                    app.set_status_label(message.into());
+                    set_playback_status(&app, message.into());
                 }
             }
             refresh_sidebar(&app, &runtime);
@@ -2089,6 +2209,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             let activation = {
                 let runtime = runtime.borrow();
+                if runtime
+                    .history
+                    .store()
+                    .entry(index as usize)
+                    .is_some_and(|entry| !locator_allowed(&runtime, &entry.locator))
+                {
+                    if let Some(app) = app_handle.upgrade() {
+                        deny_private_action(&app, &runtime);
+                    }
+                    return;
+                }
                 runtime.history.activation_for(index as usize)
             };
 
@@ -2107,7 +2238,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(None) => {}
                 Err(crate::HistoryActivationError::MissingLocalFile(path)) => {
                     if let Some(app) = app_handle.upgrade() {
-                        app.set_status_label(
+                        set_playback_status(
+                            &app,
                             format!("History file is missing: {}", path.display()).into(),
                         );
                     }
@@ -2132,8 +2264,24 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             };
 
+            let locator = match item.kind {
+                crate::platform::RecentOpenKind::File => {
+                    Some(MediaLocator::File(item.target.clone().into()))
+                }
+                crate::platform::RecentOpenKind::Url => {
+                    Some(MediaLocator::Url(item.target.clone()))
+                }
+                _ => None,
+            };
+            if locator.as_ref().is_some_and(|locator| !locator_allowed(&runtime.borrow(), locator))
+            {
+                if let Some(app) = app_handle.upgrade() {
+                    deny_private_action(&app, &runtime.borrow());
+                }
+                return;
+            }
             if let Some(app) = app_handle.upgrade() {
-                app.set_status_label(recent_item_status(&item).into());
+                set_playback_status(&app, recent_item_status(&item).into());
             }
 
             match item.kind {
@@ -2141,7 +2289,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let path = PathBuf::from(&item.target);
                     if !path.is_file() {
                         if let Some(app) = app_handle.upgrade() {
-                            app.set_status_label(
+                            set_playback_status(
+                                &app,
                                 format!("Recent item is missing: {}", path.display()).into(),
                             );
                         }
@@ -2165,7 +2314,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let path = PathBuf::from(&item.target);
                     if !path.is_dir() {
                         if let Some(app) = app_handle.upgrade() {
-                            app.set_status_label(
+                            set_playback_status(
+                                &app,
                                 format!("Recent item is missing: {}", path.display()).into(),
                             );
                         }
@@ -2539,6 +2689,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let dropped_paths = Rc::clone(&dropped_paths);
         let drop_timer = Rc::clone(&drop_timer);
         move |window, event| {
+            if matches!(
+                event,
+                slint::winit_030::winit::event::WindowEvent::Focused(true)
+                    | slint::winit_030::winit::event::WindowEvent::Occluded(false)
+            ) {
+                if let Some(app) = app_handle.upgrade() {
+                    enforce_runtime_privacy(&app, &mut runtime.borrow_mut());
+                }
+            }
             // Restore once native creation has completed, before persisting any
             // startup Moved/Resized events. Never replay the saved geometry on
             // subsequent user moves, focus changes or taskbar activations.
@@ -2606,11 +2765,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Some(ShortcutDispatch::OpenJumpPanel) => {
                     app.set_jump_panel_visible(true);
-                    app.set_status_label("Jump to time".into());
+                    set_playback_status(&app, "Jump to time".into());
+                }
+                Some(ShortcutDispatch::TogglePrivacy) => {
+                    app.invoke_toggle_privacy_requested();
                 }
                 Some(ShortcutDispatch::OpenActionPanel) => {
                     app.set_action_panel_visible(true);
-                    app.set_status_label("Action panel".into());
+                    set_playback_status(&app, "Action panel".into());
                 }
                 None => {}
             }
@@ -2628,6 +2790,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut runtime = runtime.borrow_mut();
+            enforce_runtime_privacy(&app, &mut runtime);
+            refresh_recent_open_menu(&app, &runtime);
 
             // Grid tiles have their own sessions and surfaces; poll them and re-lay them
             // out here so window resizes and newly reported video sizes are picked up.
@@ -2670,13 +2834,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Err(error) => Err((error, pending_before)),
             };
             runtime.controller = Some(controller);
+            enforce_runtime_privacy(&app, &mut runtime);
 
             match outcome {
                 Ok((state, history_snapshot, next_pending)) => {
                     runtime.pending_resume = next_pending;
                     if let Err(error) = sync_history_from_snapshot(&mut runtime, &history_snapshot)
                     {
-                        app.set_status_label(error.to_string().into());
+                        set_playback_status(&app, error.to_string().into());
                     }
                     persist_current_markers(&mut runtime, &state);
                     refresh_window_with_language(&app, &state, runtime.ui_language);
@@ -2688,7 +2853,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Err((error, pending_restore)) => {
                     runtime.pending_resume = pending_restore;
                     runtime.record_diagnostic("ERROR", error.to_string());
-                    app.set_status_label(error.to_string().into());
+                    set_playback_status(&app, error.to_string().into());
                 }
             }
         }
@@ -2705,7 +2870,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         crate::StartupOpen::Grid(locators) => {
             let mut runtime = runtime.borrow_mut();
             runtime.grid.queue_open(locators);
-            app.set_grid_mode(true);
+            app.set_grid_mode(runtime.grid.is_active());
         }
         #[cfg(not(feature = "mpv-runtime"))]
         crate::StartupOpen::Grid(mut locators) => {
@@ -2798,6 +2963,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "updater-qa")]
     crate::update_qa::trace("before-event-loop");
+    #[cfg(feature = "privacy-qa")]
+    let _privacy_qa = privacy_qa::QaSession::attach(&app, Rc::clone(&runtime), privacy_clock)?;
     app.run()?;
     #[cfg(feature = "updater-qa")]
     eprintln!("QA: app.run returned");
@@ -3028,13 +3195,24 @@ fn build_grid_tile(
     parent_window: &slint::winit_030::winit::window::Window,
     config: AppConfig,
     locator: &MediaLocator,
+    access: Option<std::sync::Arc<dyn yoyo_core::PlaybackAccess>>,
 ) -> Result<(AppSession<MpvBackend>, WinitVideoHost, String), String> {
+    if access.as_ref().is_some_and(|access| {
+        yoyo_core::privacy::MediaKey::from_locator(locator)
+            .map_or(true, |key| access.restricted(&key))
+    }) {
+        return Err("Protected content".into());
+    }
     let handle = parent_window.window_handle().map_err(|e| e.to_string())?;
     if requires_compositing(handle.as_raw()) {
         return Err("Wayland grid playback is not supported; open a single video instead".into());
     }
-    let (host, backend) = build_host_and_backend(event_loop, parent_window)?;
+    let (mut host, backend) = build_host_and_backend(event_loop, parent_window)?;
     let mut session = AppSession::new(config, backend);
+    if let Some(access) = &access {
+        session.set_playback_access(access.clone());
+    }
+    host.set_media_access(access, yoyo_core::privacy::MediaKey::from_locator(locator).ok());
 
     let command = match locator {
         MediaLocator::File(path) => AppCommand::OpenFile(path.clone()),
@@ -3042,6 +3220,7 @@ fn build_grid_tile(
     };
     session.handle_command(command).map_err(|error| error.to_string())?;
 
+    let _ = host.set_privacy_blocked(session.privacy_blocked());
     Ok((session, host, grid_tile_title(locator)))
 }
 
@@ -3114,7 +3293,12 @@ fn sync_grid(window: &MainWindow, runtime: &mut DesktopRuntime) {
             strip_y: strip.y,
             strip_width: strip.width,
             strip_height: strip.height,
-            title: view.title.into(),
+            title: if view.privacy_blocked {
+                crate::privacy::view::protected_label(runtime.ui_language).into()
+            } else {
+                view.title.into()
+            },
+            privacy_blocked: view.privacy_blocked,
             paused: view.paused,
             muted: view.muted,
             volume: view.volume,
@@ -3169,9 +3353,10 @@ fn sync_video_host_bounds<H: crate::VideoHost>(
 
 #[cfg(feature = "mpv-runtime")]
 fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
+    enforce_runtime_privacy(window, runtime);
     if let Some(surface) = runtime.composited_video.as_ref() {
         if let Some(error) = &runtime.video_host_error {
-            window.set_status_label(error.clone().into());
+            set_playback_status(window, error.clone().into());
         }
         if !surface.is_ready() || runtime.grid.is_active() {
             window.set_video_frame_active(false);
@@ -3180,7 +3365,9 @@ fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
     }
     // Grid mode owns the video area. Leaving the single surface up would occlude every
     // tile strip, since native child windows composite above the Slint canvas.
-    if runtime.grid.is_active() {
+    if runtime.grid.is_active()
+        || runtime.controller.as_ref().is_none_or(|c| c.session().state().current.is_none())
+    {
         let error = runtime.video_host.as_mut().and_then(|host| host.hide().err());
         if let Some(error) = error {
             runtime.record_diagnostic("WARN", format!("Hiding video host failed: {error}"));
@@ -3208,7 +3395,7 @@ fn sync_runtime_video_host(window: &MainWindow, runtime: &mut DesktopRuntime) {
             let _ = host.hide();
         }
         runtime.mark_error(error.clone());
-        window.set_status_label(error.into());
+        set_playback_status(window, error.into());
     }
 }
 
@@ -3251,7 +3438,7 @@ fn configure_backend(
     let builder = builder.with_renderer_name("femtovg");
     // The custom backend builder does not consult SLINT_RENDERER. Hosted Windows
     // has no OpenGL driver; keep QA on its explicitly selected software renderer.
-    #[cfg(all(windows, feature = "updater-qa"))]
+    #[cfg(all(windows, any(feature = "updater-qa", feature = "privacy-qa")))]
     let builder = builder.with_renderer_name("software");
     let backend = builder.build()?;
     slint::platform::set_platform(Box::new(backend))?;
@@ -3295,16 +3482,22 @@ impl DesktopWinitHandler {
 
         // Take the queue and read the config without holding the borrow across window
         // creation, which re-enters the event loop.
-        let (pending, config) = {
+        let (pending, config, access) = {
             let mut runtime = self.runtime.borrow_mut();
             if !runtime.grid.has_pending() {
                 return;
             }
-            (runtime.grid.take_pending(), runtime.config.clone())
+            (runtime.grid.take_pending(), runtime.config.clone(), runtime.grid.playback_access())
         };
         let mut failure = None;
         for locator in pending {
-            match build_grid_tile(event_loop, parent_window, config.clone(), &locator) {
+            match build_grid_tile(
+                event_loop,
+                parent_window,
+                config.clone(),
+                &locator,
+                access.clone(),
+            ) {
                 Ok((session, host, title)) => {
                     self.runtime.borrow_mut().grid.push_tile(session, host, title);
                 }
@@ -3321,7 +3514,7 @@ impl DesktopWinitHandler {
         let dropped = runtime.grid.take_dropped();
         if let Some(error) = failure {
             runtime.record_diagnostic("ERROR", format!("Grid tile failed: {error}"));
-            app.set_status_label(error.into());
+            set_playback_status(&app, error.into());
         } else if dropped > 0 {
             let message = match runtime.ui_language {
                 crate::UiLanguage::Chinese => {
@@ -3331,7 +3524,7 @@ impl DesktopWinitHandler {
                     format!("At most {} at once; {dropped} ignored", crate::MAX_GRID_TILES)
                 }
             };
-            app.set_status_label(message.into());
+            set_playback_status(&app, message.into());
         }
         sync_grid(&app, &mut runtime);
     }
@@ -3370,6 +3563,14 @@ impl DesktopWinitHandler {
                         AppSession::new(config, backend),
                         shortcuts,
                     ));
+                    if let Some(privacy) = runtime.privacy.clone() {
+                        runtime
+                            .controller
+                            .as_mut()
+                            .expect("controller installed")
+                            .session_mut()
+                            .set_playback_access(privacy);
+                    }
                     // Startup media waits until the render context exists.
                     parent_window.request_redraw();
                 }
@@ -3378,7 +3579,7 @@ impl DesktopWinitHandler {
                     runtime.record_diagnostic("ERROR", &message);
                     runtime.mark_error(message.clone());
                     if let Some(app) = runtime.app_handle.as_ref().and_then(slint::Weak::upgrade) {
-                        app.set_status_label(message.into());
+                        set_playback_status(&app, message.into());
                     }
                 }
             }
@@ -3431,7 +3632,7 @@ impl DesktopWinitHandler {
                 runtime.mark_error(message.clone());
                 if let Some(app_handle) = runtime.app_handle.clone() {
                     if let Some(app) = app_handle.upgrade() {
-                        app.set_status_label(message.into());
+                        set_playback_status(&app, message.into());
                         refresh_sidebar(&app, &runtime);
                         refresh_tracks_popup(&app, &runtime);
                     }
@@ -3686,6 +3887,22 @@ impl CustomApplicationHandler for DesktopWinitHandler {
         _slint_window: Option<&slint::Window>,
         event: &slint::winit_030::winit::event::WindowEvent,
     ) -> EventResult {
+        // Hidden auxiliary windows (notably the PIN field requesting focus during
+        // construction) can receive the first winit event. They must never become
+        // the parent of the player's video host or queued grid tiles.
+        if let Some(candidate) = winit_window {
+            let handle =
+                self.runtime.try_borrow().ok().and_then(|runtime| runtime.app_handle.clone());
+            let is_main = handle
+                .and_then(|handle| handle.upgrade())
+                .and_then(|app| {
+                    app.window().with_winit_window(|window| window.id() == candidate.id())
+                })
+                .unwrap_or(false);
+            if !is_main {
+                return EventResult::Propagate;
+            }
+        }
         self.initialize_runtime(event_loop, winit_window);
         self.spawn_pending_grid_tiles(event_loop, winit_window);
         // `winit_window` is None for windows Slint does not own, i.e. the video host.
@@ -3722,6 +3939,12 @@ fn persist_playback_for_shutdown(
             }
         }
     };
+    if let Some(privacy) = &runtime.privacy {
+        privacy.cancel_authorization();
+        save(privacy.flush().map_err(|error| {
+            yoyo_core::StorageError::Io(std::io::Error::other(error.to_string()))
+        }));
+    }
     if let Some(controller) = runtime.controller() {
         let snapshot = capture_history_snapshot(controller.session());
         let state = controller.session().state().clone();
@@ -3748,3 +3971,7 @@ fn persist_playback_for_shutdown(
 #[cfg(test)]
 #[path = "update_shutdown_tests.rs"]
 mod update_shutdown_tests;
+
+#[cfg(test)]
+#[path = "privacy_runtime_tests.rs"]
+mod privacy_runtime_tests;

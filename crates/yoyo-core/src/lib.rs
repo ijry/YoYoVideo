@@ -6,11 +6,12 @@ mod history;
 mod media;
 mod player_state;
 mod playlist;
+pub mod privacy;
 mod session;
 mod shortcut;
 
 pub use app_command::AppCommand;
-pub use backend::{BackendCommand, BackendEvent, PlayerBackend};
+pub use backend::{BackendCommand, BackendEvent, PlaybackAccess, PlayerBackend};
 pub use config::{
     AppConfig, MAX_DEFAULT_SPEED, MIN_DEFAULT_SPEED, PlaybackDefaults, PlaybackEndBehavior,
     UiPreferences,

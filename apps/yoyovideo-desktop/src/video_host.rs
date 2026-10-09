@@ -55,6 +55,15 @@ pub trait VideoHost {
     fn show(&mut self) -> Result<(), VideoHostError>;
     fn hide(&mut self) -> Result<(), VideoHostError>;
     fn is_available(&self) -> bool;
+    fn set_privacy_blocked(&mut self, blocked: bool) -> Result<(), VideoHostError> {
+        if blocked { self.hide() } else { Ok(()) }
+    }
+    fn set_media_access(
+        &mut self,
+        _access: Option<std::sync::Arc<dyn yoyo_core::PlaybackAccess>>,
+        _media: Option<yoyo_core::privacy::MediaKey>,
+    ) {
+    }
 }
 
 /// Whether the native video surface is currently hidden to keep it from occluding a
@@ -62,6 +71,7 @@ pub trait VideoHost {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VideoHostSuppression {
     suppressed: bool,
+    privacy_blocked: bool,
 }
 
 /// What [`VideoHostSuppression::request`] wants the caller to do.
@@ -74,21 +84,28 @@ pub enum SuppressionAction {
 }
 
 impl VideoHostSuppression {
-    /// True while the surface must stay hidden. Bounds syncing runs on a repeating
-    /// timer and always shows the surface, so it has to consult this first.
     pub fn is_suppressed(&self) -> bool {
-        self.suppressed
+        self.suppressed || self.privacy_blocked
     }
 
-    /// Applies a requested suppression state, returning the action to perform. Repeating
-    /// the current state yields `None`, so switching directly between two popups does
-    /// not flash the video surface back on.
     pub fn request(&mut self, suppressed: bool) -> Option<SuppressionAction> {
-        if self.suppressed == suppressed {
-            return None;
-        }
+        let before = self.is_suppressed();
         self.suppressed = suppressed;
-        Some(if suppressed { SuppressionAction::Hide } else { SuppressionAction::Reveal })
+        Self::transition(before, self.is_suppressed())
+    }
+
+    pub fn request_privacy(&mut self, blocked: bool) -> Option<SuppressionAction> {
+        let before = self.is_suppressed();
+        self.privacy_blocked = blocked;
+        Self::transition(before, self.is_suppressed())
+    }
+
+    fn transition(before: bool, after: bool) -> Option<SuppressionAction> {
+        (before != after).then_some(if after {
+            SuppressionAction::Hide
+        } else {
+            SuppressionAction::Reveal
+        })
     }
 }
 

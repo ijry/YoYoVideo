@@ -33,11 +33,12 @@ pub enum ShortcutAction {
     OpenActionPanel,
     NextChapterOrMarker,
     PreviousChapterOrMarker,
+    TogglePrivacy,
 }
 
 impl ShortcutAction {
     pub fn all() -> &'static [ShortcutAction] {
-        const ACTIONS: [ShortcutAction; 27] = [
+        const ACTIONS: [ShortcutAction; 28] = [
             ShortcutAction::TogglePause,
             ShortcutAction::SeekBackwardSmall,
             ShortcutAction::SeekForwardSmall,
@@ -65,6 +66,7 @@ impl ShortcutAction {
             ShortcutAction::OpenActionPanel,
             ShortcutAction::NextChapterOrMarker,
             ShortcutAction::PreviousChapterOrMarker,
+            ShortcutAction::TogglePrivacy,
         ];
 
         &ACTIONS
@@ -99,6 +101,7 @@ impl ShortcutAction {
             ShortcutAction::OpenActionPanel => "Open Action Panel",
             ShortcutAction::NextChapterOrMarker => "Next Chapter / Marker",
             ShortcutAction::PreviousChapterOrMarker => "Previous Chapter / Marker",
+            ShortcutAction::TogglePrivacy => "One-click Privacy Mode",
         }
     }
 

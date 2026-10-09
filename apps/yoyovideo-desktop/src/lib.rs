@@ -9,9 +9,12 @@ mod i18n;
 mod keyboard;
 #[cfg(all(target_os = "macos", feature = "mpv-runtime"))]
 mod macos_gl;
+#[cfg(all(target_os = "macos", feature = "mpv-runtime"))]
+mod macos_video_window;
 mod osd;
 pub mod platform;
 mod presenter;
+pub mod privacy;
 mod progress;
 mod settings_controller;
 mod sidebar;
@@ -25,10 +28,12 @@ mod video_host_winit;
 #[cfg(feature = "mpv-runtime")]
 mod video_surface_gl;
 mod video_texture;
+mod video_visibility;
+pub use video_visibility::VisibilityPermit;
 
 pub use app::{
-    DesktopController, MainWindow, NavigationRowData, ProgressTickRowData, SettingsWindow,
-    ShortcutDispatch, TrackPopupRowData, UpdateWindow, build_desktop_backend,
+    DesktopController, MainWindow, NavigationRowData, PrivacyWindow, ProgressTickRowData,
+    SettingsWindow, ShortcutDispatch, TrackPopupRowData, UpdateWindow, build_desktop_backend,
     build_desktop_backend_with_options, build_desktop_backend_with_video_window, dispatch_shortcut,
     dropped_media_status, format_runtime_startup_error, recent_item_status, refresh_window,
     resolve_shortcut, run,

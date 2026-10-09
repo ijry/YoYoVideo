@@ -122,7 +122,7 @@ function Get-VelopackBuildInfo {
         if($text.Length -gt 65536){throw 'Oversized build-info response'}
         $info=ConvertFrom-VelopackBuildInfoText $text -AppImage:$AppImage
         if($info.schema -cne 'yoyovideo-build-info-v1' -or $info.version -cne $Version -or $info.mpv_runtime -ne $true -or $info.updater -ne $true){throw 'Player version/runtime/updater does not match requested package'}
-        $isQa=($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true
+        $isQa=(($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true) -or (($info.PSObject.Properties.Name -contains 'privacy_qa') -and $info.privacy_qa -eq $true)
         if($isQa -ne [bool]$QaFixture){throw 'QA and production player builds must not be mixed'}
         return $info
     } finally {$process.Dispose()}

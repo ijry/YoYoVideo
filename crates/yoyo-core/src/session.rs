@@ -1,3 +1,5 @@
+mod privacy;
+
 use crate::{
     AppCommand, AppConfig, AppError, AudioChannelMode, BackendCommand, BackendEvent, LoopState,
     MARKER_DEDUPE_TOLERANCE_SECONDS, MediaLocator, MediaMarker, MediaTrack, PlaybackEndBehavior,
@@ -16,6 +18,9 @@ pub struct AppSession<B: PlayerBackend> {
     /// Set by Stop so position/duration events still in flight are ignored until
     /// something is opened again.
     stopped: bool,
+    access: Option<std::sync::Arc<dyn crate::PlaybackAccess>>,
+    media_key: Option<crate::privacy::MediaKey>,
+    privacy: privacy::SessionPrivacy,
 }
 
 impl<B: PlayerBackend> AppSession<B> {
@@ -23,7 +28,16 @@ impl<B: PlayerBackend> AppSession<B> {
         let mut state = PlayerState::default();
         state.volume_percent = config.playback.default_volume_percent;
         state.speed = config.playback.default_speed;
-        Self { config, backend, state, playlist: Playlist::default(), stopped: false }
+        Self {
+            config,
+            backend,
+            state,
+            playlist: Playlist::default(),
+            stopped: false,
+            access: None,
+            media_key: None,
+            privacy: privacy::SessionPrivacy::default(),
+        }
     }
 
     pub fn state(&self) -> &PlayerState {
@@ -133,42 +147,29 @@ impl<B: PlayerBackend> AppSession<B> {
         entries: Vec<PlaylistEntry>,
         start_index: usize,
     ) -> Result<(), AppError> {
-        self.playlist.replace(entries, start_index);
-        if let Some(entry) = self.playlist.current().cloned() {
-            self.reset_track_state_for_new_media();
-            self.reset_navigation_state_for_new_media();
-            self.stopped = false;
-            self.backend.open(&entry.locator).map_err(AppError::Message)?;
-            self.state.current = Some(entry.locator.clone());
-            self.state.paused = false;
+        let mut proposed = Playlist::default();
+        proposed.replace(entries, start_index);
+        if let Some(entry) = proposed.current().cloned() {
+            let key = self.open_checked(&entry.locator)?;
+            self.playlist = proposed;
+            self.commit_open(entry.locator, key)?;
+        } else {
+            self.playlist = proposed;
         }
         Ok(())
     }
 
     pub fn open_playlist_index(&mut self, index: usize) -> Result<(), AppError> {
-        let Some(entry) = self.playlist.select(index).cloned() else {
+        let Some(entry) = self.playlist.entries.get(index).cloned() else {
             return Ok(());
         };
-
-        self.reset_track_state_for_new_media();
-        self.reset_navigation_state_for_new_media();
-        self.stopped = false;
-        self.backend.open(&entry.locator).map_err(AppError::Message)?;
-        self.state.current = Some(entry.locator.clone());
-        self.state.paused = false;
-        Ok(())
+        let key = self.open_checked(&entry.locator)?;
+        self.playlist.select(index);
+        self.commit_open(entry.locator, key)
     }
 
     fn open_single_locator(&mut self, locator: MediaLocator) -> Result<(), AppError> {
-        let entry = PlaylistEntry::new(locator.clone());
-        self.playlist.replace(vec![entry.clone()], 0);
-        self.reset_track_state_for_new_media();
-        self.reset_navigation_state_for_new_media();
-        self.stopped = false;
-        self.backend.open(&entry.locator).map_err(AppError::Message)?;
-        self.state.current = Some(locator);
-        self.state.paused = false;
-        Ok(())
+        self.replace_playlist(vec![PlaylistEntry::new(locator)], 0)
     }
 
     /// Stops playback, unloads the file, and clears the per-media state.
@@ -177,7 +178,7 @@ impl<B: PlayerBackend> AppSession<B> {
     /// speed, fullscreen, picture adjustments); only what describes "the thing that was
     /// playing" is reset, so the UI falls back to its empty state.
     fn stop_playback(&mut self) -> Result<(), AppError> {
-        self.backend.send(BackendCommand::Stop).map_err(AppError::Message)?;
+        self.send_backend(BackendCommand::Stop).map_err(AppError::Message)?;
 
         self.playlist.replace(Vec::new(), 0);
         self.reset_track_state_for_new_media();
@@ -190,6 +191,7 @@ impl<B: PlayerBackend> AppSession<B> {
         self.state.video_height = None;
         self.state.loop_state = LoopState::default();
         self.stopped = true;
+        self.reset_privacy_after_stop()?;
         Ok(())
     }
 
@@ -217,6 +219,10 @@ impl<B: PlayerBackend> AppSession<B> {
     }
 
     fn handle_end_of_file(&mut self) -> Result<(), AppError> {
+        if !self.eof_allowed() {
+            return Ok(());
+        }
+        self.state.paused = true;
         match self.config.playback.end_behavior {
             PlaybackEndBehavior::PlayNext => {
                 if let Some(index) = self.next_playlist_index() {
@@ -257,6 +263,7 @@ impl<B: PlayerBackend> AppSession<B> {
     }
 
     pub fn handle_command(&mut self, command: AppCommand) -> Result<(), AppError> {
+        self.guard_app_command(&command)?;
         match command {
             AppCommand::OpenFile(path) => {
                 self.open_single_locator(MediaLocator::File(path))?;
@@ -268,54 +275,48 @@ impl<B: PlayerBackend> AppSession<B> {
             AppCommand::Stop => {
                 self.stop_playback()?;
             }
-            AppCommand::TogglePause => {
-                self.state.paused = !self.state.paused;
-                self.backend
-                    .send(BackendCommand::SetPaused(self.state.paused))
-                    .map_err(AppError::Message)?;
-            }
+            AppCommand::SetPaused(paused) => self.set_paused(paused)?,
+            AppCommand::TogglePause => self.set_paused(!self.state.paused)?,
             AppCommand::SeekRelative(seconds) => {
-                self.backend
-                    .send(BackendCommand::SeekRelative(seconds))
+                self.send_backend(BackendCommand::SeekRelative(seconds))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SeekAbsolute(seconds) => {
-                self.backend
-                    .send(BackendCommand::SeekAbsolute(seconds))
+                self.send_backend(BackendCommand::SeekAbsolute(seconds))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetSpeed(speed) => {
                 self.state.speed = speed;
-                self.backend.send(BackendCommand::SetSpeed(speed)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::SetSpeed(speed)).map_err(AppError::Message)?;
             }
             AppCommand::ResetSpeed => {
                 self.state.speed = self.config.playback.default_speed;
-                self.backend
-                    .send(BackendCommand::SetSpeed(self.state.speed))
+                self.send_backend(BackendCommand::SetSpeed(self.state.speed))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetVolume(volume) => {
                 self.state.volume_percent = volume;
-                self.backend.send(BackendCommand::SetVolume(volume)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::SetVolume(volume)).map_err(AppError::Message)?;
             }
             AppCommand::AdjustVolume(delta) => {
                 let next = (self.state.volume_percent as i16 + delta as i16).clamp(0, 100) as u8;
                 self.state.volume_percent = next;
-                self.backend.send(BackendCommand::SetVolume(next)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::SetVolume(next)).map_err(AppError::Message)?;
             }
             AppCommand::SetMuted(muted) => {
                 self.state.muted = muted;
-                self.backend.send(BackendCommand::SetMuted(muted)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::SetMuted(self.effective_mute()))
+                    .map_err(AppError::Message)?;
             }
             AppCommand::ToggleMute => {
                 let muted = !self.state.muted;
                 self.state.muted = muted;
-                self.backend.send(BackendCommand::SetMuted(muted)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::SetMuted(self.effective_mute()))
+                    .map_err(AppError::Message)?;
             }
             AppCommand::JumpToTime(seconds) => {
                 let target = self.clamp_seek_target(seconds)?;
-                self.backend
-                    .send(BackendCommand::SeekAbsolute(target))
+                self.send_backend(BackendCommand::SeekAbsolute(target))
                     .map_err(AppError::Message)?;
                 self.state.status_message = Some(format!("Jumped to {:.1}s", target));
             }
@@ -325,8 +326,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     AudioChannelMode::MonoLeft => AudioChannelMode::MonoRight,
                     AudioChannelMode::MonoRight => AudioChannelMode::Stereo,
                 };
-                self.backend
-                    .send(BackendCommand::SetAudioChannel(self.state.audio_channel))
+                self.send_backend(BackendCommand::SetAudioChannel(self.state.audio_channel))
                     .map_err(AppError::Message)?;
             }
             AppCommand::RotateClockwise => {
@@ -336,49 +336,44 @@ impl<B: PlayerBackend> AppSession<B> {
                     Rotation::Deg180 => Rotation::Deg270,
                     Rotation::Deg270 => Rotation::Deg0,
                 };
-                self.backend
-                    .send(BackendCommand::SetRotation(self.state.rotation))
+                self.send_backend(BackendCommand::SetRotation(self.state.rotation))
                     .map_err(AppError::Message)?;
             }
             AppCommand::ZoomIn => {
                 self.state.zoom_step += 1;
-                self.backend.send(BackendCommand::AdjustZoom(1)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::AdjustZoom(1)).map_err(AppError::Message)?;
             }
             AppCommand::ZoomOut => {
                 self.state.zoom_step -= 1;
-                self.backend.send(BackendCommand::AdjustZoom(-1)).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::AdjustZoom(-1)).map_err(AppError::Message)?;
             }
             AppCommand::AdjustVideoPan { delta_x, delta_y } => {
                 let next_x = (self.state.video_pan_x + delta_x).clamp(MIN_VIDEO_PAN, MAX_VIDEO_PAN);
                 let next_y = (self.state.video_pan_y + delta_y).clamp(MIN_VIDEO_PAN, MAX_VIDEO_PAN);
-                self.backend
-                    .send(BackendCommand::SetVideoPan { x: next_x, y: next_y })
+                self.send_backend(BackendCommand::SetVideoPan { x: next_x, y: next_y })
                     .map_err(AppError::Message)?;
                 self.state.video_pan_x = next_x;
                 self.state.video_pan_y = next_y;
             }
             AppCommand::ResetVideoPan => {
-                self.backend
-                    .send(BackendCommand::SetVideoPan { x: 0.0, y: 0.0 })
+                self.send_backend(BackendCommand::SetVideoPan { x: 0.0, y: 0.0 })
                     .map_err(AppError::Message)?;
                 self.state.video_pan_x = 0.0;
                 self.state.video_pan_y = 0.0;
             }
             AppCommand::SetABLoopPointA => {
                 self.state.loop_state.point_a = Some(self.state.position_seconds);
-                self.backend
-                    .send(BackendCommand::SetABLoopPointA(self.state.position_seconds))
+                self.send_backend(BackendCommand::SetABLoopPointA(self.state.position_seconds))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetABLoopPointB => {
                 self.state.loop_state.point_b = Some(self.state.position_seconds);
-                self.backend
-                    .send(BackendCommand::SetABLoopPointB(self.state.position_seconds))
+                self.send_backend(BackendCommand::SetABLoopPointB(self.state.position_seconds))
                     .map_err(AppError::Message)?;
             }
             AppCommand::ClearABLoop => {
                 self.state.loop_state = Default::default();
-                self.backend.send(BackendCommand::ClearABLoop).map_err(AppError::Message)?;
+                self.send_backend(BackendCommand::ClearABLoop).map_err(AppError::Message)?;
             }
             AppCommand::ToggleFullscreen => {
                 self.state.fullscreen = !self.state.fullscreen;
@@ -395,8 +390,7 @@ impl<B: PlayerBackend> AppSession<B> {
             }
             AppCommand::SelectAudioTrack(id) => {
                 Self::mark_selected(&mut self.state.audio_tracks, id);
-                self.backend
-                    .send(BackendCommand::SelectAudioTrack(id))
+                self.send_backend(BackendCommand::SelectAudioTrack(id))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SelectSubtitleTrack(id) => {
@@ -404,73 +398,61 @@ impl<B: PlayerBackend> AppSession<B> {
                 self.state.subtitle.visible = true;
                 self.state.subtitle.external_path =
                     Self::selected_external_subtitle_path(&self.state.subtitle_tracks);
-                self.backend
-                    .send(BackendCommand::SelectSubtitleTrack(id))
+                self.send_backend(BackendCommand::SelectSubtitleTrack(id))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SelectVideoTrack(id) => {
                 Self::mark_selected(&mut self.state.video_tracks, id);
-                self.backend
-                    .send(BackendCommand::SelectVideoTrack(id))
+                self.send_backend(BackendCommand::SelectVideoTrack(id))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetSubtitleVisible(visible) => {
                 self.state.subtitle.visible = visible;
-                self.backend
-                    .send(BackendCommand::SetSubtitleVisible(visible))
+                self.send_backend(BackendCommand::SetSubtitleVisible(visible))
                     .map_err(AppError::Message)?;
             }
             AppCommand::LoadExternalSubtitle(path) => {
-                self.backend
-                    .send(BackendCommand::LoadExternalSubtitle(path))
+                self.send_backend(BackendCommand::LoadExternalSubtitle(path))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetSubtitleDelay(delay) => {
                 self.state.subtitle.delay_seconds = delay;
-                self.backend
-                    .send(BackendCommand::SetSubtitleDelay(delay))
+                self.send_backend(BackendCommand::SetSubtitleDelay(delay))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetSubtitleScale(scale) => {
                 self.state.subtitle.scale = scale;
-                self.backend
-                    .send(BackendCommand::SetSubtitleScale(scale))
+                self.send_backend(BackendCommand::SetSubtitleScale(scale))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetSubtitleVerticalPosition(position) => {
                 self.state.subtitle.vertical_position_percent = position;
-                self.backend
-                    .send(BackendCommand::SetSubtitleVerticalPosition(position))
+                self.send_backend(BackendCommand::SetSubtitleVerticalPosition(position))
                     .map_err(AppError::Message)?;
             }
             AppCommand::TakeScreenshot(path) => {
-                self.backend
-                    .send(BackendCommand::TakeScreenshot(path.clone()))
+                self.send_backend(BackendCommand::TakeScreenshot(path.clone()))
                     .map_err(AppError::Message)?;
                 self.state.last_error = None;
                 self.state.status_message = Some(format!("Screenshot saved: {}", path.display()));
             }
             AppCommand::StepFrame(direction) => {
-                self.backend
-                    .send(BackendCommand::StepFrame(direction))
+                self.send_backend(BackendCommand::StepFrame(direction))
                     .map_err(AppError::Message)?;
             }
             AppCommand::SetVideoAdjustment(kind, value) => {
                 let clamped = value.clamp(crate::MIN_VIDEO_ADJUSTMENT, crate::MAX_VIDEO_ADJUSTMENT);
-                self.backend
-                    .send(BackendCommand::SetVideoAdjustment(kind, clamped))
+                self.send_backend(BackendCommand::SetVideoAdjustment(kind, clamped))
                     .map_err(AppError::Message)?;
                 self.state.video_adjustments.set_clamped(kind, clamped);
             }
             AppCommand::ResetVideoAdjustments => {
-                self.backend
-                    .send(BackendCommand::ResetVideoAdjustments)
+                self.send_backend(BackendCommand::ResetVideoAdjustments)
                     .map_err(AppError::Message)?;
                 self.state.video_adjustments = Default::default();
             }
             AppCommand::SetVideoFilterPreset(preset) => {
-                self.backend
-                    .send(BackendCommand::SetVideoFilterPreset(preset))
+                self.send_backend(BackendCommand::SetVideoFilterPreset(preset))
                     .map_err(AppError::Message)?;
                 self.state.video_filter_preset = preset;
             }
@@ -486,8 +468,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     self.state.chapters.get(index).map(|chapter| chapter.time_seconds)
                 {
                     let target = self.clamp_seek_target(seconds)?;
-                    self.backend
-                        .send(BackendCommand::SeekAbsolute(target))
+                    self.send_backend(BackendCommand::SeekAbsolute(target))
                         .map_err(AppError::Message)?;
                 }
             }
@@ -500,8 +481,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     .map(|marker| marker.time_seconds)
                 {
                     let target = self.clamp_seek_target(seconds)?;
-                    self.backend
-                        .send(BackendCommand::SeekAbsolute(target))
+                    self.send_backend(BackendCommand::SeekAbsolute(target))
                         .map_err(AppError::Message)?;
                 }
             }
@@ -511,8 +491,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     .into_iter()
                     .find(|point| *point > self.state.position_seconds + 0.5)
                 {
-                    self.backend
-                        .send(BackendCommand::SeekAbsolute(target))
+                    self.send_backend(BackendCommand::SeekAbsolute(target))
                         .map_err(AppError::Message)?;
                 }
             }
@@ -523,8 +502,7 @@ impl<B: PlayerBackend> AppSession<B> {
                     .rev()
                     .find(|point| *point < self.state.position_seconds - 0.5)
                 {
-                    self.backend
-                        .send(BackendCommand::SeekAbsolute(target))
+                    self.send_backend(BackendCommand::SeekAbsolute(target))
                         .map_err(AppError::Message)?;
                 }
             }
@@ -538,9 +516,10 @@ impl<B: PlayerBackend> AppSession<B> {
     }
 
     pub fn poll_backend(&mut self) -> Result<(), AppError> {
+        self.enforce_privacy()?;
         for event in self.backend.drain_events() {
             match event {
-                BackendEvent::PauseChanged(paused) => self.state.paused = paused,
+                BackendEvent::PauseChanged(paused) => self.on_pause_event(paused)?,
                 // After Stop the backend can still deliver position/duration events that
                 // were queued before it went idle; applying those would put a stale time
                 // and a full progress bar back on screen.
@@ -552,6 +531,9 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::DurationChanged(duration) => {
                     if !self.stopped {
                         self.state.duration_seconds = duration;
+                        if duration.is_some() {
+                            self.restore_privacy_position()?;
+                        }
                     }
                 }
                 BackendEvent::VideoWidthChanged(width) => {
@@ -566,7 +548,7 @@ impl<B: PlayerBackend> AppSession<B> {
                 }
                 BackendEvent::SpeedChanged(speed) => self.state.speed = speed,
                 BackendEvent::VolumeChanged(volume) => self.state.volume_percent = volume,
-                BackendEvent::MutedChanged(muted) => self.state.muted = muted,
+                BackendEvent::MutedChanged(muted) => self.on_mute_event(muted)?,
                 BackendEvent::AudioChannelChanged(mode) => self.state.audio_channel = mode,
                 BackendEvent::RotationChanged(rotation) => self.state.rotation = rotation,
                 BackendEvent::TracksChanged { audio, subtitles, video } => {
@@ -599,8 +581,20 @@ impl<B: PlayerBackend> AppSession<B> {
                 BackendEvent::SubtitleVerticalPositionChanged(position) => {
                     self.state.subtitle.vertical_position_percent = position;
                 }
-                BackendEvent::Warning(message) => self.state.status_message = Some(message),
-                BackendEvent::Error(message) => self.state.last_error = Some(message),
+                BackendEvent::Warning(message) => {
+                    self.state.status_message = Some(if self.privacy_blocked() {
+                        "Protected content".into()
+                    } else {
+                        message
+                    })
+                }
+                BackendEvent::Error(message) => {
+                    self.state.last_error = Some(if self.privacy_blocked() {
+                        "Protected content".into()
+                    } else {
+                        message
+                    })
+                }
                 BackendEvent::EndOfFile => self.handle_end_of_file()?,
             }
         }

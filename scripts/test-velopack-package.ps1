@@ -170,6 +170,11 @@ Case 'test-only packages cannot pass the production release validator' {
     Check ($args -contains 'YoYoVideo QA ONLY' -and $args[[Array]::IndexOf($args,'--shortcuts')+1] -eq 'None') 'QA packaging must have a distinct title and no shortcuts'
     Reject {Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1'}
 }
+Case 'privacy QA packages cannot pass production validation' {
+    $entries=Package-Entries
+    $entries['lib/app/yoyovideo-build-info.json']='{"schema":"yoyovideo-build-info-v1","version":"0.0.1","mpv_runtime":true,"updater":true,"privacy_qa":true}'
+    Reject {Assert-VelopackArchive -Path (Zip-Fixture $entries) -Platform 'windows-x64' -Version '0.0.1'}
+}
 Case 'native Linux nuspec names the AppDir executable' {
     $entries=Package-Entries
     $xml=$entries['YoYoVideo.nuspec'].Replace('stable-windows-x64','stable-linux-x64').Replace('win-x64','linux-x64').Replace('<os>win</os>','<os>linux</os>').Replace('yoyovideo-desktop.exe','usr/bin/yoyovideo-desktop')

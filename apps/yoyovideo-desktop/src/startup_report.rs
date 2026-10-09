@@ -13,6 +13,7 @@ pub fn startup_report(args: &[OsString]) -> Option<String> {
                 "mpv_runtime": cfg!(feature = "mpv-runtime"),
                 "updater": true,
                 "updater_qa": yoyo_updater::qa_fixture_enabled(),
+                "privacy_qa": cfg!(feature = "privacy-qa"),
             })
             .to_string(),
         ),

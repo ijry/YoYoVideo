@@ -128,3 +128,44 @@ fn empty_video_center_opens_file_but_loaded_media_and_grid_do_not() {
     click_video_center(&app);
     assert_eq!(opens.get(), 2, "batch playback must not show the single-video button");
 }
+
+#[test]
+fn empty_open_action_is_a_subtle_outline_with_hover_feedback() {
+    let (app, adapter) = setup();
+    adapter.set_size(LogicalSize::new(800.0, 600.0).into());
+    let normal = render(&adapter);
+    let center = LogicalPosition::new(
+        app.get_video_area_x() + app.get_video_area_width() / 2.0,
+        app.get_video_area_y() + app.get_video_area_height() / 2.0,
+    );
+    let sample = |pixels: &slint::SharedPixelBuffer<slint::Rgb8Pixel>, dx: f32| {
+        let x = (center.x + dx).round() as usize;
+        let y = center.y.round() as usize;
+        pixels.as_slice()[y * pixels.width() as usize + x]
+    };
+    let contrast = |a: slint::Rgb8Pixel, b: slint::Rgb8Pixel| {
+        a.r.abs_diff(b.r).max(a.g.abs_diff(b.g)).max(a.b.abs_diff(b.b))
+    };
+    // The same video canvas without its opener provides the underlying background.
+    app.set_has_media(true);
+    let canvas = render(&adapter);
+    let fill = contrast(sample(&normal, -56.0), sample(&canvas, -56.0));
+    assert!(
+        (4..=45).contains(&fill),
+        "The opener must have a subtle translucent fill, got contrast {fill}"
+    );
+    let border = (-80..=-73)
+        .map(|x| contrast(sample(&normal, x as f32), sample(&canvas, x as f32)))
+        .max()
+        .unwrap();
+    assert!(
+        border > fill + 8,
+        "The outline must stand out from the fill: border={border}, fill={fill}"
+    );
+    app.set_has_media(false);
+    render(&adapter);
+    app.window().dispatch_event(WindowEvent::PointerMoved { position: center });
+    let hovered = render(&adapter);
+    let hover_fill = contrast(sample(&hovered, -56.0), sample(&canvas, -56.0));
+    assert!(hover_fill > fill + 2, "Hover must give visible feedback");
+}

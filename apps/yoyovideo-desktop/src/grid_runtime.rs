@@ -9,7 +9,10 @@
 //! the same entries.
 
 use slint::winit_030::winit::window::WindowId;
-use yoyo_core::{AppCommand, AppSession, MediaLocator, PlayerState};
+use std::sync::Arc;
+use yoyo_core::{
+    AppCommand, AppSession, MediaLocator, PlaybackAccess, PlayerState, privacy::MediaKey,
+};
 use yoyo_mpv::MpvBackend;
 
 use crate::video_host_winit::WinitVideoHost;
@@ -66,6 +69,8 @@ impl GridTile {
     /// `--wid` embedding there. See `build_host_and_backend`.
     #[cfg(target_os = "macos")]
     pub fn render_frame(&mut self) -> Result<(), String> {
+        let _ = self.host.set_privacy_blocked(self.session.privacy_blocked());
+        let _ = self.session.enforce_privacy();
         self.host.render_frame().map_err(|error| error.to_string())
     }
 
@@ -84,11 +89,13 @@ pub struct GridTileView {
     pub muted: bool,
     pub volume: i32,
     pub selected: bool,
+    pub privacy_blocked: bool,
 }
 
 #[derive(Default)]
 pub struct GridRuntime {
     tiles: Vec<GridTile>,
+    access: Option<Arc<dyn PlaybackAccess>>,
     /// `ActiveEventLoop` is only available inside a winit event callback, so opening
     /// files parks the locators here and the next event tick creates the windows.
     pending_open: Vec<MediaLocator>,
@@ -100,6 +107,37 @@ pub struct GridRuntime {
 }
 
 impl GridRuntime {
+    pub fn set_playback_access(&mut self, access: Arc<dyn PlaybackAccess>) {
+        self.access = Some(access.clone());
+        for tile in &mut self.tiles {
+            tile.session.set_playback_access(access.clone());
+            tile.host
+                .set_media_access(Some(access.clone()), tile.session.current_media_key().cloned());
+        }
+        self.enforce_privacy();
+    }
+
+    pub fn playback_access(&self) -> Option<Arc<dyn PlaybackAccess>> {
+        self.access.clone()
+    }
+
+    pub fn can_open(&self, locator: &MediaLocator) -> bool {
+        self.access.as_ref().is_none_or(|access| {
+            MediaKey::from_locator(locator).is_ok_and(|key| !access.restricted(&key))
+        })
+    }
+
+    pub fn enforce_privacy(&mut self) {
+        for tile in &mut self.tiles {
+            tile.host
+                .set_media_access(self.access.clone(), tile.session.current_media_key().cloned());
+            let _ = tile.host.set_privacy_blocked(tile.session.privacy_blocked());
+        }
+        for tile in &mut self.tiles {
+            let _ = tile.session.enforce_privacy();
+        }
+    }
+
     /// Whether grid mode is showing. True as soon as files are queued, so the UI can
     /// switch over before the windows actually exist.
     pub fn is_active(&self) -> bool {
@@ -112,6 +150,25 @@ impl GridRuntime {
 
     pub fn is_empty(&self) -> bool {
         self.tiles.is_empty()
+    }
+
+    #[cfg(feature = "privacy-qa")]
+    pub(crate) fn qa_snapshot(&self, media_root: &std::path::Path) -> serde_json::Value {
+        serde_json::Value::Array(self.tiles.iter().map(|tile| {
+            let state=tile.state();
+            let fixture=state.current.as_ref().is_some_and(|locator|matches!(locator,MediaLocator::File(path) if path.starts_with(media_root)));
+            if !fixture {return serde_json::json!({"external_media":true});}
+            let flags=tile.session.backend().qa_output_flags().ok();
+            serde_json::json!({"position":state.position_seconds,"paused":state.paused,"user_muted":state.muted,"volume":state.volume_percent,
+                "blocked":tile.session.privacy_blocked(),"native_visible":tile.host.native_visible(),"hwnd":tile.host.mpv_window_id().ok().map(|id|id.0),
+                "backend_paused":flags.map(|v|v.0),"backend_muted":flags.map(|v|v.1),"backend_idle":flags.map(|v|v.2)})
+        }).collect())
+    }
+
+    pub fn active_locator(&self) -> Option<MediaLocator> {
+        self.active
+            .and_then(|index| self.tiles.get(index))
+            .and_then(|tile| tile.state().current.clone())
     }
 
     pub fn active(&self) -> Option<usize> {
@@ -132,11 +189,15 @@ impl GridRuntime {
     ///
     /// Returns how many were dropped, for the caller to surface.
     pub fn queue_open(&mut self, locators: Vec<MediaLocator>) -> usize {
+        let count = locators.len();
+        let locators: Vec<_> =
+            locators.into_iter().filter(|locator| self.can_open(locator)).collect();
+        let denied = count - locators.len();
         let existing = self.tiles.len() + self.pending_open.len();
         let (accepted, dropped) = accepted_tile_count(existing, locators.len());
         self.pending_open.extend(locators.into_iter().take(accepted));
-        self.dropped += dropped;
-        dropped
+        self.dropped += dropped + denied;
+        dropped + denied
     }
 
     pub fn take_pending(&mut self) -> Vec<MediaLocator> {
@@ -150,10 +211,16 @@ impl GridRuntime {
     /// Adds a live tile. The session must already have been told to open its media.
     pub fn push_tile(
         &mut self,
-        session: AppSession<MpvBackend>,
-        host: WinitVideoHost,
+        mut session: AppSession<MpvBackend>,
+        mut host: WinitVideoHost,
         title: String,
     ) {
+        if let Some(access) = &self.access {
+            session.set_playback_access(access.clone());
+        }
+        host.set_media_access(self.access.clone(), session.current_media_key().cloned());
+        let _ = host.set_privacy_blocked(session.privacy_blocked());
+        let _ = session.enforce_privacy();
         self.tiles.push(GridTile {
             session,
             host,
@@ -177,25 +244,26 @@ impl GridRuntime {
 
     /// Sends a command to one tile.
     pub fn dispatch(&mut self, index: usize, command: AppCommand) -> Result<(), String> {
+        self.enforce_privacy();
         let tile = self.tiles.get_mut(index).ok_or_else(|| "no such tile".to_string())?;
-        tile.session.handle_command(command).map_err(|error| error.to_string())
+        let result = tile.session.handle_command(command).map_err(|error| error.to_string());
+        self.enforce_privacy();
+        result
     }
 
     /// Brings every tile to the same paused state.
     ///
-    /// Compares each tile first, because there is no absolute set-paused command: blindly
-    /// toggling would invert a mixed grid rather than converging it.
+    /// Use an absolute pause command so a protected/already-paused tile never toggles on.
     pub fn set_all_paused(&mut self, paused: bool) {
+        self.enforce_privacy();
         for tile in &mut self.tiles {
-            if tile.session.state().paused != paused {
-                let _ = tile.session.handle_command(AppCommand::TogglePause);
-            }
+            let _ = tile.session.handle_command(AppCommand::SetPaused(paused));
         }
     }
 
     /// True when at least one tile is playing, used to label the play-all button.
     pub fn any_playing(&self) -> bool {
-        self.tiles.iter().any(|tile| !tile.state().paused)
+        self.tiles.iter().any(|tile| !tile.state().paused && !tile.session.privacy_blocked())
     }
 
     /// Remembers the current size so a resize drag can be applied absolutely from where
@@ -220,9 +288,11 @@ impl GridRuntime {
 
     /// Drains every tile's mpv event queue.
     pub fn poll_all(&mut self) {
+        self.enforce_privacy();
         for tile in &mut self.tiles {
             let _ = tile.session.poll_backend();
         }
+        self.enforce_privacy();
     }
 
     pub fn close(&mut self, index: usize) {
@@ -272,6 +342,7 @@ impl GridRuntime {
         gutter: f32,
         scale_factor: f64,
     ) -> Vec<crate::TileRect> {
+        self.enforce_privacy();
         let aspects: Vec<f32> = self
             .tiles
             .iter()
@@ -312,10 +383,16 @@ impl GridRuntime {
             .enumerate()
             .map(|(index, tile)| {
                 let state = tile.state();
+                let privacy_blocked = tile.session.privacy_blocked();
                 GridTileView {
-                    title: tile.title.clone(),
-                    paused: state.paused,
-                    muted: state.muted,
+                    title: if privacy_blocked {
+                        "Protected content".into()
+                    } else {
+                        tile.title.clone()
+                    },
+                    paused: state.paused || privacy_blocked,
+                    muted: state.muted || privacy_blocked,
+                    privacy_blocked,
                     volume: i32::from(state.volume_percent),
                     selected: self.active == Some(index),
                 }

@@ -62,7 +62,7 @@ function Assert-VelopackArchive {
         }
         $info=[Text.Encoding]::UTF8.GetString((Read-VelopackEntry $zip.GetEntry($resources+'yoyovideo-build-info.json') 65536)) | ConvertFrom-Json
         if($info.schema -cne 'yoyovideo-build-info-v1' -or $info.version -cne $Version -or $info.mpv_runtime -ne $true -or $info.updater -ne $true){throw 'Packaged build metadata does not describe the required player'}
-        $isQa=($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true
+        $isQa=(($info.PSObject.Properties.Name -contains 'updater_qa') -and $info.updater_qa -eq $true) -or (($info.PSObject.Properties.Name -contains 'privacy_qa') -and $info.privacy_qa -eq $true)
         if($isQa -ne [bool]$QaFixture){throw 'Wrong build kind inside package'}
         foreach($entryName in @($t.Exe, $(if($Platform -eq 'windows-x64'){'mpv-2.dll'}else{'libmpv.dylib'}))) {
             $entry=$zip.GetEntry($bin+$entryName);if($null -eq $entry){throw "Missing packaged binary: $entryName"}

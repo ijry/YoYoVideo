@@ -52,9 +52,35 @@ pub struct CompositedVideo {
     wakeup: FrameWakeup,
     failed: bool,
     rendered: bool,
+    visibility: Option<crate::VisibilityPermit>,
 }
 
 impl CompositedVideo {
+    fn permit(&mut self) -> &crate::VisibilityPermit {
+        self.visibility.get_or_insert_with(|| {
+            let value = crate::VisibilityPermit::default();
+            value.request_visible(true);
+            value
+        })
+    }
+    pub fn set_privacy_blocked(&mut self, blocked: bool) {
+        self.permit().set_privacy_blocked(blocked);
+        if blocked {
+            self.rendered = false;
+            self.wakeup.take();
+        }
+    }
+    pub fn set_media_access(
+        &mut self,
+        access: Option<Arc<dyn yoyo_core::PlaybackAccess>>,
+        media: Option<yoyo_core::privacy::MediaKey>,
+    ) {
+        self.permit().set_media_access(access, media);
+    }
+    pub fn output_allowed(&self) -> bool {
+        self.visibility.as_ref().is_none_or(|permit| permit.visible())
+    }
+
     pub fn is_ready(&self) -> bool {
         self.context.is_some() && !self.failed
     }
@@ -105,6 +131,12 @@ impl CompositedVideo {
     /// The same context as setup must be current. Returned images borrow this
     /// surface's texture and must be cleared before teardown.
     pub unsafe fn render(&mut self, width: i32, height: i32) -> Result<Option<Image>, String> {
+        if !self.output_allowed() {
+            self.rendered = false;
+            self.wakeup.take();
+            return Ok(None);
+        }
+
         let (Some(functions), Some(context)) = (self.functions, self.context.as_ref()) else {
             return Ok(None);
         };
@@ -143,6 +175,10 @@ impl CompositedVideo {
 
     /// Called at AfterRendering, immediately before Slint presents the frame.
     pub fn report_swap(&mut self) {
+        if !self.output_allowed() {
+            self.rendered = false;
+            return;
+        }
         if std::mem::take(&mut self.rendered) {
             if let Some(context) = &self.context {
                 context.report_swap();

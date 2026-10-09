@@ -21,6 +21,32 @@ pub(super) fn install_composited_video_notifier(
             }
             return;
         }
+        let (blocked, access, media) = runtime
+            .controller
+            .as_ref()
+            .map(|controller| {
+                let session = controller.session();
+                (
+                    session.privacy_blocked(),
+                    session.playback_access(),
+                    session.current_media_key().cloned(),
+                )
+            })
+            .unwrap_or((false, None, None));
+        if let Some(surface) = runtime.composited_video.as_mut() {
+            surface.set_media_access(access, media);
+            surface.set_privacy_blocked(blocked);
+        }
+        if blocked {
+            if let Some(app) = app_handle.upgrade() {
+                app.set_video_frame_active(false);
+                app.set_video_frame(slint::Image::default());
+            }
+            if let Some(controller) = runtime.controller.as_mut() {
+                let _ = controller.session_mut().enforce_privacy();
+            }
+            return;
+        }
         let Some(surface) = runtime.composited_video.as_mut() else {
             return;
         };
@@ -79,7 +105,14 @@ pub(super) fn install_composited_video_notifier(
                     .controller
                     .as_ref()
                     .is_some_and(|c| c.session().state().current.is_some());
-                app.set_video_frame_active(has_media && !runtime.grid.is_active());
+                let allowed = runtime
+                    .composited_video
+                    .as_ref()
+                    .is_some_and(|surface| surface.output_allowed());
+                if !allowed {
+                    app.set_video_frame(slint::Image::default());
+                }
+                app.set_video_frame_active(has_media && allowed && !runtime.grid.is_active());
                 if initialized {
                     // Normal player commands can wait on mpv. Dispatch startup
                     // media after leaving the rendering callback, on the UI loop.
@@ -102,7 +135,7 @@ pub(super) fn install_composited_video_notifier(
                                 runtime.controller_mut().expect("ready").dispatch(command)
                             {
                                 runtime.record_diagnostic("ERROR", error.to_string());
-                                app.set_status_label(error.to_string().into());
+                                set_playback_status(&app, error.to_string().into());
                             }
                         }
                         refresh_runtime_window(&app, &runtime);
@@ -117,7 +150,7 @@ pub(super) fn install_composited_video_notifier(
                 let message = format!("Composited video failed: {error}");
                 runtime.record_diagnostic("ERROR", &message);
                 runtime.mark_error(message.clone());
-                app.set_status_label(message.into());
+                set_playback_status(&app, message.into());
             }
         }
     });

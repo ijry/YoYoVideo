@@ -24,7 +24,9 @@ jobs:
         # start when neither DISPLAY nor WAYLAND_DISPLAY is set.
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libfontconfig1-dev libxkbcommon-dev xvfb
+          # The default UI and privacy layout fixture are Chinese. A minimal
+          # runner without CJK fonts silently renders every Chinese label blank.
+          sudo apt-get install -y pkg-config libfontconfig1-dev libxkbcommon-dev xvfb fonts-noto-cjk
           # winit's X11 backend dlopens these at runtime; the build succeeds without
           # them and only the window-construction tests notice.
           sudo apt-get install -y libxkbcommon-x11-0 libxcb-shape0 libxcb-xfixes0 libxcb-render0
@@ -43,7 +45,21 @@ jobs:
         run: cargo fmt --check
 
       - name: Run default tests
-        run: xvfb-run -a cargo test
+        env:
+          YOYOVIDEO_PRIVACY_PREVIEW_PPM: .cache/privacy-settings-ci.ppm
+        run: |
+          mkdir -p .cache apps/yoyovideo-desktop/.cache
+          fc-list :lang=zh family | sort -u
+          xvfb-run -a cargo test
+
+      - name: Upload privacy layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-layout-linux
+          path: '**/.cache/privacy-settings-ci.ppm'
+          if-no-files-found: warn
+          include-hidden-files: true
 
   runtime-check:
     name: Runtime feature check (${{ matrix.os }})

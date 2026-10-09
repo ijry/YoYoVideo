@@ -125,6 +125,22 @@ fn native_gl_decodes_resizes_and_tears_down() {
                                     state.surface.target.as_ref().unwrap().size(),
                                     (128, 64)
                                 );
+                                // A real red GL frame exists first. Privacy must
+                                // withhold even a forced resize render, not merely
+                                // paint a translucent UI element over that frame.
+                                if let Some(app) = handle.upgrade() {
+                                    app.set_frame(slint::Image::default());
+                                }
+                                state.surface.set_privacy_blocked(true);
+                                assert!(!state.surface.output_allowed());
+                                assert!(
+                                    unsafe { state.surface.render(256, 64) }.unwrap().is_none()
+                                );
+                                assert_eq!(
+                                    state.surface.target.as_ref().unwrap().size(),
+                                    (128, 64)
+                                );
+                                state.surface.set_privacy_blocked(false);
                                 slint::Timer::single_shot(Duration::ZERO, || {
                                     slint::quit_event_loop().unwrap();
                                 });

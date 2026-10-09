@@ -12,7 +12,7 @@ resolver = "2"
 # refuses to publish a tag that does not match this value, and the packaging
 # scripts stamp it into RELEASE-NOTES.md inside every artifact.
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/ijry/YoYoVideo"

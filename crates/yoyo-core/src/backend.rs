@@ -74,3 +74,8 @@ pub trait PlayerBackend {
     fn send(&mut self, command: BackendCommand) -> Result<(), String>;
     fn drain_events(&mut self) -> Vec<BackendEvent>;
 }
+
+/// Shared, time-aware playback policy. A missing policy preserves normal playback.
+pub trait PlaybackAccess: Send + Sync {
+    fn restricted(&self, media: &crate::privacy::MediaKey) -> bool;
+}

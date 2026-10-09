@@ -1,0 +1,211 @@
+import { Button, CheckBox, LineEdit, ScrollView } from "std-widgets.slint";
+
+// Keep checkbox labels legible in the player's dark theme without changing
+// the application's global/system widget palette.
+component PrivacyCheck inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    height: 26px;
+    preferred-width: 32px + caption.preferred-width;
+    forward-focus: check;
+    Rectangle { x: 0px; y: 1px; width: 24px; height: 24px; border-width: 1px; border-color: #415367; border-radius: 4px; background: #111b29; }
+    check := CheckBox {
+        x: 0px; y: 1px; width: 24px; height: 24px; text: "";
+        checked <=> root.checked;
+        enabled: root.enabled;
+        accessible-label: root.text;
+    }
+    caption := Text {
+        x: 32px; width: parent.width - 32px; height: parent.height;
+        text: root.text; color: root.enabled ? #cbd5e1 : #758497;
+        font-size: 12px; vertical-alignment: center;
+    }
+    TouchArea {
+        x: 32px; width: parent.width - 32px; height: parent.height;
+        enabled: root.enabled; mouse-cursor: MouseCursor.pointer;
+        clicked => { check.focus(); root.checked = !root.checked; }
+    }
+}
+
+component PinField inherits Rectangle {
+    in-out property <string> value;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback accepted();
+    height: 42px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: editor.has-focus ? #7c9bb6 : #354353;
+    background: #0c131e;
+    forward-focus: editor;
+    public function focus-input() { editor.focus(); }
+    editor := TextInput {
+        x: 12px; width: parent.width - 24px; height: parent.height;
+        text <=> root.value;
+        input-type: password;
+        single-line: true;
+        enabled: root.enabled;
+        color: #f1f5f9;
+        font-size: 20px;
+        letter-spacing: 6px;
+        vertical-alignment: center;
+        accessible-label: root.label;
+        accessible-value: "";
+        accepted => { root.accepted(); }
+    }
+}
+
+export component PrivacyWindow inherits Window {
+    in-out property <string> window-brand: "YoYoVideo";
+    title: root.window-brand + (root.ui-language-code == "zh" ? " · 隐私模式" : " · Privacy Mode");
+    preferred-width: 520px;
+    preferred-height: root.mode == 2 ? 620px : 420px;
+    min-width: 480px;
+    min-height: 400px;
+    background: #090e17;
+    default-font-size: 13px;
+
+    // 0: first PIN, 1: verify, 2: authorized settings, 3: new PIN after old PIN.
+    in-out property <int> mode: 0;
+    in-out property <string> ui-language-code: "zh";
+    in-out property <string> pin;
+    in-out property <string> confirmation;
+    in-out property <bool> busy: false;
+    in-out property <int> cooldown-seconds: 0;
+    in-out property <string> error-message;
+    in-out property <string> intent-label;
+    in-out property <string> privacy-status;
+    in-out property <bool> schedule-enabled: false;
+    in-out property <[string]> rules;
+    in-out property <[string]> protected-items;
+    in-out property <bool> monday: true;
+    in-out property <bool> tuesday: true;
+    in-out property <bool> wednesday: true;
+    in-out property <bool> thursday: true;
+    in-out property <bool> friday: true;
+    in-out property <bool> saturday: true;
+    in-out property <bool> sunday: true;
+    in-out property <string> start-time: "09:00";
+    in-out property <string> end-time: "18:00";
+    pure callback validate-pin(string) -> bool;
+    out property <bool> submit-enabled: root.mode != 2 && !root.busy && root.cooldown-seconds == 0
+        && root.validate-pin(root.pin)
+        && (root.mode == 1 || (root.pin == root.confirmation && root.validate-pin(root.confirmation)));
+
+    callback submit-requested();
+    callback cancel-requested();
+    callback add-rule-requested();
+    callback remove-rule-requested(int);
+    callback save-schedule-requested();
+    callback remove-protection-requested(int);
+    callback change-pin-requested();
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 12px;
+        Text {
+            text: root.mode == 0 ? (root.ui-language-code == "zh" ? "设置隐私 PIN" : "Set a privacy PIN")
+                : root.mode == 2 ? (root.ui-language-code == "zh" ? "隐私设置" : "Privacy settings")
+                : root.mode == 3 ? (root.ui-language-code == "zh" ? "设置新的 PIN" : "Set a new PIN")
+                : (root.ui-language-code == "zh" ? "验证隐私 PIN" : "Verify privacy PIN");
+            color: #f1f5f9; font-size: 21px; font-weight: 700;
+        }
+        Text {
+            text: root.mode == 2 ? root.privacy-status : (root.intent-label != "" ? root.intent-label
+                : (root.ui-language-code == "zh" ? "输入 4 位数字，支持前导零。没有默认 PIN。" : "Enter 4 digits; leading zeros are allowed. There is no default PIN."));
+            color: #a6b6c7; wrap: word-wrap;
+        }
+
+        if root.mode != 2: VerticalLayout {
+            spacing: 10px;
+            Text { text: root.mode == 3 ? (root.ui-language-code == "zh" ? "新 PIN" : "New PIN") : "PIN"; color: #cbd5e1; }
+            pin-field := PinField {
+                init => { self.focus-input(); }
+                value <=> root.pin;
+                label: root.ui-language-code == "zh" ? "4 位隐私 PIN" : "4-digit privacy PIN";
+                enabled: !root.busy && root.cooldown-seconds == 0;
+                accepted => { if root.submit-enabled { root.submit-requested(); } }
+            }
+            if root.mode == 0 || root.mode == 3: Text { text: root.ui-language-code == "zh" ? "再次输入 PIN" : "Confirm PIN"; color: #cbd5e1; }
+            if root.mode == 0 || root.mode == 3: PinField {
+                value <=> root.confirmation;
+                label: root.ui-language-code == "zh" ? "确认隐私 PIN" : "Confirm privacy PIN";
+                enabled: !root.busy;
+                accepted => { if root.submit-enabled { root.submit-requested(); } }
+            }
+            if root.cooldown-seconds > 0: Text {
+                text: root.ui-language-code == "zh" ? "请等待 " + root.cooldown-seconds + " 秒后重试" : "Try again in " + root.cooldown-seconds + " seconds";
+                color: #f2c280;
+            }
+            Rectangle { background: transparent; vertical-stretch: 1; }
+        }
+
+        if root.mode == 2: ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding-right: 8px; spacing: 12px;
+                PrivacyCheck {
+                    text: root.ui-language-code == "zh" ? "启用受限时段" : "Enable restricted periods";
+                    checked <=> root.schedule-enabled;
+                    enabled: !root.busy;
+                }
+                Text { text: root.ui-language-code == "zh" ? "开始当天（可跨午夜）" : "Start weekdays (overnight supported)"; color: #a6b6c7; }
+                HorizontalLayout {
+                    spacing: 0px;
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "一" : "M"; checked <=> root.monday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "二" : "T"; checked <=> root.tuesday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "三" : "W"; checked <=> root.wednesday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "四" : "T"; checked <=> root.thursday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "五" : "F"; checked <=> root.friday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "六" : "S"; checked <=> root.saturday; }
+                    PrivacyCheck { text: root.ui-language-code == "zh" ? "日" : "S"; checked <=> root.sunday; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit { text <=> root.start-time; placeholder-text: "09:00"; accessible-label: root.ui-language-code == "zh" ? "开始时间 HH:mm" : "Start time HH:mm"; }
+                    Text { text: "–"; color: #94a3b8; vertical-alignment: center; }
+                    LineEdit { text <=> root.end-time; placeholder-text: "18:00"; accessible-label: root.ui-language-code == "zh" ? "结束时间 HH:mm" : "End time HH:mm"; }
+                    Button { text: root.ui-language-code == "zh" ? "添加时段" : "Add period"; enabled: !root.busy; clicked => { root.add-rule-requested(); } }
+                }
+                for rule[index] in root.rules: HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: rule; color: #d2dfeb; wrap: word-wrap; vertical-alignment: center; }
+                    Button { text: root.ui-language-code == "zh" ? "移除" : "Remove"; enabled: !root.busy; clicked => { root.remove-rule-requested(index); } }
+                }
+                Button { text: root.ui-language-code == "zh" ? "保存日程" : "Save schedule"; enabled: !root.busy; clicked => { root.save-schedule-requested(); } }
+                Text {
+                    text: root.ui-language-code == "zh" ? "手动开关一直保持到下一受限周期开始；解除后不会自动播放。" : "Manual overrides last until the next restricted period starts. Unlocking never resumes playback.";
+                    color: #8fa3b7; wrap: word-wrap; font-size: 11px;
+                }
+                Rectangle { height: 1px; background: #2b3848; }
+                Text { text: root.ui-language-code == "zh" ? "受保护媒体" : "Protected media"; color: #e2e8f0; font-weight: 600; }
+                if root.protected-items.length == 0: Text {
+                    text: root.ui-language-code == "zh" ? "在播放器菜单、播放列表或历史条目旁添加保护。" : "Add protection from the player menu, playlist, or history.";
+                    color: #8fa3b7; wrap: word-wrap;
+                }
+                for item[index] in root.protected-items: HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: item; color: #cbd5e1; wrap: word-wrap; horizontal-stretch: 1; }
+                    Button { text: root.ui-language-code == "zh" ? "取消保护" : "Unprotect"; enabled: !root.busy; clicked => { root.remove-protection-requested(index); } }
+                }
+                Button { text: root.ui-language-code == "zh" ? "修改 PIN…" : "Change PIN…"; enabled: !root.busy; clicked => { root.change-pin-requested(); } }
+            }
+        }
+        if root.error-message != "": Text { text: root.error-message; color: #f5bc99; wrap: word-wrap; }
+        Text {
+            text: root.ui-language-code == "zh" ? "仅限应用内保护。不加密影片，不清除历史。" : "In-app protection only. Files are not encrypted; history is retained.";
+            color: #8b9aab; font-size: 11px; wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle { background: transparent; horizontal-stretch: 1; }
+            Button { text: root.mode == 2 ? (root.ui-language-code == "zh" ? "关闭" : "Close") : (root.ui-language-code == "zh" ? "取消" : "Cancel"); clicked => { root.cancel-requested(); } }
+            if root.mode != 2: Button {
+                text: root.busy ? (root.ui-language-code == "zh" ? "验证中…" : "Working…") : (root.mode == 1 ? (root.ui-language-code == "zh" ? "验证" : "Verify") : (root.ui-language-code == "zh" ? "保存 PIN" : "Save PIN"));
+                enabled: root.submit-enabled;
+                clicked => { if root.submit-enabled { root.submit-requested(); } }
+            }
+        }
+    }
+}
