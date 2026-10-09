@@ -157,7 +157,14 @@ fn act(
             if window.get_mode() == 0 || window.get_mode() == 3 {
                 window.set_confirmation(pin.into());
             }
-            window.invoke_submit_requested();
+            // Property bindings such as submit-enabled update on the next Slint
+            // turn. Submit there, matching a real user's button click.
+            let weak = window.as_weak();
+            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                if let Some(window) = weak.upgrade() {
+                    window.invoke_submit_requested();
+                }
+            });
         }
         Command::Cancel => {
             if let Some(window) = pin_window(runtime) {

@@ -492,9 +492,19 @@ impl PrivacyUi {
     }
 
     fn is_focused(&self) -> bool {
-        self.open
-            && self.window.window().is_visible()
-            && self.window.window().with_winit_window(|window| window.has_focus()).unwrap_or(false)
+        let visible = self.open && self.window.window().is_visible();
+        if !visible {
+            return false;
+        }
+        #[cfg(feature = "privacy-qa")]
+        if std::env::var_os("YOYOVIDEO_PRIVACY_QA_FOCUS").is_some() {
+            // Xvfb has no window manager to grant focus. This switch is
+            // compiled only into privacy-qa builds and does not bypass PIN
+            // verification; it only lets the isolated native driver exercise
+            // the same visible-window callback path.
+            return true;
+        }
+        self.window.window().with_winit_window(|window| window.has_focus()).unwrap_or(false)
     }
 
     fn poll(&mut self) {
