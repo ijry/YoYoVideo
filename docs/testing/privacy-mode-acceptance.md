@@ -50,16 +50,33 @@ Windows 本机 **通过**。实际解码红色帧并读取 GL 像素，验证尺
 
 日志均保存在 `.cache/privacy-*.log`。界面预览仅使用虚构数据：`.cache/privacy-settings-preview.png`。
 
-## 尚未运行的平台验收
+## macOS 与 Linux 原生验收（CI）
+
+`feat/privacy-native` 新增跨平台原生驱动 `scripts/test-privacy-native-unix.ps1` 与工作流 `.github/workflows/privacy-native-unix.yml`（Native privacy acceptance）。该工作流已并入 `.github/workflows/release.yml` 的 `privacy-native-unix` 门禁，正式发版必须先通过。
+
+运行记录：GitHub Actions run `37901280895`（提交 `7636633`，squash 后的分支尖端），三个平台全部成功。
+
+| 平台 | 运行环境 | 结果 | 证据 |
+| --- | --- | --- | --- |
+| macOS Apple Silicon | `macos-14` 真实窗口 | 10 项通过，4 次进程启动 | `.cache/privacy-native-artifacts-8/privacy-native-macos-aarch64/` |
+| macOS Intel | `macos-15-intel` 真实窗口 | 10 项通过，4 次进程启动 | `.cache/privacy-native-artifacts-8/privacy-native-macos-x86_64/` |
+| Linux x64 | `ubuntu-latest`，`xvfb-run` + `WINIT_UNIX_BACKEND=x11` | 10 项通过，4 次进程启动 | `.cache/privacy-native-artifacts-8/privacy-native-linux-x64/` |
+
+覆盖的场景与 Windows 对齐：空启动不显示视频表面；先证明受保护影片确实在播（后端 position 持续增加）再做任何隐藏；首次 PIN 与授权后的名单/日程修改走真实窗口回调；进入受限时段后暂停、临时静音、真实隐藏；截图/恢复/弹窗关闭都不能绕过；普通影片继续播放且历史/最近/拖放拒绝是事务性的；手动关闭跨重启并在下一周期开始被自动收回；解除后不自动播放并还原用户静音偏好；5 次错误 PIN 进入 30 秒持久冷却且不记录数字；损坏配置 fail-closed 且不会被覆盖。
+
+macOS 侧读取真实 `NSWindow` 事实：可见视频宿主只有 1 个、且父窗口必须是主窗口，不能是隐藏的 PIN/设置窗口。Linux 侧运行在 Xvfb，而 Xvfb 没有窗口管理器授予焦点，因此仅对 `privacy-qa` 测试构建开放 `YOYOVIDEO_PRIVACY_QA_FOCUS`：它只让已经可见的 PIN 窗口走上相同的可见窗口回调路径，不绕过 PIN 校验，正式构建不编译该开关。
+
+## 尚未验收的部分
 
 | 平台 | 本次隐私功能原生验收 |
 | --- | --- |
 | Windows x64 原生窗口 | 已运行并通过上述场景 |
 | Windows OpenGL 合成表面 | 已运行并通过 |
-| macOS Apple Silicon / Intel | 未在本次运行中实测 |
-| Linux X11 / Wayland | 未在本次运行中实测 |
+| macOS Apple Silicon / Intel | CI 原生验收通过（run 37901280895） |
+| Linux X11 | CI 原生验收通过（Xvfb，run 37901280895） |
+| Linux Wayland | 未验收：CI 中没有可用的 Wayland 合成器，仍未实测 |
 
-本次没有为验证而推送 CI 提交。后续在对应系统/CI 运行时，应同样先证明样例确实可见且正在播放，不能把黑屏或 mock 当作真实遮挡通过。
+后续在对应系统/CI 运行时，应同样先证明样例确实可见且正在播放，不能把黑屏或 mock 当作真实遮挡通过。
 
 ## 普通构建
 

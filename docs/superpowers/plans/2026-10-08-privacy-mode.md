@@ -277,7 +277,7 @@ assert!(!window.get_submit_enabled());
 - [x] 7.1 扩展现有 TEST-ONLY QA 控制，测试专用时钟/虚构 PIN/媒体只在测试 feature 中启用；正式编译验证没有时钟/PIN 绕过入口。
 - [x] 7.2 用明确有颜色、正在播放的样例验证进入时段前确有画面，再验证 pause/mute/native-visible/合成帧。多宫格一受保护、一普通；核对普通条目的 position 继续增加。
 - [x] 7.3 覆盖手动关闭维持到次日开始、退出重启、日程结束不自动播放、错误 PIN 冷却、弹窗/全屏、EOF 下一项、历史和命令行绕过。
-- [x] 7.4 Windows 本机、macOS ARM/Intel 与 Linux 原生验收分别留证据；当前不能执行的平台标明未验收，不用 mock 代替真实隐藏证据。
+- [x] 7.4 Windows 本机、macOS ARM/Intel 与 Linux 原生验收分别留证据；当前不能执行的平台标明未验收，不用 mock 代替真实隐藏证据。macOS ARM/Intel 与 Linux X11 已由 CI run 37901280895 补齐（`feat/privacy-native`，`scripts/test-privacy-native-unix.ps1`），Wayland 仍未实测。
 - [x] 7.5 执行并记录：
 ```powershell
 cargo fmt --all --check
@@ -305,7 +305,8 @@ git diff --check
 - 后续补充：主窗归属检查防止隐藏 PIN 窗口成为视频宿主父窗；允许的新媒体加载先清除旧保护画面并解除旧暂停；mpv STOP/REPLACE 不再被当作 EOF。
 - Windows 原生 13 项、4 次进程启动通过；真实 GL 表面遮挡与生命周期测试通过；软件渲染检查并修正了暗色复选框文字。
 - 测试构建标记 privacy_qa，正式打包验证器拒绝带该标记的构建。
-- 详见 docs/testing/privacy-mode-acceptance.md；未实测平台明确标注。
+- macOS ARM/Intel 与 Linux X11 的原生验收在 CI 完成：run 37901280895（`feat/privacy-native`，squash 后的尖端提交 `7636633`），三个平台各 10 项通过、4 次进程启动；失败前先修正了「推进时钟越过冷却时落到了限制时段之外」的驱动假设。
+- 详见 docs/testing/privacy-mode-acceptance.md；未实测平台（Wayland、Windows Setup 首次安装）明确标注。
 
 ## 自检
 
@@ -320,5 +321,5 @@ git diff --check
 - Windows 实际 GL 绘制/保护/释放通过；UI 软件渲染已目视核对。
 - 文档站 4 个测试及构建通过；打包测试拒绝带 privacy_qa 的正式包。
 - 普通 runtime 二进制已恢复，build-info 确认两种 QA feature 均为 false。
-- macOS/Linux 本次未原生实测，按设计要求明确记录，没有据单测声称验收通过。
-- 既有 8 个未提交文件哈希保持不变；没有推送或重发版本。
+- macOS ARM/Intel 与 Linux X11 原生验收通过：CI run 37901280895，各 10 项、4 次进程启动；Linux 仅覆盖 X11/Xvfb，Wayland 未实测。
+- 既有 8 个未提交文件哈希保持不变；本次隐私工作没有重发版本、没有改动已发布 tag。
