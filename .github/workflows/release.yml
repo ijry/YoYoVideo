@@ -67,9 +67,14 @@ jobs:
     uses: ./.github/workflows/updater-upgrade-unix.yml
     with:
       revision: ${{ needs.prepare.outputs.commit }}
+  macos-video-windows:
+    needs: prepare
+    uses: ./.github/workflows/macos-video-window.yml
+    with:
+      revision: ${{ needs.prepare.outputs.commit }}
   publish:
     name: Sign, verify draft and publish
-    needs: [prepare, build, windows-upgrade, unix-upgrade]
+    needs: [prepare, build, windows-upgrade, unix-upgrade, macos-video-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

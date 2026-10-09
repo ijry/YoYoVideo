@@ -29,7 +29,10 @@ param(
     [ValidateSet("all", "aarch64-apple-darwin", "x86_64-apple-darwin")]
     [string]$Target = "all",
 
-    [switch]$Refresh
+    [switch]$Refresh,
+
+    [ValidateSet("mpv-runtime", "privacy-qa")]
+    [string]$Features = "mpv-runtime"
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,7 +152,7 @@ foreach ($t in $targets) {
     Write-Host "=== cargo check --target $t ==="
     $env:RUSTFLAGS = "--sysroot=$sysroot"
     $env:CARGO_TARGET_DIR = $targetDir
-    & cargo check -p yoyovideo-desktop --target $t --features mpv-runtime
+    & cargo check -p yoyovideo-desktop --target $t --features $Features
     if ($LASTEXITCODE -ne 0) {
         $failed += $t
     }

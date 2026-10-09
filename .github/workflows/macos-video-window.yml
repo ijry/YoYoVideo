@@ -1,0 +1,78 @@
+name: macOS native video windows
+
+on:
+  push:
+    paths:
+      - 'apps/yoyovideo-desktop/**'
+      - 'crates/yoyo-mpv/**'
+      - 'scripts/test-macos-video-window.ps1'
+      - '.github/workflows/macos-video-window.yml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - 'apps/yoyovideo-desktop/**'
+      - 'crates/yoyo-mpv/**'
+      - 'scripts/test-macos-video-window.ps1'
+      - '.github/workflows/macos-video-window.yml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  native-windows:
+    name: Video windows (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos-aarch64, os: macos-14 }
+          - { platform: macos-x86_64, os: macos-15-intel }
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native-video-${{ matrix.platform }}
+          cache-on-failure: true
+      - name: Install native playback tools
+        run: brew install mpv ffmpeg
+      - name: Stage this architecture's playback runtime
+        shell: pwsh
+        run: ./scripts/fetch-runtime.ps1 -Platform '${{ matrix.platform }}' -Force
+      - name: Build an isolated native QA player
+        run: cargo build --locked -p yoyovideo-desktop --features privacy-qa
+      - name: Verify AppKit coordinate transformations
+        # Set this inside the shell: macOS SIP may strip a DYLD_* variable
+        # inherited by /bin/bash before it can launch Cargo's native test binary.
+        run: |
+          export DYLD_LIBRARY_PATH="$GITHUB_WORKSPACE/third_party/mpv/${{ matrix.platform }}/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          cargo test --locked -p yoyovideo-desktop --features privacy-qa --lib macos_video_window
+      - name: Verify real AppKit windows, playback and teardown
+        shell: pwsh
+        run: ./scripts/test-macos-video-window.ps1 -Platform '${{ matrix.platform }}'
+      - name: Upload native window evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-video-window-${{ matrix.platform }}
+          path: |
+            .cache/macos-window-*/report.json
+            .cache/macos-window-*/events.jsonl
+            .cache/macos-window-*/*.log
+          if-no-files-found: warn
+          include-hidden-files: true
